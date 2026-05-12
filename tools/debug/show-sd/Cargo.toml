@@ -1,0 +1,17 @@
+[package]
+name        = "show-sd"
+version     = "0.0.1"
+description = "Print the KACS security descriptor of one or more paths (validation tool)"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "show-sd"
+path = "src/main.rs"
+
+[dependencies]
+peios-uapi.workspace = true
+
+[package.metadata.peios]
+install_path = "bin/show-sd"
