@@ -1,0 +1,17 @@
+[package]
+name        = "revstrm"
+version     = "0.0.1"
+description = "KMES event-ring inspector and emitter (validation tool)"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "revstrm"
+path = "src/main.rs"
+
+[dependencies]
+peios-uapi.workspace = true
+
+[package.metadata.peios]
+install_path = "bin/revstrm"

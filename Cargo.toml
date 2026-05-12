@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members  = ["tools/*/*", "crates/*"]
+
+[workspace.package]
+edition  = "2021"
+license  = "MIT"
+publish  = false
+
+# Single-package metadata: every workspace member's binary lands in one
+# .peipkg ("peiosutils"). Per-tool `[package.metadata.peios].install_path`
+# still controls *where* inside the package each binary goes.
+[workspace.metadata.peios.package]
+name        = "peiosutils"
+version     = "0.0.1"
+description = "Peios core userspace utilities (whoami, show-sd, revstrm, transitional protoinit)"
+license     = "MIT"
+
+[workspace.dependencies]
+peios-uapi = { git = "https://github.com/peios/pkm", branch = "main" }
+
+# Local override during in-flight dev. Cargo only applies this when the named
+# git source is actually referenced; harmless once consumers pin a tag.
+[patch."https://github.com/peios/pkm"]
+peios-uapi = { path = "../pkm/crates/peios-uapi" }
+
+[profile.release]
+opt-level     = "z"
+lto           = true
+codegen-units = 1
+strip         = true
+panic         = "abort"

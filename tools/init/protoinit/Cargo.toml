@@ -1,0 +1,15 @@
+[package]
+name        = "protoinit"
+version     = "0.0.1"
+description = "Peios Phase 0 PID 1 stub: mounts /proc /sys /dev and execs /bin/sh"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "protoinit"
+path = "src/main.rs"
+
+[package.metadata.peios]
+install_path = "/init"
+package_name = "peios-protoinit"
