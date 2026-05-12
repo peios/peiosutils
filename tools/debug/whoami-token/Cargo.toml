@@ -14,4 +14,4 @@ path = "src/main.rs"
 peios-uapi.workspace = true
 
 [package.metadata.peios]
-install_path = "bin/whoami-token"
+install_path = "usr/bin/whoami-token"

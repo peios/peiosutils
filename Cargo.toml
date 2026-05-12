@@ -17,12 +17,19 @@ description = "Peios core userspace utilities (whoami, show-sd, revstrm, transit
 license     = "MIT"
 
 [workspace.dependencies]
-peios-uapi = { git = "https://github.com/peios/pkm", branch = "main" }
+# Pinned to a pkm tag for reproducibility. Bump as the kernel ABI evolves.
+# The peios-uapi crate's own SemVer (currently 0.19.0) tracks ABI changes,
+# independent of the pkm repo tag — see "Versioning" in README.
+peios-uapi = { git = "https://github.com/peios/pkm", tag = "v0.20.0-alpha1" }
 
-# Local override during in-flight dev. Cargo only applies this when the named
-# git source is actually referenced; harmless once consumers pin a tag.
-[patch."https://github.com/peios/pkm"]
-peios-uapi = { path = "../pkm/crates/peios-uapi" }
+# Power-user local override: if you're iterating on peios-uapi simultaneously,
+# add this stanza to your USER-GLOBAL ~/.cargo/config.toml (NOT here):
+#
+#   [patch."https://github.com/peios/pkm"]
+#   peios-uapi = { path = "/abs/path/to/pkm/crates/peios-uapi" }
+#
+# Cargo merges user-global config into every project. Keeping the patch out
+# of this committed file means the farm builds cleanly off the pinned tag.
 
 [profile.release]
 opt-level     = "z"

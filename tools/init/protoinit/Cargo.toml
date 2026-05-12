@@ -11,5 +11,8 @@ name = "protoinit"
 path = "src/main.rs"
 
 [package.metadata.peios]
-install_path = "/init"
-package_name = "peios-protoinit"
+# PSD-009 §3.4.1: /init isn't a permitted install destination. protoinit is
+# spec-installed at usr/bin/protoinit; peios-image's initramfs path uses the
+# kernel's `init=/usr/bin/protoinit` cmdline arg to find it instead of a /init
+# symlink, so no compat shim is needed.
+install_path = "usr/bin/protoinit"
