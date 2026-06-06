@@ -1,0 +1,35 @@
+# spell-checker:ignore (libs) libp msgpack revstrm
+
+[package]
+name = "pu_revstrm"
+description = "revstrm ~ (peiosutils) print the raw KMES event stream for debugging"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/revstrm"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/revstrm.rs"
+test = true
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+fluent = { workspace = true }
+glob = { workspace = true }
+# Peios-native dependencies (libp-rs): not coreutils, not tracked against upstream.
+libp-event = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
+msgpack = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
+
+[[bin]]
+name = "revstrm"
+path = "src/main.rs"

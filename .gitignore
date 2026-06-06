@@ -1,3 +1,19 @@
-/target/
-/dist/
+target/
+coverage/
+/src/*/gen_table
 /build/
+/tmp/
+*~
+.*.swp
+.*.swo
+.idea
+lib*.a
+*.iml
+### macOS ###
+.DS_Store
+
+# Provium guest binary build output (rebuilt from Dockerfile)
+/dist/
+
+# Local planning scratch — util-linux/base-userland expansion inventory
+commands.md

@@ -1,0 +1,21 @@
+peiosutils
+==========
+
+Copyright (c) Peios contributors
+
+peiosutils is a hard fork of uutils/coreutils, MIT-licensed.
+
+The original uutils/coreutils source is copyright (c) uutils developers
+and is licensed under the MIT License. See LICENSE for the full text.
+
+All git history prior to the fork at SHA 873a7c752 (May 2026) is the
+unmodified history of the upstream uutils/coreutils project. Peios
+modifications are made on top of that history. The intent is to preserve
+attribution for every line of code we did not write.
+
+The upstream project is at:
+    https://github.com/uutils/coreutils
+
+Peios modifications are licensed under the same MIT License as the
+upstream project, with copyright held by Peios contributors. Each
+contributor retains copyright over their own contributions.

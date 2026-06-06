@@ -1,0 +1,37 @@
+[package]
+name = "pu_token"
+description = "token ~ (peiosutils) inspect and manipulate Peios KACS tokens"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/token"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/token.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+uucore = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = { workspace = true }
+libp-token = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
+libp-sd = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
+libp-sys = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
+
+[[bin]]
+name = "token"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }
