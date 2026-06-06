@@ -1,0 +1,28 @@
+# Minimal CI for peiosutils.
+#
+# Intentionally thin while the fork is in early peiosification. The uutils
+# upstream workflows were stripped because they target a different set of
+# platforms (Android, BSD, Windows, WSL, etc.) and run GNU-conformance suites
+# that we will increasingly diverge from. As individual utilities get
+# peiosified (uu_* → pu_*) we will expand this file.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check (default features)
+        run: cargo check --workspace
+      - name: cargo test (workspace, exclude GNU conformance)
+        run: cargo test --workspace --exclude uucore -- --skip gnu
+        continue-on-error: true

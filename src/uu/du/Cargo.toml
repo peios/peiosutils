@@ -1,0 +1,50 @@
+[package]
+name = "pu_du"
+description = "du ~ (uutils) display disk usage"
+repository = "https://github.com/uutils/coreutils/tree/main/src/uu/du"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/du.rs"
+doctest = false
+
+[dependencies]
+# For the --exclude & --exclude-from options
+glob = { workspace = true }
+clap = { workspace = true }
+uucore = { workspace = true, features = [
+  "format",
+  "fsext",
+  "parser-size",
+  "parser-glob",
+  "time",
+] }
+rustc-hash = { workspace = true }
+thiserror = { workspace = true }
+fluent = { workspace = true }
+
+[target.'cfg(all(unix, not(target_os = "redox")))'.dependencies]
+uucore = { workspace = true, features = ["safe-traversal"] }
+
+[[bin]]
+name = "du"
+path = "src/main.rs"
+
+[dev-dependencies]
+divan = { workspace = true }
+tempfile = { workspace = true }
+uucore = { workspace = true, features = ["benchmark"] }
+
+[[bench]]
+name = "du_bench"
+harness = false

@@ -1,0 +1,30 @@
+[package]
+name = "pu_shred"
+description = "shred ~ (peiosutils) hide former FILE contents with repeated overwrites"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/shred"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/shred.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+rand = { workspace = true }
+uucore = { workspace = true, features = ["parser-size", "sd-control"] }
+libc = { workspace = true }
+fluent = { workspace = true }
+
+[[bin]]
+name = "shred"
+path = "src/main.rs"

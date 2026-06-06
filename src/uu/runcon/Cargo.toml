@@ -1,0 +1,40 @@
+[package]
+name = "pu_runcon"
+description = "runcon ~ (peiosutils) run command with specified security context"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/runcon"
+keywords = ["coreutils", "uutils", "cli", "utility"]
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+license.workspace = true
+version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/runcon.rs"
+test = false
+doctest = false
+
+[features]
+# runcon is not applicable on Peios (its LSM is KACS, not SELinux); the
+# default build is the early-out only. feat_selinux additionally compiles
+# the preserved SELinux implementation in src/selinux_impl.rs -- it pulls
+# the `selinux` crate, which links libselinux and cannot build on a Peios
+# toolchain, so it stays off by default.
+feat_selinux = ["dep:selinux", "uucore/selinux"]
+
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+clap = { workspace = true }
+uucore = { workspace = true, features = ["entries", "fs", "perms"] }
+selinux = { workspace = true, optional = true }
+thiserror = { workspace = true }
+libc = { workspace = true }
+fluent = { workspace = true }
+
+[[bin]]
+name = "runcon"
+path = "src/main.rs"

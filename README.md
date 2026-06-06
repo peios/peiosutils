@@ -1,65 +1,57 @@
 # peiosutils
 
-Peios core userspace utilities. Roughly the equivalent role of `coreutils`
-on Linux: the always-installed bin tools every user and admin reaches for.
-Each program is a Cargo workspace member building to a static-musl-pie
-binary. All members are bundled into a **single** `peiosutils.peipkg`
-consumed by `peios-image` (and eventually pkgs.peios.org).
+Peios core userspace utilities. A hard fork of
+[uutils/coreutils](https://github.com/uutils/coreutils), being peiosified
+one command at a time.
 
-Why one package: at the scale we're at, these tools change together,
-ship together, and are universally installed together. Per-tool packaging
-buys independent upgrades we don't need yet. If `revstrm` (or any other)
-grows enough to warrant its own lifecycle later, it can be split out.
+## What this is
 
-This repo owns the **source** of the tools, not their distribution recipes.
-Recipes (versioning, signing) live in `peipkgs-official-recipes` once that
-pipeline is wired up. The `dist/` packages produced here are local-dev
-artifacts; the farm-built versions are authoritative.
+Peios doesn't use the GNU coreutils. It doesn't use POSIX permissions,
+doesn't expose UIDs/GIDs as security primitives, and uses KACS
+(Kernel Access Control Subsystem) for authorisation. Most of what
+coreutils does — text processing, file I/O, hashing — is the same on
+any kernel. A handful of commands (`ls -l`, `stat`, `chown`, `install`)
+need real rewrites against KACS instead of POSIX. A few more (`chmod`,
+`chgrp`, `chcon`, `newgrp`) don't translate at all and get deleted.
 
-## Layout
+uutils gave us a clean, MIT-licensed, modular Rust starting point with
+all the boring stuff already working. We're forking it (hard fork — no
+auto-sync from upstream) and walking through every command alphabetically,
+peiosifying as we go.
 
-```
-tools/<category>/<name>/    one tool per directory
-crates/<name>/              shared internal libraries (never published)
-scripts/                    build + pack helpers
-dist/                       .peipkg outputs (gitignored)
-```
+## Peiosification status
 
-Categories are organisational, not semantic. Add new ones freely.
+Each command lives in its own crate under `src/uu/<name>/`.
 
-## Tools
+- `uu_<name>` — pristine from uutils, not yet reviewed.
+- `pu_<name>` — peiosified (reviewed, kept-or-rewritten, KACS-aware
+  where it needs to be).
 
-### `tools/init/`
-- `protoinit` — transitional PID 1 stub. Mounts /proc /sys /dev and execs /bin/sh. Will be replaced by real `peinit` when Phase 2 lands.
+At any time, `ls src/uu/` is a rough progress bar for the peiosification
+pass. Commands that don't translate to Peios get deleted entirely; their
+absence is the same signal as a removed crate.
 
-### `tools/debug/`
-- `whoami-token` — dump the calling process's KACS access token.
-- `show-sd` — print the KACS security descriptor of one or more paths.
-- `revstrm` — KMES event-ring inspector and emitter.
+See [`UPSTREAM.md`](UPSTREAM.md) for upstream-sync policy.
+See [`NOTICE`](NOTICE) for attribution.
 
 ## Building
 
-```
-make all          # build every tool's release binary
-make pkg          # produce dist/peiosutils_<version>_<arch>.peipkg
-make <name>       # build one tool (e.g. make whoami-token)
-make clean
+```sh
+cargo build --release            # multiplexed peiosutils binary
+cargo build --release -p uu_cat  # individual command (still uu_* prefixed)
 ```
 
-(`make pkgs` is kept as an alias for `make pkg`.)
+The multiplexed binary supports busybox-style symlink dispatch: a symlink
+named `cat → peiosutils` invokes the `cat` command. Individual builds are
+also supported.
 
-`peipkg-build` is built on demand from a sibling clone at `../peipkg-build/`.
+## Origin
 
-## Dependencies
+Forked from `uutils/coreutils` at SHA `873a7c752` (May 2026). The original
+remote is preserved as `uutils-upstream` (fetch-only). All git history
+prior to the fork is the original uutils history, retained for
+attribution and for selective cherry-picks of upstream security fixes.
 
-- `../pkm/` (sibling clone) — Cargo `[patch]` redirects `peios-uapi` to its in-tree path. Required for now; once `peios-uapi` ships tagged releases, the patch can be removed.
-- `../peipkg-build/` (sibling clone) — Go binary that produces `.peipkg` files. Built into `build/bin/peipkg-build` on first `make pkgs`.
+## License
 
-## Adding a new tool
-
-1. `tools/<category>/<name>/{Cargo.toml, src/main.rs, README.md}`
-2. Per-tool `Cargo.toml` needs `[package.metadata.peios]` with `install_path` (where the binary lands inside the bundled peipkg — e.g. `bin/foo`).
-3. `cargo build -p <name>` from the workspace root picks it up automatically; `make pkg` re-bundles into the single peiosutils peipkg.
-4. Add a one-line entry above in the per-category section.
-
-No central registry file. Workspace member globs and `pack-bundle.sh` discover tools by walking `cargo metadata`.
+MIT, same as uutils. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

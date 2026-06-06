@@ -1,0 +1,32 @@
+[package]
+name = "pu_nice"
+description = "nice ~ (peiosutils) run PROGRAM with modified scheduling priority"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/nice"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/nice.rs"
+test = false
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+fluent = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
+
+[[bin]]
+name = "nice"
+path = "src/main.rs"
