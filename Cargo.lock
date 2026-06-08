@@ -2179,6 +2179,7 @@ dependencies = [
  "pu_md5sum",
  "pu_mkdir",
  "pu_mkfifo",
+ "pu_mkirf",
  "pu_mknod",
  "pu_mktemp",
  "pu_more",
@@ -2948,6 +2949,15 @@ dependencies = [
  "fluent",
  "nix",
  "uucore",
+]
+
+[[package]]
+name = "pu_mkirf"
+version = "0.8.0"
+dependencies = [
+ "flate2",
+ "notify",
+ "tempfile",
 ]
 
 [[package]]

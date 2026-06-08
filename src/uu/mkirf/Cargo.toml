@@ -1,0 +1,28 @@
+# spell-checker:ignore (libs) mkirf initramfs cpio
+
+[package]
+name = "pu_mkirf"
+description = "mkirf ~ (peiosutils) compile an initramfs source tree into a deterministic cpio.gz"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/mkirf"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mkirf"
+path = "src/main.rs"
+
+[dependencies]
+flate2 = { workspace = true }
+notify = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
