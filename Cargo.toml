@@ -473,6 +473,7 @@ digest = "0.10.7"
 fluent = "0.17.0"
 unic-langid = "0.9.6"
 fluent-syntax = "0.12.0"
+flate2 = "1"
 
 uucore = { version = "0.8.0", package = "uucore", path = "src/uucore" }
 uucore_procs = { version = "0.8.0", package = "uucore_procs", path = "src/uucore_procs" }
@@ -608,6 +609,7 @@ logname = { optional = true, version = "0.8.0", package = "pu_logname", path = "
 logonse = { optional = true, version = "0.8.0", package = "pu_logonse", path = "src/uu/logonse" }
 mkdir = { optional = true, version = "0.8.0", package = "pu_mkdir", path = "src/uu/mkdir" }
 mkfifo = { optional = true, version = "0.8.0", package = "pu_mkfifo", path = "src/uu/mkfifo" }
+mkirf = { optional = true, version = "0.8.0", package = "pu_mkirf", path = "src/uu/mkirf" }
 mknod = { optional = true, version = "0.8.0", package = "pu_mknod", path = "src/uu/mknod" }
 mktemp = { optional = true, version = "0.8.0", package = "pu_mktemp", path = "src/uu/mktemp" }
 more = { optional = true, version = "0.8.0", package = "pu_more", path = "src/uu/more" }
