@@ -2182,6 +2182,7 @@ dependencies = [
  "pu_mkirf",
  "pu_mknod",
  "pu_mktemp",
+ "pu_mkuki",
  "pu_more",
  "pu_mv",
  "pu_nice",
@@ -2980,6 +2981,13 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "uucore",
+]
+
+[[package]]
+name = "pu_mkuki"
+version = "0.8.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]

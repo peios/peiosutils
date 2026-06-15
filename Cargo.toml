@@ -610,6 +610,7 @@ logonse = { optional = true, version = "0.8.0", package = "pu_logonse", path = "
 mkdir = { optional = true, version = "0.8.0", package = "pu_mkdir", path = "src/uu/mkdir" }
 mkfifo = { optional = true, version = "0.8.0", package = "pu_mkfifo", path = "src/uu/mkfifo" }
 mkirf = { optional = true, version = "0.8.0", package = "pu_mkirf", path = "src/uu/mkirf" }
+mkuki = { optional = true, version = "0.8.0", package = "pu_mkuki", path = "src/uu/mkuki" }
 mknod = { optional = true, version = "0.8.0", package = "pu_mknod", path = "src/uu/mknod" }
 mktemp = { optional = true, version = "0.8.0", package = "pu_mktemp", path = "src/uu/mktemp" }
 more = { optional = true, version = "0.8.0", package = "pu_more", path = "src/uu/more" }

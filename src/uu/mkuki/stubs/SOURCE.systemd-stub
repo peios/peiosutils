@@ -1,0 +1,12 @@
+default stub: systemd-stub linuxx64.efi.stub
+upstream: systemd
+upstream project: https://github.com/systemd/systemd
+debian package: systemd-boot-efi
+debian version: 257.13-1~deb13u1
+debian architecture: amd64
+debian package url: https://deb.debian.org/debian/pool/main/s/systemd/systemd-boot-efi_257.13-1~deb13u1_amd64.deb
+debian package sha256: 390ecdcef9bbb753f51bb6d8f696bdae2f1dbedde7239c49ccb2512f137a8933
+embedded stub sha256: 9c623743834bb904a3cb941092cffc958c31230263ce896d332a75e9ec48aa85
+license: LGPL-2.1-or-later
+license/copyright details: src/uu/mkuki/stubs/COPYRIGHT.debian-systemd
+refresh script: src/uu/mkuki/tools/update-systemd-stub.sh
