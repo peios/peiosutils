@@ -21,7 +21,7 @@
 //! `--sddl` is mutually exclusive with the four shortcuts (enforced by
 //! clap). [`creator_sd_from_matches`] turns parsed [`ArgMatches`] into an
 //! optional [`CreatorSd`]; the command creates the object, then
-//! [`CreatorSd::apply_to`] writes the descriptor with `libp_sd::set_sd`.
+//! [`CreatorSd::apply_to`] writes the descriptor with `peios::file::set_sd`.
 //!
 //! Applying is always post-create. The atomic `kacs_open` create path is
 //! unusable for restrictive descriptors — §11.2's post-create strict
@@ -32,15 +32,16 @@
 use std::path::Path;
 
 use clap::{Arg, ArgAction, ArgMatches};
-use libp_sd::{
-    AceBuilder, AclBuilder, SdBuilder, SdTarget, SecurityDescriptor, SecurityInfo, Sid,
-    WellKnownSid,
-    consts::SE_DACL_PROTECTED,
-    raw::FDCWD,
+use peios::file::{self, SecInfo};
+use peios::security::{
+    AclBuilder, Control, IntegrityLevel, LabelPolicy, SdBuilder, SdView, SecurityDescriptor, Sid,
     sddl,
 };
 
 use crate::error::{UResult, USimpleError};
+
+/// `AT_SYMLINK_NOFOLLOW` for the `at_flags` argument of `get_sd`/`set_sd`.
+const AT_SYMLINK_NOFOLLOW: i32 = 0x100;
 
 /// clap arg id — `--sddl`.
 pub const OPT_SDDL: &str = "sdopt_sddl";
@@ -63,12 +64,6 @@ const LABEL_LEVELS: [&str; 7] = [
     "system",
     "protected",
 ];
-
-/// Mandatory-label policy bit `SYSTEM_MANDATORY_LABEL_NO_WRITE_UP`
-/// (MS-DTYP §2.4.4.13): a subject below the object's integrity level
-/// cannot write to it. This is the policy `--label` applies — the
-/// standard one for files and directories.
-const LABEL_NO_WRITE_UP: u32 = 0x0000_0001;
 
 /// The five `--sd*` arguments, ready to hand to `clap::Command::args`.
 ///
@@ -103,31 +98,21 @@ pub fn args() -> [Arg; 5] {
 }
 
 /// A creator Security Descriptor parsed from the `--sd*` flags, paired
-/// with the `SecurityInfo` mask naming which components it carries.
+/// with the `SecInfo` mask naming which components it carries.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreatorSd {
-    blob: Vec<u8>,
-    info: SecurityInfo,
+    sd: SecurityDescriptor,
+    info: SecInfo,
 }
 
 impl CreatorSd {
     /// Apply the descriptor to a just-created object at `path` via
-    /// `libp_sd::set_sd`.
+    /// `peios::file::set_sd`.
     ///
     /// `path` must already exist — this is the create-then-set step. On
     /// failure the caller is expected to unlink the half-secured object.
     pub fn apply_to(&self, path: &Path) -> UResult<()> {
-        let path_str = path.to_str().ok_or_else(|| {
-            USimpleError::new(
-                1,
-                format!(
-                    "{}: cannot apply a security descriptor — path is not valid UTF-8",
-                    path.display()
-                ),
-            )
-        })?;
-        let target = SdTarget::path(path_str);
-        libp_sd::set_sd(&target, self.info, &self.blob)
+        file::set_sd(None, path, self.info, &self.sd, 0)
             .map_err(|e| USimpleError::new(1, format!("setting security descriptor: {e}")))
     }
 }
@@ -143,13 +128,10 @@ impl CreatorSd {
 /// A malformed SDDL string, or one that fails to serialize, yields an
 /// error.
 pub fn creator_sd_from_sddl(sddl_str: &str) -> UResult<CreatorSd> {
-    let builder =
+    let sd =
         sddl::parse(sddl_str).map_err(|e| USimpleError::new(1, format!("invalid SDDL: {e}")))?;
-    let blob = builder
-        .build()
-        .map_err(|e| USimpleError::new(1, format!("invalid SDDL: {e}")))?;
-    let info = info_from_blob(&blob, false)?;
-    Ok(CreatorSd { blob, info })
+    let info = info_from_blob(sd.as_bytes(), false)?;
+    Ok(CreatorSd { sd, info })
 }
 
 /// Parse the `--sd*` flags from `matches` into an optional [`CreatorSd`].
@@ -178,84 +160,104 @@ pub fn creator_sd_from_matches(matches: &ArgMatches) -> UResult<Option<CreatorSd
 
     let mut builder = SdBuilder::new();
     if let Some(o) = owner {
-        builder = builder.owner(parse_sid_arg("--owner", o)?);
+        builder.owner(&parse_sid_arg("--owner", o)?);
     }
     if let Some(g) = group {
-        builder = builder.group(parse_sid_arg("--group", g)?);
+        builder.group(&parse_sid_arg("--group", g)?);
     }
     if no_inherit {
-        // Empty DACL + SE_DACL_PROTECTED: no ACEs and no parent
+        // Empty DACL + DACL_PROTECTED: no ACEs and no parent
         // inheritance, so the object is reachable only via its owner's
         // implicit READ_CONTROL / WRITE_DAC.
-        builder = builder.dacl(AclBuilder::new()).control(SE_DACL_PROTECTED);
+        let dacl = AclBuilder::new()
+            .build()
+            .map_err(|e| USimpleError::new(1, format!("building security descriptor: {e}")))?;
+        builder
+            .dacl(&dacl)
+            .control(Control::DACL_PROTECTED, Control::empty());
     }
     if let Some(level) = label {
-        builder = builder.sacl(AclBuilder::new().ace(AceBuilder::mandatory_label(
-            label_sid(level).to_sid(),
-            LABEL_NO_WRITE_UP,
-        )));
+        let sacl = AclBuilder::new()
+            .label(label_rid(level), LabelPolicy::NO_WRITE_UP)
+            .build()
+            .map_err(|e| USimpleError::new(1, format!("building security descriptor: {e}")))?;
+        builder.sacl(&sacl);
     }
 
-    let blob = builder
+    let sd = builder
         .build()
         .map_err(|e| USimpleError::new(1, format!("building security descriptor: {e}")))?;
     // The shortcuts never build a full audit SACL — the only SACL they
     // can produce is the `--label` mandatory-label ACE, so SACL presence
-    // maps to LABEL_SECURITY_INFORMATION.
-    let info = info_from_blob(&blob, true)?;
-    Ok(Some(CreatorSd { blob, info }))
+    // maps to LABEL (rather than full SACL) security information.
+    let info = info_from_blob(sd.as_bytes(), true)?;
+    Ok(Some(CreatorSd { sd, info }))
 }
 
 /// Resolve a `--owner` / `--group` SID argument, prefixing parse errors
 /// with the offending flag name.
+///
+/// Accepts both an `S-1-…` literal (via `Sid: FromStr`) and a well-known
+/// SDDL alias such as `BA`. The peios `Sid` string parser only handles the
+/// numeric `S-1-…` form, so alias resolution goes through the SDDL codec:
+/// parsing `O:<alias>` yields an SD whose owner is the resolved SID.
 fn parse_sid_arg(flag: &str, value: &str) -> UResult<Sid> {
-    sddl::parse_sid(value).map_err(|e| USimpleError::new(1, format!("{flag}: {e}")))
+    if let Ok(sid) = value.parse::<Sid>() {
+        return Ok(sid);
+    }
+    let err = || USimpleError::new(1, format!("{flag}: invalid SID {value:?}"));
+    let owner_sd = sddl::parse(&format!("O:{value}")).map_err(|_| err())?;
+    let view = SdView::parse(owner_sd.as_bytes()).map_err(|_| err())?;
+    Ok(view.owner().ok_or_else(err)?.to_sid())
 }
 
-/// Map a validated `--label` level name to its integrity-level SID.
-fn label_sid(level: &str) -> WellKnownSid {
-    match level {
-        "untrusted" => WellKnownSid::UntrustedIl,
-        "low" => WellKnownSid::LowIl,
-        "medium" => WellKnownSid::MediumIl,
-        "medium-plus" => WellKnownSid::MediumPlusIl,
-        "high" => WellKnownSid::HighIl,
-        "system" => WellKnownSid::SystemIl,
-        "protected" => WellKnownSid::ProtectedProcessIl,
+/// Map a validated `--label` level name to its integrity-level RID
+/// (the RID of the `S-1-16-x` label SID).
+fn label_rid(level: &str) -> u32 {
+    let il = match level {
+        "untrusted" => IntegrityLevel::UNTRUSTED,
+        "low" => IntegrityLevel::LOW,
+        "medium" => IntegrityLevel::MEDIUM,
+        // `IntegrityLevel` exposes no named medium-plus / protected-process
+        // constants, so use their standard RIDs (medium-plus = 0x2100,
+        // protected-process = 0x5000) directly.
+        "medium-plus" => IntegrityLevel(0x2100),
+        "high" => IntegrityLevel::HIGH,
+        "system" => IntegrityLevel::SYSTEM,
+        "protected" => IntegrityLevel(0x5000),
         // clap's value_parser restricts --label to LABEL_LEVELS.
         other => unreachable!("unvalidated --label level: {other}"),
-    }
+    };
+    il.rid()
 }
 
-/// Derive the `SecurityInfo` component mask from a built SD blob.
+/// Derive the `SecInfo` component mask from a built SD blob.
 ///
 /// `sacl_is_label` selects how a present SACL is reported: the `--label`
-/// shortcut produces a label-only SACL (`LABEL_SECURITY_INFORMATION`),
-/// while an `--sddl` string with an `S:` section is a full SACL
-/// (`SACL_SECURITY_INFORMATION`). The two cannot be combined — `SecurityInfo`
-/// rejects `SACL | LABEL`.
-fn info_from_blob(blob: &[u8], sacl_is_label: bool) -> UResult<SecurityInfo> {
-    let sd = SecurityDescriptor::parse(blob).map_err(|e| {
+/// shortcut produces a label-only SACL (`SecInfo::LABEL`), while an
+/// `--sddl` string with an `S:` section is a full SACL (`SecInfo::SACL`).
+fn info_from_blob(blob: &[u8], sacl_is_label: bool) -> UResult<SecInfo> {
+    let sd = SdView::parse(blob).map_err(|e| {
         USimpleError::new(
             1,
             format!("internal error: built an unparseable security descriptor: {e:?}"),
         )
     })?;
-    let mut info = SecurityInfo::none();
-    if sd.owner_ref().is_some() {
-        info = info.with_owner();
+    let mut info = SecInfo::empty();
+    if sd.owner().is_some() {
+        info |= SecInfo::OWNER;
     }
-    if sd.group_ref().is_some() {
-        info = info.with_group();
+    if sd.group().is_some() {
+        info |= SecInfo::GROUP;
     }
     if sd.dacl().is_some() {
-        info = info.with_dacl();
+        info |= SecInfo::DACL;
     }
     if sd.sacl().is_some() {
-        info = if sacl_is_label {
-            info.with_label()
+        info |= if sacl_is_label {
+            SecInfo::LABEL
         } else {
-            info.with_sacl()
+            SecInfo::SACL
         };
     }
     Ok(info)
@@ -284,23 +286,16 @@ pub struct SdDisplay {
 /// without the KACS SD syscalls, a malformed descriptor — yields
 /// `SdDisplay::default()`, which a caller renders as `?`.
 pub fn read_sd_display(path: &Path, follow_symlinks: bool) -> SdDisplay {
-    let Some(path_str) = path.to_str() else {
+    let at_flags = if follow_symlinks { 0 } else { AT_SYMLINK_NOFOLLOW };
+    let Ok(blob) = file::get_sd(None, path, SecInfo::OWNER | SecInfo::DACL, at_flags) else {
         return SdDisplay::default();
     };
-    let target = SdTarget::Path {
-        dirfd: FDCWD,
-        path: path_str,
-        no_follow_symlinks: !follow_symlinks,
-    };
-    let Ok(blob) = libp_sd::get_sd(&target, SecurityInfo::owner().with_dacl()) else {
-        return SdDisplay::default();
-    };
-    let Ok(sd) = SecurityDescriptor::parse(&blob) else {
+    let Ok(sd) = SdView::parse(blob.as_bytes()) else {
         return SdDisplay::default();
     };
     SdDisplay {
-        owner: sd.owner_ref().map(|sid| sid.to_string()),
-        protected_dacl: sd.control & SE_DACL_PROTECTED != 0,
+        owner: sd.owner().map(|sid| sid.to_string()),
+        protected_dacl: sd.control().contains(Control::DACL_PROTECTED),
     }
 }
 
@@ -308,10 +303,6 @@ pub fn read_sd_display(path: &Path, follow_symlinks: bool) -> SdDisplay {
 mod tests {
     use super::*;
     use clap::Command;
-    use libp_sd::consts::{
-        DACL_SECURITY_INFORMATION, LABEL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
-        SE_DACL_PRESENT,
-    };
 
     fn parse(argv: &[&str]) -> UResult<Option<CreatorSd>> {
         let matches = Command::new("test")
@@ -331,10 +322,10 @@ mod tests {
         // nohup's built-in nohup.out descriptor: a protected DACL whose
         // only ACE grants the Owner Rights SID (S-1-3-4) full access.
         let creator = creator_sd_from_sddl("D:P(A;;FA;;;S-1-3-4)").unwrap();
-        assert_eq!(creator.info.bits(), DACL_SECURITY_INFORMATION);
-        let sd = SecurityDescriptor::parse(&creator.blob).unwrap();
-        assert!(sd.control & SE_DACL_PRESENT != 0);
-        assert!(sd.control & SE_DACL_PROTECTED != 0);
+        assert_eq!(creator.info, SecInfo::DACL);
+        let sd = SdView::parse(creator.sd.as_bytes()).unwrap();
+        assert!(sd.control().contains(Control::DACL_PRESENT));
+        assert!(sd.control().contains(Control::DACL_PROTECTED));
     }
 
     #[test]
@@ -345,22 +336,22 @@ mod tests {
     #[test]
     fn owner_alias_sets_owner_component() {
         let creator = parse(&["--owner", "BA"]).unwrap().unwrap();
-        assert_eq!(creator.info.bits(), OWNER_SECURITY_INFORMATION);
+        assert_eq!(creator.info, SecInfo::OWNER);
     }
 
     #[test]
     fn no_inherit_builds_empty_protected_dacl() {
         let creator = parse(&["--no-inherit"]).unwrap().unwrap();
-        assert_eq!(creator.info.bits(), DACL_SECURITY_INFORMATION);
-        let sd = SecurityDescriptor::parse(&creator.blob).unwrap();
-        assert!(sd.control & SE_DACL_PRESENT != 0);
-        assert!(sd.control & SE_DACL_PROTECTED != 0);
+        assert_eq!(creator.info, SecInfo::DACL);
+        let sd = SdView::parse(creator.sd.as_bytes()).unwrap();
+        assert!(sd.control().contains(Control::DACL_PRESENT));
+        assert!(sd.control().contains(Control::DACL_PROTECTED));
     }
 
     #[test]
     fn label_maps_to_label_component() {
         let creator = parse(&["--label", "high"]).unwrap().unwrap();
-        assert_eq!(creator.info.bits(), LABEL_SECURITY_INFORMATION);
+        assert_eq!(creator.info, SecInfo::LABEL);
     }
 
     #[test]
@@ -368,10 +359,7 @@ mod tests {
         let creator = parse(&["--owner", "BA", "--label", "medium"])
             .unwrap()
             .unwrap();
-        assert_eq!(
-            creator.info.bits(),
-            OWNER_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION
-        );
+        assert_eq!(creator.info, SecInfo::OWNER | SecInfo::LABEL);
     }
 
     #[test]
@@ -390,7 +378,7 @@ mod tests {
     #[test]
     fn label_sid_covers_every_level() {
         for level in LABEL_LEVELS {
-            let _ = label_sid(level);
+            let _ = label_rid(level);
         }
     }
 }

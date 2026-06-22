@@ -4,8 +4,8 @@ use crate::cmd::{OutputMode, parse_output_mode, parse_path_target, parse_sid_sty
 use crate::error::{Error, Result};
 use crate::render;
 use clap::ArgMatches;
-use libp_sd::{SecurityDescriptor, SecurityInfo, get_sd};
-use libp_sd::sddl;
+use peios::file::{SecInfo, get_sd};
+use peios::security::{SdView, sddl};
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
     let target = parse_path_target(matches)?;
@@ -14,8 +14,9 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     let want_sddl = matches.get_flag("sddl");
     let want_all = matches.get_flag("all");
 
-    let bytes = get_sd(&target.as_sd_target(), SecurityInfo::all())
-        .map_err(Error::from)?;
+    let all = SecInfo::OWNER | SecInfo::GROUP | SecInfo::DACL | SecInfo::SACL | SecInfo::LABEL;
+    let sd = get_sd(target.dirfd(), target.as_path(), all, target.at_flags()).map_err(Error::from)?;
+    let bytes = sd.as_bytes();
 
     if bytes.is_empty() {
         // Kernel has no SD recorded for this object — implicit default applies.
@@ -29,12 +30,9 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
         return Ok(());
     }
 
-    let sd = SecurityDescriptor::parse(&bytes)
-        .map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
-
     if want_sddl {
         let sddl_str =
-            sddl::format(&sd).map_err(|e| Error::Invalid(format!("SDDL render: {e}")))?;
+            sddl::format(bytes).map_err(|e| Error::Invalid(format!("SDDL render: {e}")))?;
         if matches!(mode, OutputMode::Json) {
             let v = serde_json::json!({ "path": target.path, "sddl": sddl_str });
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
@@ -45,16 +43,19 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
         return Ok(());
     }
 
+    let view = SdView::parse(bytes)
+        .map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
+
     match mode {
         OutputMode::Human => {
-            print!("{}", render::sd_human(&target.path, &sd, style));
+            print!("{}", render::sd_human(&target.path, &view, style));
             if want_all {
                 println!("  Raw bytes: {} bytes", bytes.len());
-                println!("  Control (raw): 0x{:04x}", sd.control);
+                println!("  Control (raw): 0x{:04x}", view.control().bits());
             }
         }
         OutputMode::Json => {
-            let mut v = render::sd_json(&target.path, &sd);
+            let mut v = render::sd_json(&target.path, &view);
             if want_all {
                 v["raw_bytes_len"] = serde_json::json!(bytes.len());
             }

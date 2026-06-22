@@ -2,14 +2,14 @@
 // listed principals (both allow and deny). Refuses to leave a
 // present-but-empty DACL unless --allow-empty. Supports --recursive.
 
-use crate::cmd::dacl::{AclKind, filter_acl, is_explicit, write_acl};
+use crate::cmd::dacl::{AclKind, ace_mask_sid, filter_acl, is_explicit, write_acl};
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::principal;
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::Sid;
+use peios::security::Sid;
 use serde_json::json;
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -72,9 +72,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 
 fn apply_one(target: &PathTarget, principals: &[Sid], allow_empty: bool) -> Result<usize> {
     let (new_dacl, dropped) = filter_acl(target, AclKind::Dacl, |ace| {
-        if let Some((_, sid)) = ace.as_mask_sid() {
-            let owned = sid.to_owned();
-            !principals.contains(&owned)
+        if let Some((_, sid)) = ace_mask_sid(ace) {
+            !principals.contains(&sid)
         } else {
             true
         }
@@ -82,7 +81,7 @@ fn apply_one(target: &PathTarget, principals: &[Sid], allow_empty: bool) -> Resu
 
     if new_dacl.is_empty() && !allow_empty {
         let (_, also_dropped_inherited) = filter_acl(target, AclKind::Dacl, |ace| {
-            !is_explicit(ace) || ace.as_mask_sid().is_none()
+            !is_explicit(ace) || ace.sid().is_none()
         })?;
         if dropped > 0 || also_dropped_inherited > 0 {
             return Err(Error::Usage(format!(

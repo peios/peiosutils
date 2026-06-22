@@ -12,9 +12,25 @@ use crate::privs::{self, PrivSnapshot};
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::sid_render::{self, SidStyle};
 use crate::target::TargetSpec;
-use libp_token::{QueryClass, Token};
-use libp_token::uapi::KACS_TOKEN_QUERY;
+use peios::security::{Sid, SidRef};
+use peios::token::{Token, TokenAccess, TokenClass};
 use serde_json::json;
+
+const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
+
+/// Decode a SID-valued query class, matching the old typed `*_sid` accessors.
+fn query_sid(tok: &Token, class: TokenClass) -> Result<Sid> {
+    let buf = tok.query(class)?;
+    SidRef::from_bytes(&buf)
+        .map(SidRef::to_sid)
+        .ok_or_else(|| crate::error::Error::Decode("invalid SID payload".into()))
+}
+
+/// Decode a u32-valued query class.
+fn query_u32(tok: &Token, class: TokenClass) -> Result<u32> {
+    let buf = tok.query(class)?;
+    payload::parse_u32(&buf).map_err(crate::error::Error::Decode)
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ShowKind {
@@ -45,7 +61,7 @@ fn build_output(
     kind: ShowKind,
     target: &TargetSpec,
 ) -> Result<CmdOutput> {
-    let user = tok.user_sid()?;
+    let user = tok.user()?;
     let mut json = json!({
         "target": target.label(),
         "user": sid_render::render_json(&user),
@@ -56,8 +72,8 @@ fn build_output(
         ShowKind::Short => {
             lines.kv("user", sid_render::render(&user, style));
             if let Ok(sid) = tok.session_id() {
-                lines.kv("session", sid.to_string());
-                json["session_id"] = sid.into();
+                lines.kv("session", sid.0.to_string());
+                json["session_id"] = sid.0.into();
             }
             Ok(CmdOutput { human: lines, json })
         }
@@ -82,19 +98,19 @@ fn fill_principal_block(
     style: SidStyle,
 ) -> Result<()> {
     lines.section("principal");
-    let user = tok.user_sid()?;
+    let user = tok.user()?;
     lines.sid("user", &user, style);
     json["user"] = sid_render::render_json(&user);
 
-    if let Ok(owner) = tok.owner_sid() {
+    if let Ok(owner) = query_sid(tok, TokenClass(peios_sys::KACS_TOKEN_CLASS_OWNER)) {
         lines.sid("owner", &owner, style);
         json["owner"] = sid_render::render_json(&owner);
     }
-    if let Ok(group) = tok.primary_group_sid() {
+    if let Ok(group) = query_sid(tok, TokenClass(peios_sys::KACS_TOKEN_CLASS_PRIMARY_GROUP)) {
         lines.sid("primary_group", &group, style);
         json["primary_group"] = sid_render::render_json(&group);
     }
-    if let Ok(integrity) = tok.integrity_level() {
+    if let Ok(integrity) = query_sid(tok, TokenClass(peios_sys::KACS_TOKEN_CLASS_INTEGRITY_LEVEL)) {
         lines.sid("integrity", &integrity, style);
         json["integrity"] = sid_render::render_json(&integrity);
     }
@@ -103,19 +119,24 @@ fn fill_principal_block(
         lines.kv("type", s.clone());
         json["type"] = s.into();
     }
-    if let Ok(level) = tok.impersonation_level() {
-        let s = format!("{level:?}");
+    // The new typed Token has no impersonation-level / elevation-type
+    // accessor, so these are read raw as the underlying u32 and surfaced as
+    // the raw class value (the old code printed the libp enum's Debug form).
+    if let Ok(level) =
+        query_u32(tok, TokenClass(peios_sys::KACS_TOKEN_CLASS_IMPERSONATION_LEVEL))
+    {
+        let s = level.to_string();
         lines.kv("impersonation_level", s.clone());
-        json["impersonation_level"] = s.into();
+        json["impersonation_level"] = level.into();
     }
-    if let Ok(elev) = tok.elevation_type() {
-        let s = format!("{elev:?}");
+    if let Ok(elev) = query_u32(tok, TokenClass(peios_sys::KACS_TOKEN_CLASS_ELEVATION_TYPE)) {
+        let s = elev.to_string();
         lines.kv("elevation_type", s.clone());
-        json["elevation_type"] = s.into();
+        json["elevation_type"] = elev.into();
     }
     if let Ok(sid) = tok.session_id() {
-        lines.kv("session_id", sid.to_string());
-        json["session_id"] = sid.into();
+        lines.kv("session_id", sid.0.to_string());
+        json["session_id"] = sid.0.into();
     }
     Ok(())
 }
@@ -126,7 +147,7 @@ fn fill_groups(
     json: &mut serde_json::Value,
     style: SidStyle,
 ) -> Result<()> {
-    let buf = tok.query(QueryClass::Groups)?;
+    let buf = tok.query(TokenClass::GROUPS)?;
     let entries = payload::parse_sid_attrs_list(&buf)
         .map_err(crate::error::Error::Decode)?;
 
@@ -152,7 +173,7 @@ fn fill_groups(
 }
 
 fn fill_privs(tok: &Token, lines: &mut Lines, json: &mut serde_json::Value) -> Result<()> {
-    let buf = tok.query(QueryClass::Privileges)?;
+    let buf = tok.query(TokenClass::PRIVILEGES)?;
     let snap = privs::decode_privs_payload(&buf).map_err(crate::error::Error::Decode)?;
     render_privs_into(&snap, lines, json);
     Ok(())
@@ -195,9 +216,10 @@ fn fill_caps(
     json: &mut serde_json::Value,
     style: SidStyle,
 ) -> Result<()> {
-    let buf = match tok.query(QueryClass::Capabilities) {
+    let buf = match tok.query(TokenClass::CAPABILITIES) {
         Ok(b) => b,
-        Err(libp_token::Error::Syscall(e)) if e.raw() == 22 /* EINVAL: no caps on this token */ => {
+        // EINVAL: no caps on this token.
+        Err(e) if e.raw_os_error() == Some(22) => {
             return Ok(());
         }
         Err(e) => return Err(e.into()),

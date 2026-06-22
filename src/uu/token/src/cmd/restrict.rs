@@ -16,9 +16,13 @@ use crate::error::{Error, Result};
 use crate::privs;
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use libp_token::uapi::Sid;
-use libp_token::uapi::{KACS_TOKEN_DUPLICATE, KACS_TOKEN_QUERY};
+use peios::security::{Privileges, Sid};
+use peios::token::{RestrictFlags, RestrictSpec, TokenAccess};
 use serde_json::json;
+use std::os::fd::{AsRawFd, IntoRawFd};
+
+const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
+const KACS_TOKEN_DUPLICATE: u32 = TokenAccess::DUPLICATE.bits();
 
 pub fn run(
     matches: &clap::ArgMatches,
@@ -30,25 +34,20 @@ pub fn run(
     let restrict_sids = parse_sid_list(matches.get_one::<String>("restrict"))?;
     let flags = *matches.get_one::<u32>("flags").unwrap_or(&0);
 
-    let mut payload = Vec::new();
-    for idx in &deny_indices {
-        payload.extend_from_slice(&idx.to_le_bytes());
-    }
-    for sid in &restrict_sids {
-        payload.extend_from_slice(&sid.encode());
-    }
-
     // KACS requires the source token be opened with QUERY|DUPLICATE
     // (kernel snapshots privileges/groups out of it). DUPLICATE alone is
     // not enough; we request the union.
     let tok = target.open(KACS_TOKEN_QUERY | KACS_TOKEN_DUPLICATE)?;
-    let new_tok = tok.restrict(
-        drop_mask,
-        deny_indices.len() as u32,
-        restrict_sids.len() as u32,
-        &payload,
-        flags,
-    )?;
+    // The new typed `RestrictSpec` carries the deny-index list and restricting
+    // SIDs as owned vectors; peios marshals the wire payload internally, so we
+    // no longer hand-encode the deny-indices + SID blob ourselves.
+    let spec = RestrictSpec {
+        privs_to_delete: Privileges::from_bits_retain(drop_mask),
+        deny_group_indices: deny_indices.clone(),
+        restrict_sids: restrict_sids.clone(),
+        flags: RestrictFlags::from_bits_retain(flags),
+    };
+    let new_tok = tok.restrict(&spec)?;
 
     let mut lines = Lines::new();
     lines.section("restrict");
@@ -117,8 +116,9 @@ fn parse_sid_list(arg: Option<&String>) -> Result<Vec<Sid>> {
     let Some(s) = arg else { return Ok(Vec::new()) };
     let mut out = Vec::new();
     for tok in s.split(',').map(str::trim).filter(|t| !t.is_empty()) {
-        let sid = libp_sd::sddl::parse_sid(tok)
-            .map_err(|e| Error::Usage(format!("bad SID `{tok}`: {e:?}")))?;
+        let sid = tok
+            .parse::<Sid>()
+            .map_err(|e| Error::Usage(format!("bad SID `{tok}`: {e}")))?;
         out.push(sid);
     }
     Ok(out)

@@ -26,9 +26,9 @@ clap = { workspace = true }
 uucore = { workspace = true }
 fluent = { workspace = true }
 glob = { workspace = true }
-# Peios-native dependencies (libp-rs): not coreutils, not tracked against upstream.
-libp-event = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
-msgpack = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
+libc = { workspace = true }
+# Peios-native dependency: not coreutils, not tracked against upstream.
+peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
 
 [[bin]]
 name = "revstrm"

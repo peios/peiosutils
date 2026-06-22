@@ -7,9 +7,11 @@ use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use libp_token::{ImpersonationLevel, TokenType};
-use libp_token::uapi::KACS_TOKEN_DUPLICATE;
+use peios::token::{ImpersonationLevel, TokenAccess, TokenType};
 use serde_json::json;
+use std::os::fd::{AsRawFd, IntoRawFd};
+
+const KACS_TOKEN_DUPLICATE: u32 = TokenAccess::DUPLICATE.bits();
 
 pub fn run(
     matches: &clap::ArgMatches,
@@ -39,7 +41,7 @@ pub fn run(
     let access = *matches.get_one::<u32>("access").unwrap_or(&0);
 
     let tok = target.open(KACS_TOKEN_DUPLICATE)?;
-    let dup = tok.duplicate(access, token_type, level)?;
+    let dup = tok.duplicate(TokenAccess::from_bits_retain(access), token_type, level)?;
 
     let mut lines = Lines::new();
     lines.section("duplicate");

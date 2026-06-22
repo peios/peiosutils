@@ -1,11 +1,15 @@
 // ACE flag parsing (CI/OI/NP/IO/SA/FA).
 
 use crate::error::{Error, Result};
-use libp_sd::consts::{
-    ACE_FLAG_CONTAINER_INHERIT, ACE_FLAG_FAILED_ACCESS, ACE_FLAG_INHERIT_ONLY,
-    ACE_FLAG_INHERITED, ACE_FLAG_NO_PROPAGATE_INHERIT, ACE_FLAG_OBJECT_INHERIT,
-    ACE_FLAG_SUCCESSFUL_ACCESS,
-};
+
+// ACE flag wire bits (u8), from the peios-sys bindgen constants.
+const ACE_FLAG_OBJECT_INHERIT: u8 = peios_sys::KACS_ACE_FLAG_OBJECT_INHERIT as u8;
+const ACE_FLAG_CONTAINER_INHERIT: u8 = peios_sys::KACS_ACE_FLAG_CONTAINER_INHERIT as u8;
+const ACE_FLAG_NO_PROPAGATE_INHERIT: u8 = peios_sys::KACS_ACE_FLAG_NO_PROPAGATE_INHERIT as u8;
+const ACE_FLAG_INHERIT_ONLY: u8 = peios_sys::KACS_ACE_FLAG_INHERIT_ONLY as u8;
+const ACE_FLAG_INHERITED: u8 = peios_sys::KACS_ACE_FLAG_INHERITED as u8;
+const ACE_FLAG_SUCCESSFUL_ACCESS: u8 = peios_sys::KACS_ACE_FLAG_SUCCESSFUL_ACCESS as u8;
+const ACE_FLAG_FAILED_ACCESS: u8 = peios_sys::KACS_ACE_FLAG_FAILED_ACCESS as u8;
 
 /// Parse a comma-separated flag list (`CI,OI,NP,IO,SA,FA`). The literal
 /// `none` collapses to 0.

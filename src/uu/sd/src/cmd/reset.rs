@@ -7,7 +7,8 @@ use crate::error::{Error, Result};
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::{SecurityInfo, get_sd, reinherit, set_sd};
+use peios::file::{SecInfo, get_sd, set_sd};
+use peios::security::reinherit;
 use serde_json::json;
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -52,31 +53,38 @@ fn apply_one(target: &PathTarget) -> Result<()> {
         path: parent_path,
         no_follow_symlinks: target.no_follow_symlinks,
     };
-    let parent_bytes =
-        get_sd(&parent_target.as_sd_target(), SecurityInfo::dacl()).map_err(Error::from)?;
-    let child_bytes =
-        get_sd(&target.as_sd_target(), SecurityInfo::dacl()).map_err(Error::from)?;
+    let parent_sd = get_sd(
+        parent_target.dirfd(),
+        parent_target.as_path(),
+        SecInfo::DACL,
+        parent_target.at_flags(),
+    )
+    .map_err(Error::from)?;
+    let child_sd = get_sd(target.dirfd(), target.as_path(), SecInfo::DACL, target.at_flags())
+        .map_err(Error::from)?;
+    let child_bytes = child_sd.as_bytes();
     if child_bytes.is_empty() {
         return Err(Error::Invalid(format!(
             "{}: no SD recorded; nothing to reset",
             target.path
         )));
     }
-    let parent_for_inherit = if parent_bytes.is_empty() {
-        empty_self_relative_sd()
+    let empty;
+    let parent_for_inherit: &[u8] = if parent_sd.as_bytes().is_empty() {
+        empty = crate::cmd::empty_self_relative_sd();
+        &empty
     } else {
-        parent_bytes
+        parent_sd.as_bytes()
     };
     let new_sd =
-        reinherit(&parent_for_inherit, &child_bytes, child_is_container).map_err(Error::from)?;
-    set_sd(&target.as_sd_target(), SecurityInfo::dacl(), &new_sd).map_err(Error::from)?;
+        reinherit(parent_for_inherit, child_bytes, child_is_container).map_err(Error::from)?;
+    set_sd(
+        target.dirfd(),
+        target.as_path(),
+        SecInfo::DACL,
+        &new_sd,
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     Ok(())
-}
-
-fn empty_self_relative_sd() -> Vec<u8> {
-    use libp_sd::consts::{SD_HEADER_BYTES, SE_SELF_RELATIVE};
-    let mut out = vec![0u8; SD_HEADER_BYTES];
-    out[0] = 1;
-    out[2..4].copy_from_slice(&SE_SELF_RELATIVE.to_le_bytes());
-    out
 }

@@ -5,9 +5,11 @@ use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use libp_token::Token;
-use libp_token::uapi::KACS_TOKEN_QUERY;
+use peios::token::{SessionId, Token, TokenAccess};
 use serde_json::json;
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+
+const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
 
 pub fn link(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
     let elevated_fd = *matches
@@ -23,9 +25,11 @@ pub fn link(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
     // The caller hands us raw fds. We wrap them in Tokens just long enough
     // to call the ioctl; both Tokens close on drop, which is what we want
     // (the link is persisted kernel-side, not via the fds).
-    let elevated = unsafe { Token::from_raw_fd(elevated_fd) };
-    let filtered = unsafe { Token::from_raw_fd(filtered_fd) };
-    let result = elevated.link_tokens(&filtered, session_id);
+    // SAFETY: the caller owns these fds; we wrap them only for the call and
+    // reclaim the raw fds below so we never close them.
+    let elevated = Token::from(unsafe { OwnedFd::from_raw_fd(elevated_fd) });
+    let filtered = Token::from(unsafe { OwnedFd::from_raw_fd(filtered_fd) });
+    let result = Token::link(&elevated, &filtered, SessionId(session_id));
 
     // Reclaim the fds so we don't double-close: the caller is the fd owner.
     let _ = elevated.into_raw_fd();
@@ -47,7 +51,7 @@ pub fn link(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
 
 pub fn linked(target: TargetSpec, mode: OutputMode) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let linked = tok.linked_token()?;
+    let linked = tok.linked()?;
     let fd = linked.as_raw_fd();
     let raw_fd = linked.into_raw_fd();
     let mut lines = Lines::new();

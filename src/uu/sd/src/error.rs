@@ -1,7 +1,6 @@
 // Error type for pu_sd. Mirrors pu_token's shape.
 
-use libp_sd::Error as SdError;
-use libp_token::uapi::Errno;
+use peios::Error as PeiosError;
 use std::fmt;
 use thiserror::Error;
 
@@ -33,7 +32,7 @@ pub struct ErrnoDisplay(pub i32);
 
 impl fmt::Display for ErrnoDisplay {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", Errno::new(self.0))
+        write!(f, "{}", std::io::Error::from_raw_os_error(self.0))
     }
 }
 
@@ -49,30 +48,24 @@ impl Error {
     }
 }
 
-impl From<SdError> for Error {
-    fn from(e: SdError) -> Self {
-        match e {
-            SdError::Syscall(errno) => {
-                let raw = errno.raw();
-                if raw == -libc::EACCES || raw == -libc::EPERM {
-                    Error::Denied {
-                        what: "kacs SD syscall".to_string(),
-                        errno: raw,
-                    }
-                } else {
-                    Error::Syscall {
-                        op: "kacs SD syscall".to_string(),
-                        errno: ErrnoDisplay(raw),
-                    }
-                }
+impl From<PeiosError> for Error {
+    fn from(e: PeiosError) -> Self {
+        // peios::Error is an io::Error-like wrapper over `errno`; the raw value
+        // is always present for an OS error. EACCES / EPERM map to a denial,
+        // ENOENT to NotFound, everything else to a generic syscall error.
+        let raw = e.raw_os_error().unwrap_or(0);
+        if raw == libc::EACCES || raw == libc::EPERM {
+            Error::Denied {
+                what: "kacs SD syscall".to_string(),
+                errno: raw,
             }
-            SdError::Parse(p) => Error::Invalid(format!("parse: {p}")),
-            SdError::BufferTooSmall { needed } => Error::Invalid(format!(
-                "get_sd buffer too small (needs {needed} bytes)"
-            )),
-            SdError::Encode(s) => Error::Invalid(format!("encode: {s}")),
-            SdError::Sddl(s) => Error::Invalid(format!("SDDL: {s}")),
-            other => Error::Invalid(format!("libp-sd: {other}")),
+        } else if raw == libc::ENOENT {
+            Error::NotFound(format!("kacs SD syscall: {e}"))
+        } else {
+            Error::Syscall {
+                op: "kacs SD syscall".to_string(),
+                errno: ErrnoDisplay(raw),
+            }
         }
     }
 }

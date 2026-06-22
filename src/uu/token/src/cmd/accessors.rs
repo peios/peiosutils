@@ -9,10 +9,21 @@ use crate::privs;
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::sid_render::{self, SidStyle};
 use crate::target::TargetSpec;
-use libp_token::{QueryClass, Token};
-use libp_token::uapi::SidRef;
-use libp_token::uapi::{KACS_TOKEN_QUERY, KACS_TOKEN_QUERY_SOURCE};
+use peios::security::{Sid, SidRef};
+use peios::token::{Token, TokenAccess, TokenClass};
 use serde_json::json;
+
+const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
+const KACS_TOKEN_QUERY_SOURCE: u32 = TokenAccess::QUERY_SOURCE.bits();
+
+/// Decode a SID-valued query class (OWNER / PRIMARY_GROUP / INTEGRITY_LEVEL),
+/// matching the old typed accessors that returned a `Sid`.
+fn query_sid(tok: &Token, class: TokenClass, what: &str) -> Result<Sid> {
+    let buf = tok.query(class)?;
+    SidRef::from_bytes(&buf)
+        .map(SidRef::to_sid)
+        .ok_or_else(|| Error::Decode(format!("{what}: invalid SID payload")))
+}
 
 // ---------------------------------------------------------------------------
 // Single-SID accessors.
@@ -25,7 +36,7 @@ pub fn user(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let sid = tok.user_sid()?;
+    let sid = tok.user()?;
     emit_sid("user", &sid, style, mode)
 }
 
@@ -36,7 +47,7 @@ pub fn owner(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let sid = tok.owner_sid()?;
+    let sid = query_sid(&tok, TokenClass(peios_sys::KACS_TOKEN_CLASS_OWNER), "owner")?;
     emit_sid("owner", &sid, style, mode)
 }
 
@@ -47,7 +58,11 @@ pub fn group(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let sid = tok.primary_group_sid()?;
+    let sid = query_sid(
+        &tok,
+        TokenClass(peios_sys::KACS_TOKEN_CLASS_PRIMARY_GROUP),
+        "primary_group",
+    )?;
     emit_sid("primary_group", &sid, style, mode)
 }
 
@@ -58,13 +73,17 @@ pub fn integrity(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let sid = tok.integrity_level()?;
+    let sid = query_sid(
+        &tok,
+        TokenClass(peios_sys::KACS_TOKEN_CLASS_INTEGRITY_LEVEL),
+        "integrity",
+    )?;
     emit_sid("integrity", &sid, style, mode)
 }
 
 fn emit_sid(
     key: &str,
-    sid: &libp_token::uapi::Sid,
+    sid: &Sid,
     style: SidStyle,
     mode: OutputMode,
 ) -> Result<()> {
@@ -85,7 +104,7 @@ pub fn groups(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    sid_attrs_list(&tok, QueryClass::Groups, "groups", style, mode)
+    sid_attrs_list(&tok, TokenClass::GROUPS, "groups", style, mode)
 }
 
 pub fn caps(
@@ -95,12 +114,12 @@ pub fn caps(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    sid_attrs_list(&tok, QueryClass::Capabilities, "capabilities", style, mode)
+    sid_attrs_list(&tok, TokenClass::CAPABILITIES, "capabilities", style, mode)
 }
 
 fn sid_attrs_list(
     tok: &Token,
-    class: QueryClass,
+    class: TokenClass,
     label: &str,
     style: SidStyle,
     mode: OutputMode,
@@ -134,7 +153,7 @@ fn sid_attrs_list(
 
 pub fn privs(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let buf = tok.query(QueryClass::Privileges)?;
+    let buf = tok.query(TokenClass::PRIVILEGES)?;
     let snap = privs::decode_privs_payload(&buf).map_err(Error::Decode)?;
 
     let mut lines = Lines::new();
@@ -177,7 +196,7 @@ pub fn privs(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) 
 
 pub fn stats(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let buf = tok.query(QueryClass::Statistics)?;
+    let buf = tok.query(TokenClass(peios_sys::KACS_TOKEN_CLASS_STATISTICS))?;
     let s = payload::parse_statistics(&buf).map_err(Error::Decode)?;
     let mut lines = Lines::new();
     lines.section("statistics");
@@ -191,7 +210,7 @@ pub fn stats(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) 
 pub fn source(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     // KACS_TOKEN_QUERY_SOURCE is a distinct right.
     let tok = target.open(KACS_TOKEN_QUERY_SOURCE)?;
-    let buf = tok.query(QueryClass::Source)?;
+    let buf = tok.query(TokenClass(peios_sys::KACS_TOKEN_CLASS_SOURCE))?;
     let s = payload::parse_source(&buf).map_err(Error::Decode)?;
     let mut lines = Lines::new();
     lines.section("source");
@@ -208,7 +227,7 @@ pub fn source(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode)
 
 pub fn origin(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let buf = tok.query(QueryClass::Origin)?;
+    let buf = tok.query(TokenClass(peios_sys::KACS_TOKEN_CLASS_ORIGIN))?;
     let v = payload::parse_origin(&buf).map_err(Error::Decode)?;
     let mut lines = Lines::new();
     lines.kv("origin", format!("0x{:016x}", v));
@@ -223,14 +242,15 @@ pub fn logon(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let logon_type = payload::parse_u32(&tok.query(QueryClass::LogonType)?)
-        .map_err(Error::Decode)?;
-    let logon_sid_bytes = tok.query(QueryClass::LogonSid)?;
+    let logon_type =
+        payload::parse_u32(&tok.query(TokenClass(peios_sys::KACS_TOKEN_CLASS_LOGON_TYPE))?)
+            .map_err(Error::Decode)?;
+    let logon_sid_bytes = tok.query(TokenClass(peios_sys::KACS_TOKEN_CLASS_LOGON_SID))?;
     let logon_sid = if logon_sid_bytes.is_empty() {
         None
     } else {
-        let (sref, _) = SidRef::parse(&logon_sid_bytes)
-            .map_err(|e| Error::Decode(format!("logon_sid: {e:?}")))?;
+        let sref = SidRef::from_bytes(&logon_sid_bytes)
+            .ok_or_else(|| Error::Decode("logon_sid: invalid SID".into()))?;
         Some(sref.to_owned())
     };
 
@@ -253,7 +273,7 @@ pub fn default_dacl(
     mode: OutputMode,
 ) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let buf = tok.query(QueryClass::DefaultDacl)?;
+    let buf = tok.query(TokenClass::DEFAULT_DACL)?;
     let mut lines = Lines::new();
     lines.section("default_dacl");
     lines.kv("bytes_len", buf.len().to_string());
@@ -274,8 +294,12 @@ pub fn default_dacl(
 
 pub fn claims(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let tok = target.open(KACS_TOKEN_QUERY)?;
-    let user = tok.query(QueryClass::UserClaims).unwrap_or_default();
-    let device = tok.query(QueryClass::DeviceClaims).unwrap_or_default();
+    let user = tok
+        .query(TokenClass(peios_sys::KACS_TOKEN_CLASS_USER_CLAIMS))
+        .unwrap_or_default();
+    let device = tok
+        .query(TokenClass(peios_sys::KACS_TOKEN_CLASS_DEVICE_CLAIMS))
+        .unwrap_or_default();
 
     let mut lines = Lines::new();
     lines.section("claims");

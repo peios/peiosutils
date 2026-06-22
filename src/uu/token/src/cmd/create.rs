@@ -14,14 +14,15 @@
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines, OutputMode};
-use libp_token::Token;
+use peios::token::Token;
 use serde_json::json;
 use std::io::Read;
+use std::os::fd::{AsRawFd, IntoRawFd};
 use std::path::Path;
 
 pub fn create(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
     let spec = read_spec_input(matches)?;
-    let tok = Token::create(&spec)?;
+    let tok = Token::from_spec(&spec)?;
 
     let mut lines = Lines::new();
     lines.section("create");
@@ -38,7 +39,7 @@ pub fn create(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
 
 pub fn install(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
     let spec = read_spec_input(matches)?;
-    let tok = Token::create(&spec)?;
+    let tok = Token::from_spec(&spec)?;
     tok.install()?;
 
     let mut lines = Lines::new();

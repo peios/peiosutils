@@ -52,7 +52,7 @@ impl fmt::Display for Error {
                 needed_mask,
                 errno,
             } => {
-                let e = libp_token::uapi::Errno::new(*errno);
+                let e = peios::Error::from_raw_os_error(*errno);
                 write!(f, "{op}: {e}\n  target: {target}")?;
                 if let Some(mask) = needed_mask {
                     write!(
@@ -65,7 +65,7 @@ impl fmt::Display for Error {
             }
             Error::InvalidSpec(m) => write!(f, "invalid spec: {m}"),
             Error::Syscall { op, errno, detail } => {
-                let e = libp_token::uapi::Errno::new(*errno);
+                let e = peios::Error::from_raw_os_error(*errno);
                 write!(f, "{op}: {e}")?;
                 if let Some(d) = detail {
                     write!(f, " ({d})")?;
@@ -79,25 +79,22 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-impl From<libp_token::Error> for Error {
-    fn from(e: libp_token::Error) -> Self {
-        use libp_token::Error as LE;
-        match e {
-            LE::Syscall(errno) => Error::Syscall {
-                op: "libp-token syscall",
-                errno: errno.raw(),
+impl From<peios::Error> for Error {
+    fn from(e: peios::Error) -> Self {
+        // The new `peios::Error` is an `io::Error`-like wrapper over `errno`;
+        // it no longer distinguishes the old `QueryTruncated` /
+        // `UnknownDiscriminant` decode variants, so every peios error maps to a
+        // syscall error carrying its raw errno.
+        match e.raw_os_error() {
+            Some(errno) => Error::Syscall {
+                op: "peios syscall",
+                errno,
                 detail: None,
             },
-            LE::QueryTruncated { expected, got } => Error::Decode(format!(
-                "query truncated: expected {expected} bytes, got {got}"
-            )),
-            LE::UnknownDiscriminant { kind, value } => {
-                Error::Decode(format!("unknown {kind} discriminant: 0x{value:x}"))
-            }
-            other => Error::Syscall {
-                op: "libp-token",
+            None => Error::Syscall {
+                op: "peios",
                 errno: 0,
-                detail: Some(format!("{other:?}")),
+                detail: Some(e.to_string()),
             },
         }
     }

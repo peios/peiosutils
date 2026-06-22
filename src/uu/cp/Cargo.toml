@@ -37,7 +37,6 @@ indicatif = { workspace = true }
 thiserror = { workspace = true }
 fluent = { workspace = true }
 rustix = { workspace = true }
-libp-files = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0" }
 
 [target.'cfg(unix)'.dependencies]
 nix = { workspace = true, features = ["fs"] }

@@ -9,61 +9,74 @@
 //   5. Raw SID                  — `S-1-5-32-544`
 //
 // Domain-relative aliases (DA/DG/DU/...) parse-error with a hint about the
-// missing identity backend; same message libp-sd's SDDL parser uses.
+// missing identity backend; same message the SDDL parser uses.
+//
+// Migrated to the `peios` crate: SIDs are now `peios::security::Sid` (an owned,
+// `Copy` inline buffer that derefs to `SidRef`). Construction is via
+// `str::parse::<Sid>()` (which handles "S-1-…" literals and SDDL aliases) or
+// `Sid::build` for raw authority/sub-authority assembly; the old
+// `WellKnownSid::to_sid` table is re-expressed as canonical SID strings.
 
 use crate::error::{Error, Result};
-use libp_sd::WellKnownSid;
-use libp_token::Token;
-use libp_sd::Sid;
+use peios::security::Sid;
+use peios::token::{Token, TokenAccess};
 
 /// MS-DTYP §2.4.2.4 — `PRINCIPAL_SELF` (S-1-5-10). The kernel substitutes
 /// the SD's owner SID at access-check time when it sees this in an ACE.
 fn principal_self() -> Sid {
-    Sid::new(1, 5, vec![10])
+    Sid::build(5, &[10]).expect("S-1-5-10 always encodes")
 }
 
-/// Well-known short labels (Peios canonical) and SDDL two-letter aliases.
-const LABELED_SIDS: &[(&str, WellKnownSid)] = &[
-    ("Null", WellKnownSid::Null),
-    ("Everyone", WellKnownSid::Everyone),
-    ("World", WellKnownSid::Everyone),
-    ("Anonymous", WellKnownSid::Anonymous),
-    ("AuthenticatedUsers", WellKnownSid::AuthenticatedUsers),
-    ("Authenticated", WellKnownSid::AuthenticatedUsers),
-    ("LocalSystem", WellKnownSid::LocalSystem),
-    ("System", WellKnownSid::LocalSystem),
-    ("LocalService", WellKnownSid::LocalService),
-    ("NetworkService", WellKnownSid::NetworkService),
-    ("Administrators", WellKnownSid::BuiltinAdministrators),
-    ("Users", WellKnownSid::BuiltinUsers),
-    ("UntrustedIl", WellKnownSid::UntrustedIl),
-    ("LowIl", WellKnownSid::LowIl),
-    ("MediumIl", WellKnownSid::MediumIl),
-    ("MediumPlusIl", WellKnownSid::MediumPlusIl),
-    ("HighIl", WellKnownSid::HighIl),
-    ("SystemIl", WellKnownSid::SystemIl),
-    ("ProtectedProcessIl", WellKnownSid::ProtectedProcessIl),
+/// Well-known short labels (Peios canonical) and SDDL two-letter aliases, as
+/// canonical SID strings. (The new `peios::security::WellKnown` enum lacks the
+/// integrity-label and `BUILTIN\Users` variants, so a string table — fed to
+/// `str::parse::<Sid>()` — is used uniformly.)
+const LABELED_SIDS: &[(&str, &str)] = &[
+    ("Null", "S-1-0-0"),
+    ("Everyone", "S-1-1-0"),
+    ("World", "S-1-1-0"),
+    ("Anonymous", "S-1-5-7"),
+    ("AuthenticatedUsers", "S-1-5-11"),
+    ("Authenticated", "S-1-5-11"),
+    ("LocalSystem", "S-1-5-18"),
+    ("System", "S-1-5-18"),
+    ("LocalService", "S-1-5-19"),
+    ("NetworkService", "S-1-5-20"),
+    ("Administrators", "S-1-5-32-544"),
+    ("Users", "S-1-5-32-545"),
+    ("UntrustedIl", "S-1-16-0"),
+    ("LowIl", "S-1-16-4096"),
+    ("MediumIl", "S-1-16-8192"),
+    ("MediumPlusIl", "S-1-16-8448"),
+    ("HighIl", "S-1-16-12288"),
+    ("SystemIl", "S-1-16-16384"),
+    ("ProtectedProcessIl", "S-1-16-20480"),
 ];
 
-const SDDL_ALIASES: &[(&str, WellKnownSid)] = &[
-    ("WD", WellKnownSid::Everyone),
-    ("AN", WellKnownSid::Anonymous),
-    ("AU", WellKnownSid::AuthenticatedUsers),
-    ("SY", WellKnownSid::LocalSystem),
-    ("LS", WellKnownSid::LocalService),
-    ("NS", WellKnownSid::NetworkService),
-    ("BA", WellKnownSid::BuiltinAdministrators),
-    ("BU", WellKnownSid::BuiltinUsers),
-    ("LW", WellKnownSid::LowIl),
-    ("ME", WellKnownSid::MediumIl),
-    ("MP", WellKnownSid::MediumPlusIl),
-    ("HI", WellKnownSid::HighIl),
-    ("SI", WellKnownSid::SystemIl),
+const SDDL_ALIASES: &[(&str, &str)] = &[
+    ("WD", "S-1-1-0"),
+    ("AN", "S-1-5-7"),
+    ("AU", "S-1-5-11"),
+    ("SY", "S-1-5-18"),
+    ("LS", "S-1-5-19"),
+    ("NS", "S-1-5-20"),
+    ("BA", "S-1-5-32-544"),
+    ("BU", "S-1-5-32-545"),
+    ("LW", "S-1-16-4096"),
+    ("ME", "S-1-16-8192"),
+    ("MP", "S-1-16-8448"),
+    ("HI", "S-1-16-12288"),
+    ("SI", "S-1-16-16384"),
 ];
 
 const DOMAIN_RELATIVE: &[&str] = &[
     "DA", "DG", "DU", "DD", "DC", "LA", "LG", "SA", "EA", "RO", "CA", "PA", "CN", "RS", "RU",
 ];
+
+fn sid_from_str(s: &str) -> Result<Sid> {
+    s.parse::<Sid>()
+        .map_err(|e| Error::Invalid(format!("SID `{s}` did not parse: {e}")))
+}
 
 /// Parse a principal string to a SID.
 pub fn parse(s: &str) -> Result<Sid> {
@@ -91,12 +104,12 @@ pub fn parse(s: &str) -> Result<Sid> {
 
     for &(name, sid) in LABELED_SIDS {
         if name.eq_ignore_ascii_case(t) {
-            return Ok(sid.to_sid());
+            return sid_from_str(sid);
         }
     }
     for &(code, sid) in SDDL_ALIASES {
         if code == t {
-            return Ok(sid.to_sid());
+            return sid_from_str(sid);
         }
     }
     if DOMAIN_RELATIVE.contains(&t) {
@@ -112,46 +125,43 @@ pub fn parse(s: &str) -> Result<Sid> {
 
 /// Parse an `S-1-...` literal.
 fn parse_raw_sid(s: &str) -> Result<Sid> {
+    // The new `Sid: FromStr` parses the canonical `S-R-A-…` form directly,
+    // including hex (`0x…`) authorities. Preserve the old, friendlier
+    // diagnostics by validating the shape first, then delegating.
     let mut parts = s.split('-');
     let prefix = parts.next();
     if !matches!(prefix, Some("S") | Some("s")) {
         return Err(Error::Usage(format!("not a raw SID: `{s}`")));
     }
-    let revision: u8 = parts
+    parts
         .next()
         .ok_or_else(|| Error::Usage(format!("SID `{s}` missing revision")))?
-        .parse()
+        .parse::<u8>()
         .map_err(|_| Error::Usage(format!("SID `{s}` revision is not a number")))?;
     let authority_str = parts
         .next()
         .ok_or_else(|| Error::Usage(format!("SID `{s}` missing authority")))?;
-    let authority: u64 = if let Some(hex) = authority_str.strip_prefix("0x") {
+    if let Some(hex) = authority_str.strip_prefix("0x") {
         u64::from_str_radix(hex, 16)
-            .map_err(|_| Error::Usage(format!("SID `{s}` authority is not a number")))?
+            .map_err(|_| Error::Usage(format!("SID `{s}` authority is not a number")))?;
     } else {
         authority_str
-            .parse()
-            .map_err(|_| Error::Usage(format!("SID `{s}` authority is not a number")))?
-    };
-    let subs: std::result::Result<Vec<u32>, _> = parts.map(str::parse).collect();
-    let subs = subs.map_err(|_| Error::Usage(format!("SID `{s}` has a non-numeric subauthority")))?;
-    Ok(Sid::new(revision, authority, subs))
+            .parse::<u64>()
+            .map_err(|_| Error::Usage(format!("SID `{s}` authority is not a number")))?;
+    }
+    for sub in parts {
+        sub.parse::<u32>()
+            .map_err(|_| Error::Usage(format!("SID `{s}` has a non-numeric subauthority")))?;
+    }
+    sid_from_str(s)
 }
 
 /// Open the caller's own token and read its user SID.
 fn resolve_self() -> Result<Sid> {
-    use libp_token::SelfOpenFlags;
-    use libp_token::uapi::KACS_TOKEN_QUERY;
-    let tok = Token::open_self(
-        SelfOpenFlags {
-            real_token: false,
-            ..Default::default()
-        },
-        KACS_TOKEN_QUERY,
-    )
-    .map_err(|e| Error::Invalid(format!("open self token: {e}")))?;
+    let tok = Token::open_self(false, TokenAccess::QUERY)
+        .map_err(|e| Error::Invalid(format!("open self token: {e}")))?;
     let user = tok
-        .user_sid()
+        .user()
         .map_err(|e| Error::Invalid(format!("read user SID: {e}")))?;
     Ok(user)
 }
@@ -162,32 +172,29 @@ mod tests {
 
     #[test]
     fn parses_well_known_labels() {
-        assert_eq!(parse("Everyone").unwrap(), WellKnownSid::Everyone.to_sid());
-        assert_eq!(parse("System").unwrap(), WellKnownSid::LocalSystem.to_sid());
+        assert_eq!(parse("Everyone").unwrap(), sid_from_str("S-1-1-0").unwrap());
+        assert_eq!(parse("System").unwrap(), sid_from_str("S-1-5-18").unwrap());
         assert_eq!(
             parse("Administrators").unwrap(),
-            WellKnownSid::BuiltinAdministrators.to_sid()
+            sid_from_str("S-1-5-32-544").unwrap()
         );
     }
 
     #[test]
     fn parses_sddl_aliases() {
-        assert_eq!(parse("SY").unwrap(), WellKnownSid::LocalSystem.to_sid());
-        assert_eq!(
-            parse("BA").unwrap(),
-            WellKnownSid::BuiltinAdministrators.to_sid()
-        );
+        assert_eq!(parse("SY").unwrap(), sid_from_str("S-1-5-18").unwrap());
+        assert_eq!(parse("BA").unwrap(), sid_from_str("S-1-5-32-544").unwrap());
     }
 
     #[test]
     fn parses_raw_sid() {
         let sid = parse("S-1-5-32-544").unwrap();
-        assert_eq!(sid, WellKnownSid::BuiltinAdministrators.to_sid());
+        assert_eq!(sid, sid_from_str("S-1-5-32-544").unwrap());
     }
 
     #[test]
     fn principal_self_is_s_1_5_10() {
-        assert_eq!(parse("@owner").unwrap(), Sid::new(1, 5, vec![10]));
+        assert_eq!(parse("@owner").unwrap(), Sid::build(5, &[10]).unwrap());
     }
 
     #[test]
