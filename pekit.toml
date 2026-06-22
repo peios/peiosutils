@@ -6,11 +6,10 @@
 # The Peios-native + SD-aware tools link libpeios (the userspace C ABI) through
 # the `peios` crate, so the build needs libpeios's headers + .so (peios-sys
 # bindgens against the headers and links the runtime object) and clang (for
-# bindgen). In a self-hosting build root these come from the libpeios-devel +
-# kernel-headers packages, and build.main points peios-sys at the installed
-# /usr locations. Out-of-build dev instead uses the vendored deps/ tree (see
-# deps/README.md), which .cargo/config.toml wires up by default — build.main's
-# explicit PEIOS_* exports override it.
+# bindgen). libpeios is supplied by the vendored deps/ tree (deps/refresh.sh) —
+# the build bridge until the root self-hosts libpeios-devel + kernel-headers;
+# .cargo/config.toml points peios-sys at it via relative PEIOS_* env. When those
+# packages exist, drop deps/ and let peios-sys resolve via the shipped peios.pc.
 
 out_dir = "out"
 
@@ -23,14 +22,15 @@ for tool in cargo rustc gcc; do
   command -v "$tool" >/dev/null || { echo "missing required peiosutils build tool: $tool" >&2; exit 1; }
 done
 
-TRIPLET=x86_64-linux-peios
-
-# libpeios from the build root: libpeios-devel installs <peios/*.h> + the *.so
-# linker symlink; kernel-headers installs <pkm/*.h>. Point peios-sys at the
-# installed locations, overriding the deps/ vendor wired in .cargo/config.toml.
-export PEIOS_LIB_DIR="/usr/lib/$TRIPLET"
-export PEIOS_INCLUDE="/usr/include"
-export PKM_UAPI="/usr/include"
+# libpeios comes from the vendored deps/ tree (headers + pkm uapi headers +
+# libpeios.so) — the build bridge until the root self-hosts libpeios-devel +
+# kernel-headers. peios-sys reads its location from .cargo/config.toml's relative
+# PEIOS_* env (PEIOS_LIB_DIR=deps/lib, PEIOS_INCLUDE/PKM_UAPI=deps/include), so we
+# only need to ensure the tree is populated. See deps/README.md.
+[ -d deps/lib ] && [ -d deps/include/peios ] || {
+  echo "deps/ is not vendored — run ./deps/refresh.sh (or LIBPEIOS=.. PKM=.. ./deps/refresh.sh)" >&2
+  exit 1
+}
 
 # Full *nix applet set, one multi-call binary.
 cargo build --release --locked --no-default-features --features feat_os_unix
@@ -40,8 +40,9 @@ mkdir -p "$PEKIT_OUT/$BINDIR"
 install -m 0755 target/release/peiosutils "$PEKIT_OUT/$BINDIR/coreutils"
 
 # One symlink per applet -> the multi-call binary (busybox-style). The binary
-# links libpeios, so enumerating applets needs libpeios.so.0 on the loader path.
-LD_LIBRARY_PATH="/usr/lib/$TRIPLET" target/release/peiosutils --list \
+# links libpeios, so enumerating applets needs libpeios.so.0 on the loader path
+# (the vendored copy under deps/lib).
+LD_LIBRARY_PATH="$PWD/deps/lib" target/release/peiosutils --list \
   | while IFS= read -r applet; do
       [ -n "$applet" ] || continue
       [ "$applet" = "coreutils" ] && continue
@@ -50,25 +51,22 @@ LD_LIBRARY_PATH="/usr/lib/$TRIPLET" target/release/peiosutils --list \
 """
 
 # Build deps. Rust toolchain (cargo + rustc) builds the workspace, gcc drives the
-# final link, clang supplies libclang for peios-sys's bindgen run, and
-# libpeios-devel + kernel-headers provide the headers/.so peios-sys binds and
-# links. (Until the build root ships libpeios-devel + kernel-headers, build via
-# the deps/ vendor + a plain `cargo build` instead — see deps/README.md.)
+# final link, clang supplies libclang for peios-sys's bindgen run. libpeios's
+# headers/.so come from the vendored deps/ tree (deps/refresh.sh) rather than a
+# build-dep package, until the build root self-hosts libpeios-devel +
+# kernel-headers — then drop deps/ and add those two here (peios-sys resolves via
+# the shipped peios.pc).
 [build.main.dependencies.peipkg]
 cargo = "*"
 rust = "*"
 gcc = "*"
 clang = "*"
-libpeios-devel = "*"
-kernel-headers = "*"
 
 [build.main.dependencies.apt]
 cargo = "*"
 rustc = "*"
 gcc = "*"
 "libclang-dev" = "*"
-# libpeios-devel + kernel-headers are Peios-native — no apt equivalent. An
-# apt/bootstrap build must supply libpeios out of band (deps/refresh.sh).
 
 [clean]
 command = "cargo clean"
