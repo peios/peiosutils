@@ -43,6 +43,12 @@ BINDIR="usr/bin"
 SHAREDIR="usr/share"
 export LD_LIBRARY_PATH="$SRC/deps/lib"   # the multicall links libpeios; needed to run it
 
+# peios-sys runs bindgen against <peios.h>, whose includes need the freestanding
+# C headers (stddef.h, ...). A full clang ships them in its resource dir; if only
+# libclang is present (no resource dir), point bindgen at GCC's freestanding
+# headers so the include resolves. Harmless when clang already has its own.
+export BINDGEN_EXTRA_CLANG_ARGS="-isystem $(gcc -print-file-name=include) ${BINDGEN_EXTRA_CLANG_ARGS:-}"
+
 # Full *nix applet set, one multi-call binary, with full DWARF embedded (for the
 # debug split below); libstdbuf is embedded (no external libexec object).
 CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=off \
