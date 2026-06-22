@@ -15,5 +15,11 @@ lib*.a
 # Provium guest binary build output (rebuilt from Dockerfile)
 /dist/
 
+# Vendored libpeios build artifacts (headers + .so/.a) — a temporary bridge
+# until the build root provides libpeios as a package (pkgs/). Regenerate with
+# deps/refresh.sh; the README + script stay tracked, the artifacts do not.
+/deps/include/
+/deps/lib/
+
 # Local planning scratch — util-linux/base-userland expansion inventory
 commands.md

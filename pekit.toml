@@ -1,0 +1,74 @@
+# peiosutils — the Peios coreutils: GNU-coreutils-compatible file/text utilities
+# (a uutils fork) plus the Peios-native KACS tools (token, sd, logonse, revstrm)
+# and the SD-aware file utilities. Packaged as a single multi-call binary
+# (`coreutils`) with one symlink per applet in /usr/bin, busybox-style.
+#
+# The Peios-native + SD-aware tools link libpeios (the userspace C ABI) through
+# the `peios` crate, so the build needs libpeios's headers + .so (peios-sys
+# bindgens against the headers and links the runtime object) and clang (for
+# bindgen). In a self-hosting build root these come from the libpeios-devel +
+# kernel-headers packages, and build.main points peios-sys at the installed
+# /usr locations. Out-of-build dev instead uses the vendored deps/ tree (see
+# deps/README.md), which .cargo/config.toml wires up by default — build.main's
+# explicit PEIOS_* exports override it.
+
+out_dir = "out"
+
+[build.main]
+command = """
+set -eu
+set -o pipefail 2>/dev/null || true
+
+for tool in cargo rustc gcc; do
+  command -v "$tool" >/dev/null || { echo "missing required peiosutils build tool: $tool" >&2; exit 1; }
+done
+
+TRIPLET=x86_64-linux-peios
+
+# libpeios from the build root: libpeios-devel installs <peios/*.h> + the *.so
+# linker symlink; kernel-headers installs <pkm/*.h>. Point peios-sys at the
+# installed locations, overriding the deps/ vendor wired in .cargo/config.toml.
+export PEIOS_LIB_DIR="/usr/lib/$TRIPLET"
+export PEIOS_INCLUDE="/usr/include"
+export PKM_UAPI="/usr/include"
+
+# Full *nix applet set, one multi-call binary.
+cargo build --release --locked --no-default-features --features feat_os_unix
+
+BINDIR="usr/bin"
+mkdir -p "$PEKIT_OUT/$BINDIR"
+install -m 0755 target/release/peiosutils "$PEKIT_OUT/$BINDIR/coreutils"
+
+# One symlink per applet -> the multi-call binary (busybox-style). The binary
+# links libpeios, so enumerating applets needs libpeios.so.0 on the loader path.
+LD_LIBRARY_PATH="/usr/lib/$TRIPLET" target/release/peiosutils --list \
+  | while IFS= read -r applet; do
+      [ -n "$applet" ] || continue
+      [ "$applet" = "coreutils" ] && continue
+      ln -sf coreutils "$PEKIT_OUT/$BINDIR/$applet"
+    done
+"""
+
+# Build deps. Rust toolchain (cargo + rustc) builds the workspace, gcc drives the
+# final link, clang supplies libclang for peios-sys's bindgen run, and
+# libpeios-devel + kernel-headers provide the headers/.so peios-sys binds and
+# links. (Until the build root ships libpeios-devel + kernel-headers, build via
+# the deps/ vendor + a plain `cargo build` instead — see deps/README.md.)
+[build.main.dependencies.peipkg]
+cargo = "*"
+rust = "*"
+gcc = "*"
+clang = "*"
+libpeios-devel = "*"
+kernel-headers = "*"
+
+[build.main.dependencies.apt]
+cargo = "*"
+rustc = "*"
+gcc = "*"
+"libclang-dev" = "*"
+# libpeios-devel + kernel-headers are Peios-native — no apt equivalent. An
+# apt/bootstrap build must supply libpeios out of band (deps/refresh.sh).
+
+[clean]
+command = "cargo clean"
