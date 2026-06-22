@@ -1,0 +1,20 @@
+# peiosutils-common — architecture-independent shared data carved from the
+# build.main tree: the generated man pages, zsh/bash/fish completions, and locale
+# message catalogs. Base metadata is inherited from package.pekit.toml and
+# overridden to noarch (text/data, no machine code).
+#
+# libstdbuf is embedded in the multi-call binary, so there is no /usr/libexec
+# object here (unlike Fedora's coreutils-common). The binaries work without this
+# package — it only adds docs + non-en-US locales — so peiosutils does not hard
+# depend on it.
+
+[package]
+architecture = "noarch"
+description = "Peios coreutils — man pages, shell completions, and locale data"
+
+[files]
+":usr/share/man/**"             = "usr/share/man/"
+":usr/share/zsh/**"             = "usr/share/zsh/"
+":usr/share/bash-completion/**" = "usr/share/bash-completion/"
+":usr/share/fish/**"            = "usr/share/fish/"
+":usr/share/locales/**"         = "usr/share/locales/"

@@ -1,7 +1,13 @@
 # peiosutils — the Peios coreutils: GNU-coreutils-compatible file/text utilities
 # (a uutils fork) plus the Peios-native KACS tools (token, sd, logonse, revstrm)
-# and the SD-aware file utilities. Packaged as a single multi-call binary
-# (`coreutils`) with one symlink per applet in /usr/bin, busybox-style.
+# and the SD-aware file utilities. A single multi-call binary (`coreutils`) with
+# one symlink per applet in /usr/bin, busybox-style.
+#
+# One build.main tree fans into several packages (the Fedora coreutils split):
+#   peiosutils             the multi-call binary + the /usr/bin applet symlinks
+#   peiosutils-common      man pages, shell completions, locale data (noarch)
+#   peiosutils-debuginfo   split DWARF (/usr/lib/debug)
+#   peiosutils-debugsource referenced Rust sources (/usr/src/debug)
 #
 # The Peios-native + SD-aware tools link libpeios (the userspace C ABI) through
 # the `peios` crate, so the build needs libpeios's headers + .so (peios-sys
@@ -18,7 +24,7 @@ command = """
 set -eu
 set -o pipefail 2>/dev/null || true
 
-for tool in cargo rustc gcc; do
+for tool in cargo rustc gcc objcopy strip readelf debugedit; do
   command -v "$tool" >/dev/null || { echo "missing required peiosutils build tool: $tool" >&2; exit 1; }
 done
 
@@ -32,41 +38,106 @@ done
   exit 1
 }
 
-# Full *nix applet set, one multi-call binary.
-cargo build --release --locked --no-default-features --features feat_os_unix
-
+SRC="$(pwd)"
 BINDIR="usr/bin"
+SHAREDIR="usr/share"
+export LD_LIBRARY_PATH="$SRC/deps/lib"   # the multicall links libpeios; needed to run it
+
+# Full *nix applet set, one multi-call binary, with full DWARF embedded (for the
+# debug split below); libstdbuf is embedded (no external libexec object).
+CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=off \
+  cargo build --release --locked --no-default-features --features feat_os_unix
+
+# uudoc — the man-page / shell-completion generator. Its own feature set; the
+# binary itself is a build tool, not shipped.
+cargo build --release --locked --no-default-features --features "uudoc feat_os_unix" --bin uudoc
+
+# --- Binaries (peiosutils): multi-call + per-applet symlinks, busybox-style ---
 mkdir -p "$PEKIT_OUT/$BINDIR"
 install -m 0755 target/release/peiosutils "$PEKIT_OUT/$BINDIR/coreutils"
+APPLETS=$(target/release/peiosutils --list)
+for a in $APPLETS; do
+  [ "$a" = "coreutils" ] && continue
+  ln -sf coreutils "$PEKIT_OUT/$BINDIR/$a"
+done
 
-# One symlink per applet -> the multi-call binary (busybox-style). The binary
-# links libpeios, so enumerating applets needs libpeios.so.0 on the loader path
-# (the vendored copy under deps/lib).
-LD_LIBRARY_PATH="$PWD/deps/lib" target/release/peiosutils --list \
-  | while IFS= read -r applet; do
-      [ -n "$applet" ] || continue
-      [ "$applet" = "coreutils" ] && continue
-      ln -sf coreutils "$PEKIT_OUT/$BINDIR/$applet"
-    done
+# --- peiosutils-common: man pages + zsh/bash/fish completions + locale data ---
+UUDOC=target/release/uudoc
+mkdir -p "$PEKIT_OUT/$SHAREDIR/man/man1" \
+         "$PEKIT_OUT/$SHAREDIR/zsh/site-functions" \
+         "$PEKIT_OUT/$SHAREDIR/bash-completion/completions" \
+         "$PEKIT_OUT/$SHAREDIR/fish/vendor_completions.d"
+for a in $APPLETS; do
+  m="$PEKIT_OUT/$SHAREDIR/man/man1/$a.1"
+  "$UUDOC" manpage "$a"        > "$m" 2>/dev/null || rm -f "$m"
+  z="$PEKIT_OUT/$SHAREDIR/zsh/site-functions/_$a"
+  "$UUDOC" completion "$a" zsh > "$z" 2>/dev/null || rm -f "$z"
+  b="$PEKIT_OUT/$SHAREDIR/bash-completion/completions/$a.bash"
+  "$UUDOC" completion "$a" bash > "$b" 2>/dev/null || rm -f "$b"
+  fsh="$PEKIT_OUT/$SHAREDIR/fish/vendor_completions.d/$a.fish"
+  "$UUDOC" completion "$a" fish > "$fsh" 2>/dev/null || rm -f "$fsh"
+done
+
+# Locale message catalogs (the en-US baseline is embedded in the binary).
+for d in src/uu/*/locales; do
+  [ -d "$d" ] || continue
+  prog=$(basename "$(dirname "$d")")
+  for f in "$d"/*.ftl; do
+    [ -e "$f" ] || continue
+    [ "$(basename "$f")" = "en-US.ftl" ] && continue
+    mkdir -p "$PEKIT_OUT/$SHAREDIR/locales/$prog"
+    install -m 0644 "$f" "$PEKIT_OUT/$SHAREDIR/locales/$prog/"
+  done
+done
+
+# --- Debug split (mirrors libpeios): DWARF -> build-id file, sources staged ----
+# debugedit rewrites the builder's source prefix to /usr/src/debug/peiosutils and
+# lists referenced sources; objcopy splits the DWARF into a build-id-indexed
+# .debug; strip removes it from the shipped binary. Only this repo's own sources
+# resolve under $SRC — std / cargo-registry / git-dep paths fall outside and are
+# skipped (the peios/peios-sys git-dep sources live in ~/.cargo, not $SRC).
+bin="$PEKIT_OUT/$BINDIR/coreutils"
+debugedit -b "$SRC" -d /usr/src/debug/peiosutils -l "$PEKIT_OUT/.srclist" -n "$bin"
+bid=$(readelf -n "$bin" | sed -n 's/^[[:space:]]*Build ID: //p' | head -1)
+if [ -n "$bid" ]; then
+  p2=$(printf %s "$bid" | cut -c1-2); rest=$(printf %s "$bid" | cut -c3-)
+  mkdir -p "$PEKIT_OUT/usr/lib/debug/.build-id/$p2"
+  objcopy --only-keep-debug "$bin" "$PEKIT_OUT/usr/lib/debug/.build-id/$p2/$rest.debug"
+  chmod 0644 "$PEKIT_OUT/usr/lib/debug/.build-id/$p2/$rest.debug"
+fi
+strip "$bin"
+
+tr '\\0' '\\n' < "$PEKIT_OUT/.srclist" | sort -u | while IFS= read -r rel; do
+  [ -n "$rel" ] || continue
+  case "$rel" in */) continue;; esac
+  [ -f "$SRC/$rel" ] || continue
+  mkdir -p "$PEKIT_OUT/usr/src/debug/peiosutils/$(dirname "$rel")"
+  cp "$SRC/$rel" "$PEKIT_OUT/usr/src/debug/peiosutils/$rel"
+done
+rm -f "$PEKIT_OUT/.srclist"
 """
 
 # Build deps. Rust toolchain (cargo + rustc) builds the workspace, gcc drives the
-# final link, clang supplies libclang for peios-sys's bindgen run. libpeios's
-# headers/.so come from the vendored deps/ tree (deps/refresh.sh) rather than a
-# build-dep package, until the build root self-hosts libpeios-devel +
-# kernel-headers — then drop deps/ and add those two here (peios-sys resolves via
-# the shipped peios.pc).
+# final link, clang supplies libclang for peios-sys's bindgen run, and the debug
+# split uses binutils (objcopy/strip/readelf) + debugedit. libpeios's headers/.so
+# come from the vendored deps/ tree (deps/refresh.sh) rather than a build-dep
+# package, until the build root self-hosts libpeios-devel + kernel-headers — then
+# drop deps/ and add those two here (peios-sys resolves via the shipped peios.pc).
 [build.main.dependencies.peipkg]
 cargo = "*"
 rust = "*"
 gcc = "*"
 clang = "*"
+binutils = "*"
+debugedit = "*"
 
 [build.main.dependencies.apt]
 cargo = "*"
 rustc = "*"
 gcc = "*"
 "libclang-dev" = "*"
+binutils = "*"
+debugedit = "*"
 
 [clean]
 command = "cargo clean"
