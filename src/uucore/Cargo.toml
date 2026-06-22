@@ -52,9 +52,7 @@ os_display = "0.1.3"
 
 # Peios SD-creation flag group (`sd-control` feature) and attribute
 # preservation (`preserve` feature).
-libp-sd = { git = "https://github.com/peios/libp-rs", tag = "v0.1.0", optional = true, features = [
-  "std",
-] }
+peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0", optional = true }
 filetime = { workspace = true, optional = true }
 
 # Benchmark dependencies (optional)
@@ -178,7 +176,7 @@ parser-size = ["parser-num", "procfs"]
 parser-glob = ["glob"]
 parser = ["parser-num", "parser-size", "parser-glob"]
 pipes = ["fs"]
-preserve = ["dep:libp-sd", "dep:filetime", "libc", "xattr"]
+preserve = ["dep:peios", "dep:filetime", "libc", "xattr"]
 process = ["libc"]
 proc-info = ["tty", "walkdir"]
 quoting-style = ["i18n-common"]
@@ -186,7 +184,7 @@ ranges = []
 ringbuffer = []
 safe-copy = []
 safe-traversal = ["libc"]
-sd-control = ["dep:libp-sd"]
+sd-control = ["dep:peios"]
 selinux = ["dep:selinux"]
 smack = ["xattr"]
 signals = []

@@ -7,7 +7,8 @@ use crate::principal;
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::{SdBuilder, SecurityInfo, Sid, set_sd};
+use peios::file::{SecInfo, set_sd};
+use peios::security::{SdBuilder, Sid};
 use serde_json::json;
 
 #[derive(Debug, Clone, Copy)]
@@ -17,10 +18,10 @@ pub enum Field {
 }
 
 impl Field {
-    fn info(self) -> SecurityInfo {
+    fn info(self) -> SecInfo {
         match self {
-            Field::Owner => SecurityInfo::owner(),
-            Field::Group => SecurityInfo::group(),
+            Field::Owner => SecInfo::OWNER,
+            Field::Group => SecInfo::GROUP,
         }
     }
     fn name(self) -> &'static str {
@@ -77,13 +78,24 @@ pub fn run(matches: &ArgMatches, field: Field) -> Result<()> {
 
 fn apply_one(target: &PathTarget, field: Field, sid: Sid) -> Result<()> {
     let mut sd = SdBuilder::new();
-    sd = match field {
-        Field::Owner => sd.owner(sid),
-        Field::Group => sd.group(sid),
+    match field {
+        Field::Owner => {
+            sd.owner(&sid);
+        }
+        Field::Group => {
+            sd.group(&sid);
+        }
     };
     let bytes = sd
         .build()
         .map_err(|e| Error::Invalid(format!("building SD: {e}")))?;
-    set_sd(&target.as_sd_target(), field.info(), &bytes).map_err(Error::from)?;
+    set_sd(
+        target.dirfd(),
+        target.as_path(),
+        field.info(),
+        &bytes,
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     Ok(())
 }

@@ -72,6 +72,18 @@ pub fn parse_output_mode(matches: &ArgMatches) -> OutputMode {
     }
 }
 
+/// A minimal empty self-relative SD (header only, no components). Used by
+/// `reset` / `propagate` as the "parent" when the real parent has no SD,
+/// driving `reinherit` to strip the child's stale inherited ACEs.
+pub fn empty_self_relative_sd() -> Vec<u8> {
+    let header = peios_sys::KACS_SD_HEADER_BYTES as usize;
+    let self_relative = peios_sys::KACS_SD_SELF_RELATIVE as u16;
+    let mut out = vec![0u8; header];
+    out[0] = 1; // revision
+    out[2..4].copy_from_slice(&self_relative.to_le_bytes());
+    out
+}
+
 /// Common: parse --raw / --label flags (for commands that show SIDs).
 pub fn parse_sid_style(matches: &ArgMatches) -> Result<SidStyle> {
     let raw = matches.try_get_one::<bool>("raw").ok().flatten().copied().unwrap_or(false);

@@ -3,21 +3,21 @@
 // decides which view to print based on `--json`.
 
 use crate::sid_render::{self, SidStyle};
-use libp_token::uapi::Sid;
+use peios::security::Sid;
+use peios::token::TokenAccess;
 
 /// One token-handle access-mask bit → name.
 pub fn access_mask_names(mask: u32) -> String {
-    use libp_token::uapi as t;
     let pairs: &[(u32, &str)] = &[
-        (t::KACS_TOKEN_ASSIGN_PRIMARY, "ASSIGN_PRIMARY"),
-        (t::KACS_TOKEN_DUPLICATE, "DUPLICATE"),
-        (t::KACS_TOKEN_IMPERSONATE, "IMPERSONATE"),
-        (t::KACS_TOKEN_QUERY, "QUERY"),
-        (t::KACS_TOKEN_QUERY_SOURCE, "QUERY_SOURCE"),
-        (t::KACS_TOKEN_ADJUST_PRIVS, "ADJUST_PRIVS"),
-        (t::KACS_TOKEN_ADJUST_GROUPS, "ADJUST_GROUPS"),
-        (t::KACS_TOKEN_ADJUST_DEFAULT, "ADJUST_DEFAULT"),
-        (t::KACS_TOKEN_ADJUST_SESSIONID, "ADJUST_SESSIONID"),
+        (TokenAccess::ASSIGN_PRIMARY.bits(), "ASSIGN_PRIMARY"),
+        (TokenAccess::DUPLICATE.bits(), "DUPLICATE"),
+        (TokenAccess::IMPERSONATE.bits(), "IMPERSONATE"),
+        (TokenAccess::QUERY.bits(), "QUERY"),
+        (TokenAccess::QUERY_SOURCE.bits(), "QUERY_SOURCE"),
+        (TokenAccess::ADJUST_PRIVS.bits(), "ADJUST_PRIVS"),
+        (TokenAccess::ADJUST_GROUPS.bits(), "ADJUST_GROUPS"),
+        (TokenAccess::ADJUST_DEFAULT.bits(), "ADJUST_DEFAULT"),
+        (TokenAccess::ADJUST_SESSIONID.bits(), "ADJUST_SESSIONID"),
     ];
     let names: Vec<&str> = pairs
         .iter()

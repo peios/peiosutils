@@ -1,31 +1,24 @@
 // `sd check <path> <perms>` — access-check simulation.
 //
-// Builds a kacs_access_check_args via libp_sd::AccessCheckRequest, against
+// Runs the KACS AccessCheck pipeline (via `peios::access::AccessCheck`) against
 // either the caller's own token (default) or the named process's token.
 
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::perms;
 use clap::ArgMatches;
-use libp_sd::{AccessCheckRequest, GenericMapping, SecurityInfo, get_sd};
-use libp_token::{SelfOpenFlags, Token};
-use libp_sys as sys;
-use libp_token::uapi::KACS_TOKEN_QUERY;
+use peios::access::AccessCheck;
+use peios::file::{SecInfo, get_sd};
+use peios::security::{AccessMask, GenericMapping};
+use peios::token::{Token, TokenAccess};
 use serde_json::json;
-use std::os::fd::AsRawFd;
-
-const SYS_PIDFD_OPEN: i64 = 434;
+use std::os::fd::{AsFd, FromRawFd, OwnedFd};
 
 /// MS-DTYP file generic mapping: GENERIC_READ→FR, GENERIC_WRITE→FW,
 /// GENERIC_EXECUTE→FX, GENERIC_ALL→FA. The kernel uses this to expand the
 /// generic bits before evaluating the DACL.
 fn file_generic_mapping() -> GenericMapping {
-    GenericMapping {
-        read: 0x0012_0089,
-        write: 0x0012_0116,
-        execute: 0x0012_00A0,
-        all: 0x001F_01FF,
-    }
+    GenericMapping::new(0x0012_0089, 0x0012_0116, 0x0012_00A0, 0x001F_01FF)
 }
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -38,38 +31,41 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     let pid = matches.get_one::<i32>("pid").copied();
     let explain = matches.get_flag("explain");
 
-    // Acquire a token fd for the check.
+    // Acquire a token for the check.
     let (token, token_label) = open_token(pid)?;
 
     // Read the SD on the path.
-    let sd_bytes = get_sd(&target.as_sd_target(), SecurityInfo::all())
-        .map_err(Error::from)?;
-    if sd_bytes.is_empty() {
+    let all = SecInfo::OWNER | SecInfo::GROUP | SecInfo::DACL | SecInfo::SACL | SecInfo::LABEL;
+    let sd = get_sd(target.dirfd(), target.as_path(), all, target.at_flags()).map_err(Error::from)?;
+    if sd.as_bytes().is_empty() {
         return Err(Error::Invalid(format!(
             "{}: no SD recorded; access-check needs a descriptor",
             target.path
         )));
     }
 
-    let req = AccessCheckRequest::new(token.as_fd().as_raw_fd(), &sd_bytes, desired)
-        .mapping(file_generic_mapping());
-    let decision = req
-        .check()
-        .map_err(|e| Error::from(e))?;
+    let mut check = AccessCheck::new(
+        &sd,
+        AccessMask::from_bits_retain(desired),
+        file_generic_mapping(),
+    );
+    check.token(token.as_fd());
+    let decision = check.check().map_err(Error::from)?;
+    let granted_mask = decision.granted.bits();
 
     match mode {
         OutputMode::Human => {
             println!("path:        {}", target.path);
             println!("token:       {token_label}");
             println!("desired:     0x{:08x} ({})", desired, perms::render(desired));
-            println!("granted:     {}", decision.granted);
+            println!("granted:     {}", decision.allowed);
             println!(
                 "granted_mask: 0x{:08x} ({})",
-                decision.granted_mask,
-                perms::render(decision.granted_mask)
+                granted_mask,
+                perms::render(granted_mask)
             );
             if explain {
-                if decision.granted {
+                if decision.allowed {
                     println!("reason:      ACCESS_GRANTED (kernel)");
                 } else {
                     println!("reason:      ACCESS_DENIED (kernel)");
@@ -85,9 +81,9 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
                 "token": token_label,
                 "desired": format!("0x{:08x}", desired),
                 "desired_rights": perms::render(desired),
-                "granted": decision.granted,
-                "granted_mask": format!("0x{:08x}", decision.granted_mask),
-                "granted_rights": perms::render(decision.granted_mask),
+                "granted": decision.allowed,
+                "granted_mask": format!("0x{:08x}", granted_mask),
+                "granted_rights": perms::render(granted_mask),
             });
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
         }
@@ -99,26 +95,21 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 /// human-readable label naming what was opened.
 fn open_token(pid: Option<i32>) -> Result<(Token, String)> {
     if let Some(pid) = pid {
-        let pidfd = unsafe { sys::syscall2(SYS_PIDFD_OPEN, pid as u64, 0) };
+        // `libp-sys` is gone; open the pidfd directly via libc.
+        let pidfd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
         if pidfd < 0 {
+            let e = std::io::Error::last_os_error();
             return Err(Error::NotFound(format!(
-                "pidfd_open(pid={pid}) failed: -E{}",
-                -pidfd as i32
+                "pidfd_open(pid={pid}) failed: {e}"
             )));
         }
-        let pidfd = pidfd as i32;
-        let token = Token::open_process(pidfd, KACS_TOKEN_QUERY).map_err(|e| {
-            unsafe {
-                let _ = sys::close(pidfd);
-            }
-            Error::Invalid(format!("open process token for pid {pid}: {e}"))
-        })?;
-        unsafe {
-            let _ = sys::close(pidfd);
-        }
+        // SAFETY: pidfd_open returned a fresh, owned fd.
+        let pidfd: OwnedFd = unsafe { OwnedFd::from_raw_fd(pidfd as i32) };
+        let token = Token::open_process(pidfd.as_fd(), TokenAccess::QUERY)
+            .map_err(|e| Error::Invalid(format!("open process token for pid {pid}: {e}")))?;
         Ok((token, format!("pid {pid}")))
     } else {
-        let token = Token::open_self(SelfOpenFlags::default(), KACS_TOKEN_QUERY)
+        let token = Token::open_self(false, TokenAccess::QUERY)
             .map_err(|e| Error::Invalid(format!("open self token: {e}")))?;
         Ok((token, "self".into()))
     }

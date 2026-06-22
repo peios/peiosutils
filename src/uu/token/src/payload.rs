@@ -3,7 +3,7 @@
 // `pkm/kacs/token_runtime.rs::write_query`. We mirror them here for the
 // read-only inspection surface.
 
-use libp_token::uapi::{Sid, SidRef};
+use peios::security::{Sid, SidRef};
 
 /// Generic "list of (SID, attributes)" payload. Used for:
 ///   - TOKEN_CLASS_GROUPS
@@ -30,8 +30,8 @@ pub fn parse_sid_attrs_list(buf: &[u8]) -> Result<Vec<SidAndAttrsEntry>, String>
                 cur.len()
             ));
         }
-        let (sref, _rest) = SidRef::parse(&cur[..sid_len])
-            .map_err(|e| format!("sid+attrs list: entry {i} parse: {e:?}"))?;
+        let sref = SidRef::from_bytes(&cur[..sid_len])
+            .ok_or_else(|| format!("sid+attrs list: entry {i} parse: invalid SID"))?;
         let sid = sref.to_owned();
         cur = &cur[sid_len..];
         let attributes = read_u32(&mut cur)?;

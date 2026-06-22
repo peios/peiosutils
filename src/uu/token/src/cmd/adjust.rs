@@ -8,12 +8,16 @@ use crate::error::{Error, Result};
 use crate::privs;
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use libp_token::uapi::{
-    KACS_TOKEN_ADJUST_DEFAULT, KACS_TOKEN_ADJUST_GROUPS, KACS_TOKEN_ADJUST_PRIVS,
-    KACS_TOKEN_ADJUST_SESSIONID, KacsGroupEntry, KacsPrivEntry, SE_PRIVILEGE_ENABLED,
-    SE_PRIVILEGE_REMOVED,
-};
+use peios::token::{GroupAdjustment, PrivilegeAdjustment, SessionId, TokenAccess};
 use serde_json::json;
+
+const KACS_TOKEN_ADJUST_PRIVS: u32 = TokenAccess::ADJUST_PRIVS.bits();
+const KACS_TOKEN_ADJUST_GROUPS: u32 = TokenAccess::ADJUST_GROUPS.bits();
+const KACS_TOKEN_ADJUST_DEFAULT: u32 = TokenAccess::ADJUST_DEFAULT.bits();
+const KACS_TOKEN_ADJUST_SESSIONID: u32 = TokenAccess::ADJUST_SESSIONID.bits();
+
+const SE_PRIVILEGE_ENABLED: u32 = peios_sys::KACS_PRIVILEGE_ATTR_ENABLED;
+const SE_PRIVILEGE_REMOVED: u32 = peios_sys::KACS_PRIVILEGE_ATTR_REMOVED;
 
 // ---------------------------------------------------------------------------
 // privs
@@ -36,7 +40,7 @@ pub fn privs(
     let parsed = parse_priv_entries(&entries)?;
 
     let tok = target.open(KACS_TOKEN_ADJUST_PRIVS)?;
-    let previous = tok.adjust_privs(&parsed)?;
+    let previous = tok.adjust_privileges(&parsed)?.bits();
 
     let mut lines = Lines::new();
     lines.section("adjust privs");
@@ -65,7 +69,7 @@ pub fn privs(
     cmd::emit(CmdOutput { human: lines, json: out }, mode)
 }
 
-fn parse_priv_entries(entries: &[String]) -> Result<Vec<KacsPrivEntry>> {
+fn parse_priv_entries(entries: &[String]) -> Result<Vec<PrivilegeAdjustment>> {
     let mut out = Vec::with_capacity(entries.len());
     for raw in entries {
         let (name_part, state_part) = raw
@@ -82,7 +86,7 @@ fn parse_priv_entries(entries: &[String]) -> Result<Vec<KacsPrivEntry>> {
                 )));
             }
         };
-        out.push(KacsPrivEntry {
+        out.push(PrivilegeAdjustment {
             luid: bit,
             attributes,
         });
@@ -123,13 +127,13 @@ pub fn groups(
     let previous = tok.adjust_groups(&parsed)?;
 
     let previous_words: Vec<String> =
-        previous.iter().map(|w| format!("0x{w:016x}")).collect();
+        previous.0.iter().map(|w| format!("0x{w:016x}")).collect();
     let mut lines = Lines::new();
     lines.section("adjust groups");
     lines.kv("entries", parsed.len().to_string());
     lines.kv("previous_state", previous_words.join(" "));
     for e in &parsed {
-        let state = if e.enable != 0 { "enabled" } else { "disabled" };
+        let state = if e.enable { "enabled" } else { "disabled" };
         lines.detail(format!("idx {} <- {state}", e.index));
     }
     let out = json!({
@@ -142,7 +146,7 @@ pub fn groups(
     cmd::emit(CmdOutput { human: lines, json: out }, mode)
 }
 
-fn parse_group_entries(entries: &[String]) -> Result<Vec<KacsGroupEntry>> {
+fn parse_group_entries(entries: &[String]) -> Result<Vec<GroupAdjustment>> {
     let mut out = Vec::with_capacity(entries.len());
     for raw in entries {
         let (idx_part, state_part) = raw
@@ -153,15 +157,15 @@ fn parse_group_entries(entries: &[String]) -> Result<Vec<KacsGroupEntry>> {
             .parse()
             .map_err(|_| Error::Usage(format!("bad group index `{idx_part}`")))?;
         let enable = match state_part.trim().to_ascii_lowercase().as_str() {
-            "enabled" | "on" | "true" | "1" => 1u32,
-            "disabled" | "off" | "false" | "0" => 0u32,
+            "enabled" | "on" | "true" | "1" => true,
+            "disabled" | "off" | "false" | "0" => false,
             other => {
                 return Err(Error::Usage(format!(
                     "unknown group state `{other}` in `{raw}` (expected enabled|disabled)"
                 )));
             }
         };
-        out.push(KacsGroupEntry { index, enable });
+        out.push(GroupAdjustment { index, enable });
     }
     Ok(out)
 }
@@ -185,15 +189,16 @@ pub fn default(
         ));
     }
 
-    let dacl_bytes: Option<Vec<u8>> = match &sddl_str {
-        Some(s) => Some(parse_dacl_to_bytes(s)?),
+    let dacl: Option<peios::security::Acl> = match &sddl_str {
+        Some(s) => Some(parse_dacl(s)?),
         None => None,
     };
 
     let tok = target.open(KACS_TOKEN_ADJUST_DEFAULT)?;
-    let owner = owner_idx.unwrap_or(u16::MAX);
-    let group = group_idx.unwrap_or(u16::MAX);
-    tok.adjust_default(dacl_bytes.as_deref(), owner, group)?;
+    // The new typed `adjust_default` takes `Option<u16>` indices directly,
+    // using `None` for "leave unchanged" (libpeios' 0xFFFF sentinel is applied
+    // internally), so we pass the parsed options through unmapped.
+    tok.adjust_default(dacl.as_ref(), owner_idx, group_idx)?;
 
     let mut lines = Lines::new();
     lines.section("adjust default");
@@ -214,21 +219,40 @@ pub fn default(
     cmd::emit(CmdOutput { human: lines, json: out }, mode)
 }
 
-fn parse_dacl_to_bytes(sddl: &str) -> Result<Vec<u8>> {
-    // The SDDL parser produces an `SdBuilder` that emits a full
-    // SECURITY_DESCRIPTOR. KACS adjust_default takes just an ACL,
-    // not a full SD. We extract the DACL bytes from the built SD.
-    let sd_bytes = libp_sd::sddl::parse(sddl)
-        .map_err(|e| Error::Usage(format!("bad SDDL: {e:?}")))?
-        .build()
-        .map_err(|e| Error::Usage(format!("could not encode SD: {e:?}")))?;
-    let sd = libp_sd::SecurityDescriptor::parse(&sd_bytes)
-        .map_err(|e| Error::Usage(format!("parsed SD did not round-trip: {e:?}")))?;
-    match sd.dacl() {
-        Some(Ok(acl)) => Ok(acl.bytes.to_vec()),
-        Some(Err(e)) => Err(Error::Usage(format!("DACL did not parse: {e:?}"))),
-        None => Err(Error::Usage("SDDL had no DACL".into())),
+fn parse_dacl(sddl: &str) -> Result<peios::security::Acl> {
+    use peios::security::{Ace, AclBuilder};
+
+    // The SDDL parser emits a full security descriptor; KACS adjust_default
+    // takes just an ACL, so we parse the SD, pull its DACL view, and rebuild a
+    // standalone `Acl` from the DACL's ACEs (the new `Acl` has no public
+    // raw-bytes constructor, so we re-add each ACE through `AclBuilder`).
+    let sd = peios::security::sddl::parse(sddl)
+        .map_err(|e| Error::Usage(format!("bad SDDL: {e}")))?;
+    let view = sd
+        .view()
+        .map_err(|e| Error::Usage(format!("parsed SD did not round-trip: {e}")))?;
+    let dacl = view
+        .dacl()
+        .ok_or_else(|| Error::Usage("SDDL had no DACL".into()))?;
+
+    let mut builder = AclBuilder::new();
+    for ace in dacl.iter() {
+        let sid = ace
+            .sid()
+            .ok_or_else(|| Error::Usage("DACL ACE had no SID".into()))?;
+        builder.add(&Ace {
+            ace_type: ace.ace_type(),
+            flags: ace.flags(),
+            mask: ace.mask(),
+            sid,
+            object_type: ace.object_type(),
+            inherited_object_type: ace.inherited_object_type(),
+            app_data: ace.app_data(),
+        });
     }
+    builder
+        .build()
+        .map_err(|e| Error::Usage(format!("could not encode DACL: {e}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +268,7 @@ pub fn session(
         .get_one::<u32>("session-id")
         .ok_or_else(|| Error::Usage("adjust session: missing <id>".into()))?;
     let tok = target.open(KACS_TOKEN_ADJUST_SESSIONID)?;
-    tok.adjust_session_id(new_id)?;
+    tok.set_session_id(SessionId(new_id as u64))?;
 
     let mut lines = Lines::new();
     lines.section("adjust session");

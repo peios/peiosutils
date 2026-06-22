@@ -1,14 +1,17 @@
-// `sd inherit <path> on|off` — toggle SE_DACL_PROTECTED. Supports --recursive.
+// `sd inherit <path> on|off` — toggle DACL_PROTECTED. Supports --recursive.
+//
+// Hand logic preserved against the new `peios` views: read the DACL, copy its
+// ACEs (optionally dropping ACE_FLAG_INHERITED), and rebuild, setting
+// `Control::DACL_PROTECTED` when protecting.
 
+use crate::cmd::dacl::AclEdit;
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::{
-    AceBuilder, AclBuilder, SdBuilder, SecurityDescriptor, SecurityInfo, get_sd, set_sd,
-};
-use libp_sd::consts::{ACE_FLAG_INHERITED, SE_DACL_PROTECTED};
+use peios::file::{SecInfo, get_sd, set_sd};
+use peios::security::{AceFlags, Control, SdBuilder, SdView};
 use serde_json::json;
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -65,29 +68,44 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 }
 
 fn apply_one(target: &PathTarget, protect: bool, strip_inherited: bool) -> Result<()> {
-    let bytes = get_sd(&target.as_sd_target(), SecurityInfo::dacl()).map_err(Error::from)?;
-    let mut dacl = AclBuilder::new();
+    let sd_bytes = get_sd(target.dirfd(), target.as_path(), SecInfo::DACL, target.at_flags())
+        .map_err(Error::from)?;
+    let bytes = sd_bytes.as_bytes();
+
+    let mut dacl = AclEdit::new();
     if !bytes.is_empty() {
-        let sd = SecurityDescriptor::parse(&bytes)
+        let view = SdView::parse(bytes)
             .map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
-        if let Some(acl_r) = sd.dacl() {
-            let acl = acl_r.map_err(|e| Error::Invalid(format!("parsing DACL: {e}")))?;
-            for ace_r in acl.aces_iter() {
-                let ace = ace_r.map_err(|e| Error::Invalid(format!("parsing ACE: {e}")))?;
-                if strip_inherited && ace.flags & ACE_FLAG_INHERITED != 0 {
+        if let Some(acl) = view.dacl() {
+            for ace in acl.iter() {
+                if strip_inherited && ace.flags().contains(AceFlags::INHERITED) {
                     continue;
                 }
-                dacl = dacl.ace(AceBuilder::from_ace_ref(&ace));
+                dacl.copy_in(&ace);
             }
         }
     }
-    let mut sd = SdBuilder::new().dacl(dacl);
+
+    let built = dacl
+        .build_public()
+        .map_err(|e| Error::Invalid(format!("building DACL: {e}")))?;
+    let mut sd = SdBuilder::new();
+    sd.dacl(&built);
     if protect {
-        sd = sd.control(SE_DACL_PROTECTED);
+        sd.control(Control::DACL_PROTECTED, Control::empty());
+    } else {
+        sd.control(Control::empty(), Control::DACL_PROTECTED);
     }
     let out = sd
         .build()
         .map_err(|e| Error::Invalid(format!("building SD: {e}")))?;
-    set_sd(&target.as_sd_target(), SecurityInfo::dacl(), &out).map_err(Error::from)?;
+    set_sd(
+        target.dirfd(),
+        target.as_path(),
+        SecInfo::DACL,
+        &out,
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     Ok(())
 }

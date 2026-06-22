@@ -1,8 +1,29 @@
-// Privilege-name table helpers. The authoritative list lives in
-// `libp_token::uapi::PRIVILEGES` ((bit_index, name) tuples); this
-// module wraps it with lookup, render, and parse helpers.
+// Privilege-name table helpers. The (bit_index, name) tuples used to live
+// in `libp_token::uapi::PRIVILEGES`; the new `peios`/`peios-sys` crates do
+// not ship a privilege-name table (only typed `Privileges` flag constants),
+// so the authoritative list is inlined here verbatim from the old binding.
 
-use libp_token::uapi::PRIVILEGES;
+/// (bit_index, name) for every named KACS privilege.
+const PRIVILEGES: &[(u32, &str)] = &[
+    (2, "SeCreateToken"),
+    (3, "SeAssignPrimaryToken"),
+    (4, "SeLockMemory"),
+    (5, "SeIncreaseQuota"),
+    (7, "SeTcb"),
+    (8, "SeSecurity"),
+    (10, "SeLoadDriver"),
+    (12, "SeSystemTime"),
+    (13, "SeProfileSingleProcess"),
+    (14, "SeIncreaseBasePriority"),
+    (18, "SeRestore"),
+    (19, "SeShutdown"),
+    (20, "SeDebug"),
+    (21, "SeAudit"),
+    (23, "SeChangeNotify"),
+    (29, "SeImpersonate"),
+    (35, "SeCreateSymbolicLink"),
+    (63, "SeBindPrivilegedPort"),
+];
 
 /// Name → bit index. Case-insensitive.
 pub fn bit_for_name(name: &str) -> Option<u32> {

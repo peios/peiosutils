@@ -1,7 +1,7 @@
 // `sd allow` and `sd deny` share the same surface — only the ACE kind
 // differs. Implemented together. Supports --recursive and --if.
 
-use crate::cmd::dacl::{AclKind, filter_acl, read_acl_builder, write_acl};
+use crate::cmd::dacl::{AclKind, ace_mask_sid, filter_acl, read_acl_builder, write_acl};
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::flags::{self, TargetKind};
@@ -10,9 +10,12 @@ use crate::principal;
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::{AceBuilder, Condition, Sid, sddl};
-use libp_sd::consts::{ACE_TYPE_ACCESS_ALLOWED, ACE_TYPE_ACCESS_DENIED};
+use peios::security::{AceType, Sid, sddl};
 use serde_json::json;
+
+// Callback ACE-type wire discriminants (no typed `AceType` variant for these).
+const ACE_TYPE_ACCESS_ALLOWED_CALLBACK: u8 = peios_sys::KACS_ACE_TYPE_ACCESS_ALLOWED_CALLBACK as u8;
+const ACE_TYPE_ACCESS_DENIED_CALLBACK: u8 = peios_sys::KACS_ACE_TYPE_ACCESS_DENIED_CALLBACK as u8;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
@@ -21,10 +24,11 @@ pub enum Kind {
 }
 
 impl Kind {
-    fn ace_type(self) -> u8 {
+    /// The plain (non-conditional) ACE type.
+    fn ace_type(self) -> AceType {
         match self {
-            Kind::Allow => ACE_TYPE_ACCESS_ALLOWED,
-            Kind::Deny => ACE_TYPE_ACCESS_DENIED,
+            Kind::Allow => AceType::AccessAllowed,
+            Kind::Deny => AceType::AccessDenied,
         }
     }
     fn verb(self) -> &'static str {
@@ -33,8 +37,8 @@ impl Kind {
             Kind::Deny => "deny",
         }
     }
+    /// The conditional (callback) ACE-type discriminant.
     fn callback_ace_type(self) -> u8 {
-        use libp_sd::consts::{ACE_TYPE_ACCESS_ALLOWED_CALLBACK, ACE_TYPE_ACCESS_DENIED_CALLBACK};
         match self {
             Kind::Allow => ACE_TYPE_ACCESS_ALLOWED_CALLBACK,
             Kind::Deny => ACE_TYPE_ACCESS_DENIED_CALLBACK,
@@ -46,7 +50,8 @@ struct ParsedArgs {
     specs: Vec<(Sid, u32)>,
     flags_override: Option<u8>,
     replace: bool,
-    condition: Option<Condition>,
+    /// The `artx` condition bytecode from `--if`, if any.
+    condition: Option<Vec<u8>>,
 }
 
 pub fn run(matches: &ArgMatches, kind: Kind) -> Result<()> {
@@ -110,55 +115,48 @@ fn apply_one(target: &PathTarget, kind: Kind, args: &ParsedArgs) -> Result<usize
         .flags_override
         .unwrap_or_else(|| flags::default_for(target_kind));
 
-    let new_dacl = if args.replace {
-        let target_principals: Vec<Sid> =
-            args.specs.iter().map(|(s, _)| s.clone()).collect();
+    let mut new_dacl = if args.replace {
+        let target_principals: Vec<Sid> = args.specs.iter().map(|(s, _)| s.clone()).collect();
         let dacl_ace_type = kind.ace_type();
-        let cb_ace_type = kind.callback_ace_type();
-        let (mut b, _dropped) = filter_acl(target, AclKind::Dacl, |ace| {
-            if ace.ace_type != dacl_ace_type && ace.ace_type != cb_ace_type {
+        let cb_ace_type = AceType::Other(kind.callback_ace_type());
+        let (b, _dropped) = filter_acl(target, AclKind::Dacl, |ace| {
+            let t = ace.ace_type();
+            if t != dacl_ace_type && t != cb_ace_type {
                 return true;
             }
-            if let Some((_, sid)) = ace.as_mask_sid() {
-                let owned = sid.to_owned();
-                if target_principals.contains(&owned) {
+            if let Some((_, sid)) = ace_mask_sid(ace) {
+                if target_principals.contains(&sid) {
                     return false;
                 }
             }
             true
         })?;
-        for (sid, mask) in &args.specs {
-            b = b.ace(build_ace(kind, sid.clone(), *mask, ace_flags, args.condition.as_ref())?);
-        }
         b
     } else {
-        let mut b = read_acl_builder(target, AclKind::Dacl)?;
-        for (sid, mask) in &args.specs {
-            b = b.ace(build_ace(kind, sid.clone(), *mask, ace_flags, args.condition.as_ref())?);
-        }
-        b
+        read_acl_builder(target, AclKind::Dacl)?
     };
+
+    for (sid, mask) in &args.specs {
+        add_ace(&mut new_dacl, kind, sid, *mask, ace_flags, args.condition.as_deref());
+    }
 
     write_acl(target, AclKind::Dacl, new_dacl)?;
     Ok(args.specs.len())
 }
 
-fn build_ace(
+fn add_ace(
+    acl: &mut crate::cmd::dacl::AclEdit,
     kind: Kind,
-    sid: Sid,
+    sid: &Sid,
     mask: u32,
     flags: u8,
-    condition: Option<&Condition>,
-) -> Result<AceBuilder> {
-    let b = match (kind, condition) {
-        (Kind::Allow, None) => AceBuilder::allow(sid, mask),
-        (Kind::Deny, None) => AceBuilder::deny(sid, mask),
-        (Kind::Allow, Some(c)) => AceBuilder::allow_callback(sid, mask, c)
-            .map_err(|e| Error::Invalid(format!("conditional allow ACE: {e}")))?,
-        (Kind::Deny, Some(c)) => AceBuilder::deny_callback(sid, mask, c)
-            .map_err(|e| Error::Invalid(format!("conditional deny ACE: {e}")))?,
-    };
-    Ok(b.flags(flags))
+    condition: Option<&[u8]>,
+) {
+    match (kind, condition) {
+        (Kind::Allow, None) => acl.allow(sid, mask, flags),
+        (Kind::Deny, None) => acl.deny(sid, mask, flags),
+        (_, Some(artx)) => acl.callback(kind.callback_ace_type(), sid, mask, flags, artx),
+    }
 }
 
 fn parse_principal_perms(spec: &str) -> Result<(Sid, u32)> {

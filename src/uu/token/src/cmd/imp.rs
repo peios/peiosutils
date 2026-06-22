@@ -14,10 +14,12 @@ use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use libp_token::{Token, impersonate_peer, revert as libp_revert};
-use libp_token::uapi::KACS_TOKEN_IMPERSONATE;
+use peios::token::{Token, TokenAccess};
 use serde_json::json;
 use std::ffi::CString;
+use std::os::fd::BorrowedFd;
+
+const KACS_TOKEN_IMPERSONATE: u32 = TokenAccess::IMPERSONATE.bits();
 
 pub fn impersonate(
     matches: &clap::ArgMatches,
@@ -33,7 +35,9 @@ pub fn impersonate(
     // syscall that doesn't need an explicit Token first.
     match target {
         TargetSpec::Peer(sock_fd) => {
-            impersonate_peer(sock_fd)?;
+            // SAFETY: the socket fd is owned by the caller and lives for the call.
+            let borrowed = unsafe { BorrowedFd::borrow_raw(sock_fd) };
+            Token::open_peer(borrowed)?.impersonate()?;
         }
         _ => {
             let tok = target.open(KACS_TOKEN_IMPERSONATE)?;
@@ -81,7 +85,7 @@ pub fn impersonate(
 }
 
 pub fn revert(mode: OutputMode) -> Result<()> {
-    libp_revert()?;
+    Token::revert()?;
     let mut lines = Lines::new();
     lines.section("revert");
     lines.kv("status", "ok");

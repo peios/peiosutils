@@ -1,14 +1,14 @@
 // `sd unaudit <path> <principal> [...]` — drop SACL audit ACEs for the
 // listed principals. Supports --recursive.
 
-use crate::cmd::dacl::{AclKind, filter_acl, write_acl};
+use crate::cmd::dacl::{AclKind, ace_mask_sid, filter_acl, write_acl};
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::principal;
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::Sid;
+use peios::security::Sid;
 use serde_json::json;
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -70,9 +70,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 
 fn apply_one(target: &PathTarget, principals: &[Sid]) -> Result<usize> {
     let (new_sacl, dropped) = filter_acl(target, AclKind::Sacl, |ace| {
-        if let Some((_, sid)) = ace.as_mask_sid() {
-            let owned = sid.to_owned();
-            !principals.contains(&owned)
+        if let Some((_, sid)) = ace_mask_sid(ace) {
+            !principals.contains(&sid)
         } else {
             true
         }

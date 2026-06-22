@@ -13,7 +13,8 @@ use crate::error::{Error, Result};
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::{SecurityInfo, get_sd, reinherit, set_sd};
+use peios::file::{SecInfo, get_sd, set_sd};
+use peios::security::reinherit;
 use serde_json::json;
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -90,29 +91,35 @@ fn push_one(child: &PathTarget, nofollow: bool) -> Result<()> {
         path: parent_path,
         no_follow_symlinks: nofollow,
     };
-    let parent_bytes =
-        get_sd(&parent_target.as_sd_target(), SecurityInfo::dacl()).map_err(Error::from)?;
-    let child_bytes =
-        get_sd(&child.as_sd_target(), SecurityInfo::dacl()).map_err(Error::from)?;
+    let parent_sd = get_sd(
+        parent_target.dirfd(),
+        parent_target.as_path(),
+        SecInfo::DACL,
+        parent_target.at_flags(),
+    )
+    .map_err(Error::from)?;
+    let child_sd = get_sd(child.dirfd(), child.as_path(), SecInfo::DACL, child.at_flags())
+        .map_err(Error::from)?;
+    let child_bytes = child_sd.as_bytes();
     let child_is_container = walk::is_container(&child.path);
+    let empty;
     let new_sd = if child_bytes.is_empty() {
         // Child has no SD yet; nothing to reinherit on top of.
         return Ok(());
-    } else if parent_bytes.is_empty() {
+    } else if parent_sd.as_bytes().is_empty() {
         // Parent has no SD — strip child's stale inherited ACEs only.
-        let empty = empty_self_relative_sd();
-        reinherit(&empty, &child_bytes, child_is_container).map_err(Error::from)?
+        empty = crate::cmd::empty_self_relative_sd();
+        reinherit(&empty, child_bytes, child_is_container).map_err(Error::from)?
     } else {
-        reinherit(&parent_bytes, &child_bytes, child_is_container).map_err(Error::from)?
+        reinherit(parent_sd.as_bytes(), child_bytes, child_is_container).map_err(Error::from)?
     };
-    set_sd(&child.as_sd_target(), SecurityInfo::dacl(), &new_sd).map_err(Error::from)?;
+    set_sd(
+        child.dirfd(),
+        child.as_path(),
+        SecInfo::DACL,
+        &new_sd,
+        child.at_flags(),
+    )
+    .map_err(Error::from)?;
     Ok(())
-}
-
-fn empty_self_relative_sd() -> Vec<u8> {
-    use libp_sd::consts::{SD_HEADER_BYTES, SE_SELF_RELATIVE};
-    let mut out = vec![0u8; SD_HEADER_BYTES];
-    out[0] = 1;
-    out[2..4].copy_from_slice(&SE_SELF_RELATIVE.to_le_bytes());
-    out
 }

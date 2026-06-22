@@ -1,10 +1,12 @@
 // Path target resolution.
 //
-// v1 surface: filesystem paths via SdTarget::Path. The grammar is
-// target-agnostic so we can grow `--process N` / `--registry /foo` later
-// without reshaping `Target`.
+// v1 surface: filesystem paths. The new `peios::file::{get_sd,set_sd}` take
+// `(dirfd: Option<BorrowedFd>, path: &Path, SecInfo, at_flags: i32)`; a
+// `PathTarget` lowers to those three: dirfd is always `None` (process cwd,
+// the old `FDCWD`), the path, and `AT_SYMLINK_NOFOLLOW` when requested.
 
-use libp_sd::SdTarget;
+use std::os::fd::BorrowedFd;
+use std::path::Path;
 
 /// What `sd` is operating on. v1: paths only.
 #[derive(Debug, Clone)]
@@ -14,12 +16,23 @@ pub struct PathTarget {
 }
 
 impl PathTarget {
-    /// Lower to a borrowed `SdTarget` suitable for `get_sd` / `set_sd`.
-    pub fn as_sd_target(&self) -> SdTarget<'_> {
-        SdTarget::Path {
-            dirfd: libp_sd::raw::FDCWD,
-            path: &self.path,
-            no_follow_symlinks: self.no_follow_symlinks,
+    /// The directory fd to resolve relative to — always `None` (the process
+    /// cwd, i.e. the old `raw::FDCWD`).
+    pub fn dirfd(&self) -> Option<BorrowedFd<'static>> {
+        None
+    }
+
+    /// The path as an `&Path`, as `get_sd` / `set_sd` expect.
+    pub fn as_path(&self) -> &Path {
+        Path::new(&self.path)
+    }
+
+    /// The `*at` flags: `AT_SYMLINK_NOFOLLOW` when operating on the link itself.
+    pub fn at_flags(&self) -> i32 {
+        if self.no_follow_symlinks {
+            libc::AT_SYMLINK_NOFOLLOW
+        } else {
+            0
         }
     }
 }

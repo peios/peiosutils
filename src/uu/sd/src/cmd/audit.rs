@@ -1,7 +1,7 @@
 // `sd audit <path> <principal>:<perms>:<success|failure|both>` — append a
 // system-audit ACE to the SACL. Supports --recursive and --if.
 
-use crate::cmd::dacl::{AclKind, filter_acl, read_acl_builder, write_acl};
+use crate::cmd::dacl::{AclKind, ace_mask_sid, filter_acl, read_acl_builder, write_acl};
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::flags::{self, TargetKind};
@@ -10,18 +10,20 @@ use crate::principal;
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use libp_sd::{AceBuilder, Condition, Sid, sddl};
-use libp_sd::consts::{
-    ACE_FLAG_FAILED_ACCESS, ACE_FLAG_SUCCESSFUL_ACCESS, ACE_TYPE_SYSTEM_AUDIT,
-    ACE_TYPE_SYSTEM_AUDIT_CALLBACK,
-};
+use peios::security::{AceType, Sid, sddl};
 use serde_json::json;
+
+// SACL-audit ACE flag wire bits + callback ACE-type discriminant.
+const ACE_FLAG_SUCCESSFUL_ACCESS: u8 = peios_sys::KACS_ACE_FLAG_SUCCESSFUL_ACCESS as u8;
+const ACE_FLAG_FAILED_ACCESS: u8 = peios_sys::KACS_ACE_FLAG_FAILED_ACCESS as u8;
+const ACE_TYPE_SYSTEM_AUDIT_CALLBACK: u8 = peios_sys::KACS_ACE_TYPE_SYSTEM_AUDIT_CALLBACK as u8;
 
 struct ParsedArgs {
     specs: Vec<(Sid, u32, u8)>, // (sid, mask, audit-bits)
     flags_override: Option<u8>,
     replace: bool,
-    condition: Option<Condition>,
+    /// The `artx` condition bytecode from `--if`, if any.
+    condition: Option<Vec<u8>>,
 }
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -109,49 +111,37 @@ fn apply_one(target: &PathTarget, args: &ParsedArgs) -> Result<usize> {
         .flags_override
         .unwrap_or_else(|| flags::default_for(target_kind));
 
-    let new_sacl = if args.replace {
+    let audit_type = AceType::SystemAudit;
+    let audit_cb_type = AceType::Other(ACE_TYPE_SYSTEM_AUDIT_CALLBACK);
+
+    let mut new_sacl = if args.replace {
         let target_principals: Vec<Sid> = args.specs.iter().map(|(s, _, _)| s.clone()).collect();
-        let (mut b, _dropped) = filter_acl(target, AclKind::Sacl, |ace| {
-            if ace.ace_type != ACE_TYPE_SYSTEM_AUDIT && ace.ace_type != ACE_TYPE_SYSTEM_AUDIT_CALLBACK {
+        let (b, _dropped) = filter_acl(target, AclKind::Sacl, |ace| {
+            let t = ace.ace_type();
+            if t != audit_type && t != audit_cb_type {
                 return true;
             }
-            if let Some((_, sid)) = ace.as_mask_sid() {
-                let owned = sid.to_owned();
-                !target_principals.contains(&owned)
+            if let Some((_, sid)) = ace_mask_sid(ace) {
+                !target_principals.contains(&sid)
             } else {
                 true
             }
         })?;
-        for (sid, mask, audit_bits) in &args.specs {
-            let flags = base_flags | *audit_bits;
-            b = b.ace(build_audit_ace(sid.clone(), *mask, flags, args.condition.as_ref())?);
-        }
         b
     } else {
-        let mut b = read_acl_builder(target, AclKind::Sacl)?;
-        for (sid, mask, audit_bits) in &args.specs {
-            let flags = base_flags | *audit_bits;
-            b = b.ace(build_audit_ace(sid.clone(), *mask, flags, args.condition.as_ref())?);
-        }
-        b
+        read_acl_builder(target, AclKind::Sacl)?
     };
+
+    for (sid, mask, audit_bits) in &args.specs {
+        let flags = base_flags | *audit_bits;
+        match args.condition.as_deref() {
+            None => new_sacl.audit(sid, *mask, flags),
+            Some(artx) => new_sacl.callback(ACE_TYPE_SYSTEM_AUDIT_CALLBACK, sid, *mask, flags, artx),
+        }
+    }
 
     write_acl(target, AclKind::Sacl, new_sacl)?;
     Ok(args.specs.len())
-}
-
-fn build_audit_ace(
-    sid: Sid,
-    mask: u32,
-    flags: u8,
-    condition: Option<&Condition>,
-) -> Result<AceBuilder> {
-    let b = match condition {
-        None => AceBuilder::audit(sid, mask),
-        Some(c) => AceBuilder::audit_callback(sid, mask, c)
-            .map_err(|e| Error::Invalid(format!("conditional audit ACE: {e}")))?,
-    };
-    Ok(b.flags(flags))
 }
 
 fn parse_audit_spec(spec: &str) -> Result<(Sid, u32, u8)> {

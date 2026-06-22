@@ -35,6 +35,8 @@ use std::path::Path;
 
 use clap::ArgMatches;
 use filetime::FileTime;
+use peios::file::{self, SecInfo};
+use peios::security::{Control, SdView, strip_inherited};
 
 use crate::display::Quotable;
 use crate::error::UError;
@@ -587,43 +589,37 @@ pub fn copy_attributes(
     let want_sacl = matches!(attributes.sacl, Preserve::Yes { .. });
     let want_saclni = matches!(attributes.saclni, Preserve::Yes { .. });
 
-    let mut sd_info = libp_sd::SecurityInfo::none();
+    let mut sd_info = SecInfo::empty();
     if want_owner {
-        sd_info = sd_info.with_owner();
+        sd_info |= SecInfo::OWNER;
     }
     if want_dacl || want_daclni {
-        sd_info = sd_info.with_dacl();
+        sd_info |= SecInfo::DACL;
     }
     if want_sacl || want_saclni {
-        sd_info = sd_info.with_sacl();
+        sd_info |= SecInfo::SACL;
     }
-    if sd_info.bits() != 0 {
-        let src_str = source
-            .to_str()
-            .ok_or_else(|| PreserveError::Other(format!("non-UTF-8 source path: {}", source.quote())))?;
-        let dst_str = dest
-            .to_str()
-            .ok_or_else(|| PreserveError::Other(format!("non-UTF-8 dest path: {}", dest.quote())))?;
-        let sd_bytes = libp_sd::get_sd(&libp_sd::SdTarget::path(src_str), sd_info)
+    if !sd_info.is_empty() {
+        let sd = file::get_sd(None, source, sd_info, 0)
             .map_err(|e| PreserveError::Other(format!("kacs_get_sd({}): {e}", source.quote())))?;
 
         // Strip inherited ACEs from any ACL requested only in its
         // no-inherited form. The full-ACL request wins if both are set.
-        let mut strip_info = libp_sd::SecurityInfo::none();
+        let mut strip_info = SecInfo::empty();
         if want_daclni && !want_dacl {
-            strip_info = strip_info.with_dacl();
+            strip_info |= SecInfo::DACL;
         }
         if want_saclni && !want_sacl {
-            strip_info = strip_info.with_sacl();
+            strip_info |= SecInfo::SACL;
         }
-        let sd_bytes = if strip_info.bits() != 0 {
-            libp_sd::strip_inherited_aces(&sd_bytes, strip_info)
-                .map_err(|e| PreserveError::Other(format!("strip_inherited_aces: {e}")))?
+        let sd = if !strip_info.is_empty() {
+            strip_inherited(sd.as_bytes(), strip_info)
+                .map_err(|e| PreserveError::Other(format!("strip_inherited: {e}")))?
         } else {
-            sd_bytes
+            sd
         };
 
-        libp_sd::set_sd(&libp_sd::SdTarget::path(dst_str), sd_info, &sd_bytes)
+        file::set_sd(None, dest, sd_info, &sd, 0)
             .map_err(|e| PreserveError::Other(format!("kacs_set_sd({}): {e}", dest.quote())))?;
     }
 
@@ -674,15 +670,11 @@ pub fn copy_attributes(
 /// from the destination directory, so a protected DACL would be silently
 /// lost. Any failure to read or parse the SD returns `false` (no warning).
 pub fn dacl_is_protected(path: &Path) -> bool {
-    let Some(p) = path.to_str() else {
+    let Ok(sd) = file::get_sd(None, path, SecInfo::DACL, 0) else {
         return false;
     };
-    let info = libp_sd::SecurityInfo::none().with_dacl();
-    let Ok(bytes) = libp_sd::get_sd(&libp_sd::SdTarget::path(p), info) else {
-        return false;
-    };
-    match libp_sd::SecurityDescriptor::parse(&bytes) {
-        Ok(sd) => sd.control & libp_sd::consts::SE_DACL_PROTECTED != 0,
+    match SdView::parse(sd.as_bytes()) {
+        Ok(view) => view.control().contains(Control::DACL_PROTECTED),
         Err(_) => false,
     }
 }

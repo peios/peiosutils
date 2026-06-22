@@ -13,17 +13,14 @@
 // sessions). Acceptable for a debug tool; document and move on.
 
 use clap::{Arg, ArgAction, Command};
-use libp_token::{Token, create_session, destroy_empty_session, set_psb};
-use libp_sys as sys;
+use peios::process::{Mitigations, Process};
+use peios::security::Sid;
+use peios::token::{LogonType, Session, SessionId, Token, TokenAccess};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Read;
-use std::path::Path;
+use std::os::fd::BorrowedFd;
 use uucore::error::{UResult, USimpleError};
-
-const SYS_PIDFD_OPEN: i64 = 434;
-const KACS_TOKEN_QUERY: u32 = 0x0008;
 
 #[uucore::main(no_signals)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
@@ -81,12 +78,30 @@ fn build_cli() -> Command {
         )
         .subcommand(
             Command::new("create")
-                .about("Create a new logon session from a binary spec (privileged)")
+                .about("Create a new logon session (privileged)")
                 .arg(
-                    Arg::new("spec")
-                        .value_name("SPEC")
+                    Arg::new("logon-type")
+                        .long("logon-type")
                         .required(true)
-                        .help("Path to spec bytes (or `-` for stdin)"),
+                        .value_name("TYPE")
+                        .help(
+                            "Logon type: interactive|network|batch|service|\
+                             network-cleartext|new-credentials",
+                        ),
+                )
+                .arg(
+                    Arg::new("auth-package")
+                        .long("auth-package")
+                        .required(true)
+                        .value_name("STR")
+                        .help("Authentication package name"),
+                )
+                .arg(
+                    Arg::new("user-sid")
+                        .long("user-sid")
+                        .required(true)
+                        .value_name("SID")
+                        .help("User SID (e.g. S-1-5-… or an SDDL alias like BA)"),
                 )
                 .arg(json_flag()),
         )
@@ -184,17 +199,20 @@ fn enumerate_sessions() -> Result<BTreeMap<u64, Vec<i32>>, String> {
 }
 
 fn session_id_for_pid(pid: i32) -> Option<u64> {
-    let pidfd = unsafe { sys::syscall2(SYS_PIDFD_OPEN, pid as u64, 0) };
+    let pidfd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
     if pidfd < 0 {
         return None;
     }
     let pidfd = pidfd as i32;
-    let tok = Token::open_process(pidfd, KACS_TOKEN_QUERY).ok();
+    // SAFETY: `pidfd` is a valid fd we own for the duration of this borrow;
+    // we close it below after `open_process` returns.
+    let borrowed = unsafe { BorrowedFd::borrow_raw(pidfd) };
+    let tok = Token::open_process(borrowed, TokenAccess::QUERY).ok();
     unsafe {
-        let _ = sys::close(pidfd);
+        let _ = libc::close(pidfd);
     }
     let tok = tok?;
-    tok.session_id().ok().map(|v| v as u64)
+    tok.session_id().ok().map(|v| v.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -202,27 +220,51 @@ fn session_id_for_pid(pid: i32) -> Option<u64> {
 // ---------------------------------------------------------------------------
 
 fn cmd_create(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
-    let path = sub.get_one::<String>("spec").unwrap();
-    let spec = read_spec_input(path)?;
-    let session_id = create_session(&spec).map_err(|e| format!("create_session: {e}"))?;
+    let logon_type_str = sub.get_one::<String>("logon-type").unwrap();
+    let logon_type = parse_logon_type(logon_type_str)?;
+    let auth_package = sub.get_one::<String>("auth-package").unwrap();
+    let user_sid_str = sub.get_one::<String>("user-sid").unwrap();
+    let user_sid: Sid = user_sid_str
+        .parse()
+        .map_err(|e| format!("bad user-sid `{user_sid_str}`: {e}"))?;
+
+    let session_id = Session::create(logon_type, auth_package, &user_sid)
+        .map_err(|e| format!("session create: {e}"))?;
     if json_mode {
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
-                "session_id": session_id,
-                "spec_bytes": spec.len(),
+                "session_id": session_id.0,
+                "logon_type": logon_type_str,
+                "auth_package": auth_package,
+                "user_sid": user_sid_str,
             }))
             .unwrap()
         );
     } else {
-        println!("created session {session_id} (spec {} bytes)", spec.len());
+        println!("created session {}", session_id.0);
     }
     Ok(())
 }
 
+fn parse_logon_type(s: &str) -> Result<LogonType, String> {
+    match s.to_ascii_lowercase().replace('_', "-").as_str() {
+        "interactive" => Ok(LogonType::Interactive),
+        "network" => Ok(LogonType::Network),
+        "batch" => Ok(LogonType::Batch),
+        "service" => Ok(LogonType::Service),
+        "network-cleartext" => Ok(LogonType::NetworkCleartext),
+        "new-credentials" => Ok(LogonType::NewCredentials),
+        other => Err(format!(
+            "unknown logon-type `{other}` (expected one of: interactive, network, \
+             batch, service, network-cleartext, new-credentials)"
+        )),
+    }
+}
+
 fn cmd_destroy(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
     let id: u64 = *sub.get_one::<u64>("session-id").unwrap();
-    destroy_empty_session(id).map_err(|e| format!("destroy_empty_session: {e}"))?;
+    Session::destroy_empty(SessionId(id)).map_err(|e| format!("session destroy: {e}"))?;
     if json_mode {
         println!(
             "{}",
@@ -234,17 +276,6 @@ fn cmd_destroy(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn read_spec_input(path: &str) -> Result<Vec<u8>, String> {
-    if path == "-" {
-        let mut buf = Vec::new();
-        std::io::stdin()
-            .read_to_end(&mut buf)
-            .map_err(|e| format!("reading stdin: {e}"))?;
-        return Ok(buf);
-    }
-    fs::read(Path::new(path)).map_err(|e| format!("reading {path}: {e}"))
-}
-
 // ---------------------------------------------------------------------------
 // psb.
 // ---------------------------------------------------------------------------
@@ -254,19 +285,22 @@ fn cmd_psb(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
     let mitigations_str: &String = sub.get_one::<String>("mitigations").unwrap();
     let mitigations = parse_mask(mitigations_str)?;
 
-    let pidfd = unsafe { sys::syscall2(SYS_PIDFD_OPEN, pid as u64, 0) };
+    let pidfd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
     if pidfd < 0 {
         return Err(format!(
-            "pidfd_open(pid={pid}): -E{}",
-            -pidfd as i32
+            "pidfd_open(pid={pid}): {}",
+            std::io::Error::last_os_error()
         ));
     }
     let pidfd = pidfd as i32;
-    let r = set_psb(pidfd, mitigations);
+    // SAFETY: `pidfd` is a valid fd we own for the duration of this borrow;
+    // we close it below after `set_mitigations` returns.
+    let borrowed = unsafe { BorrowedFd::borrow_raw(pidfd) };
+    let r = Process::set_mitigations(Some(borrowed), Mitigations::from_bits_retain(mitigations));
     unsafe {
-        let _ = sys::close(pidfd);
+        let _ = libc::close(pidfd);
     }
-    r.map_err(|e| format!("set_psb: {e}"))?;
+    r.map_err(|e| format!("set_mitigations: {e}"))?;
 
     if json_mode {
         println!(
