@@ -1,0 +1,15 @@
+# peiosutils — the Peios coreutils: the multi-call `coreutils` binary and its
+# per-applet symlinks in /usr/bin. Shared metadata (format/version/arch/license/
+# homepage) is inherited from package.pekit.toml; only the description and file
+# set live here.
+#
+# The libpeios runtime dependency is detected automatically from the binary's
+# DT_NEEDED (libpeios.so.0) — the Peios-native + SD-aware applets link it; glibc
+# likewise. No manual [dependencies] needed.
+
+[package]
+description = "Peios coreutils — GNU-compatible core utilities plus the Peios-native KACS tools (token, sd, logonse, revstrm)"
+
+[files]
+# The multi-call binary (coreutils) and every per-applet symlink.
+":usr/bin/**" = "usr/bin/"

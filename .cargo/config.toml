@@ -14,3 +14,13 @@ rustflags = ["-C", "target-feature=+crt-static"]
 [env]
 # See feat_external_libstdbuf in src/uu/stdbuf/Cargo.toml
 LIBSTDBUF_DIR = "/usr/local/libexec/coreutils"
+
+# libpeios is vendored under deps/ (headers + .so/.a) until the build root can
+# provide it as a package (glibc + libpeios live in pkgs/). peios-sys's build.rs
+# reads these to bindgen against the headers and link the runtime .so. Paths are
+# relative to this workspace root. See deps/README.md. (bindgen also needs
+# libclang on the host — LIBCLANG_PATH — which is environment-specific and not
+# set here.)
+PEIOS_LIB_DIR = { value = "deps/lib", relative = true }
+PEIOS_INCLUDE = { value = "deps/include", relative = true }
+PKM_UAPI = { value = "deps/include", relative = true }
