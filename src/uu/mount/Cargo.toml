@@ -1,0 +1,51 @@
+# mount ~ (peiosutils) Peios mount/umount.
+#
+# Structured as a library (the syscall-orchestration core under `flow`/`sys`)
+# plus a thin clap CLI, per docs/mount-spec.md §16. The library half is kept
+# free of `clap`/`uucore` so it can be split into its own crate (or fronted by
+# a C ABI) if a non-CLI consumer ever appears.
+#
+# NOTE: this crate deliberately does NOT yet depend on `peios`/`peios-sys`.
+# The KACS mount-policy step (which needs the libpeios wrappers, hence a
+# libclang build host) lands with the policy layer; the new-mount skeleton is
+# pure Linux syscalls via `libc`.
+
+[package]
+name = "pu_mount"
+description = "mount ~ (peiosutils) attach and detach Peios filesystems via the fd-based mount API"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/mount"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/mount.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+uucore = { workspace = true }
+thiserror = { workspace = true }
+# libblkid (§7) is opened at runtime via dlopen so the crate builds without the
+# util-linux dev files; the peiosutils package declares the libblkid.so.1
+# runtime dependency explicitly.
+libloading = "0.8"
+# KACS mount policy (§8) goes through the peios crate's safe wrappers over
+# libpeios (File::mount_set_policy + security::sddl). Same git pin as pu_token.
+peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
+
+[[bin]]
+name = "mount"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

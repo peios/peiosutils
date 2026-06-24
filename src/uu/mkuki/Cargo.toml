@@ -16,9 +16,17 @@ readme.workspace = true
 [lints]
 workspace = true
 
+[lib]
+path = "src/mkuki.rs"
+doctest = false
+
 [[bin]]
 name = "mkuki"
 path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

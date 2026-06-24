@@ -2142,6 +2142,7 @@ dependencies = [
  "pu_mktemp",
  "pu_mkuki",
  "pu_more",
+ "pu_mount",
  "pu_mv",
  "pu_nice",
  "pu_nl",
@@ -2193,6 +2194,7 @@ dependencies = [
  "pu_truncate",
  "pu_tsort",
  "pu_tty",
+ "pu_umount",
  "pu_uname",
  "pu_unexpand",
  "pu_uniq",
@@ -2911,9 +2913,13 @@ dependencies = [
 name = "pu_mkirf"
 version = "0.8.0"
 dependencies = [
+ "clap",
  "flate2",
+ "glob",
  "notify",
  "tempfile",
+ "thiserror 2.0.18",
+ "uucore",
 ]
 
 [[package]]
@@ -2942,7 +2948,9 @@ dependencies = [
 name = "pu_mkuki"
 version = "0.8.0"
 dependencies = [
+ "clap",
  "tempfile",
+ "uucore",
 ]
 
 [[package]]
@@ -2953,6 +2961,19 @@ dependencies = [
  "crossterm",
  "fluent",
  "tempfile",
+ "uucore",
+]
+
+[[package]]
+name = "pu_mount"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "libc",
+ "libloading",
+ "peios",
+ "tempfile",
+ "thiserror 2.0.18",
  "uucore",
 ]
 
@@ -3562,6 +3583,17 @@ dependencies = [
  "clap",
  "fluent",
  "rustix",
+ "uucore",
+]
+
+[[package]]
+name = "pu_umount"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "libc",
+ "pu_mount",
+ "tempfile",
  "uucore",
 ]
 
