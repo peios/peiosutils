@@ -1,6 +1,6 @@
 # peiosutils — the Peios coreutils: GNU-coreutils-compatible file/text utilities
 # (a uutils fork) plus the Peios-native KACS tools (token, sd, logonse, revstrm)
-# and the SD-aware file utilities. A single multi-call binary (`coreutils`) with
+# and the SD-aware file utilities. A single multi-call binary (`peiosutils`) with
 # one symlink per applet in /usr/bin, busybox-style.
 #
 # One build.main tree fans into several packages (the Fedora coreutils split):
@@ -60,11 +60,11 @@ cargo build --release --locked --no-default-features --features "uudoc feat_os_u
 
 # --- Binaries (peiosutils): multi-call + per-applet symlinks, busybox-style ---
 mkdir -p "$PEKIT_OUT/$BINDIR"
-install -m 0755 target/release/peiosutils "$PEKIT_OUT/$BINDIR/coreutils"
+install -m 0755 target/release/peiosutils "$PEKIT_OUT/$BINDIR/peiosutils"
 APPLETS=$(target/release/peiosutils --list)
 for a in $APPLETS; do
-  [ "$a" = "coreutils" ] && continue
-  ln -sf coreutils "$PEKIT_OUT/$BINDIR/$a"
+  [ "$a" = "peiosutils" ] && continue
+  ln -sf peiosutils "$PEKIT_OUT/$BINDIR/$a"
 done
 
 # --- peiosutils-common: man pages + zsh/bash/fish completions + locale data ---
@@ -102,7 +102,7 @@ done
 # .debug; strip removes it from the shipped binary. Only this repo's own sources
 # resolve under $SRC — std / cargo-registry / git-dep paths fall outside and are
 # skipped (the peios/peios-sys git-dep sources live in ~/.cargo, not $SRC).
-bin="$PEKIT_OUT/$BINDIR/coreutils"
+bin="$PEKIT_OUT/$BINDIR/peiosutils"
 debugedit -b "$SRC" -d /usr/src/debug/peiosutils -l "$PEKIT_OUT/.srclist" -n "$bin"
 bid=$(readelf -n "$bin" | sed -n 's/^[[:space:]]*Build ID: //p' | head -1)
 if [ -n "$bid" ]; then

@@ -1,0 +1,37 @@
+# umount ~ (peiosutils) Peios filesystem unmount.
+#
+# Thin CLI over the shared pu_mount library core (sys/mountinfo/error/loopdev),
+# per docs/mount-spec.md §16.
+
+[package]
+name = "pu_umount"
+description = "umount ~ (peiosutils) detach Peios filesystems via umount2"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/umount"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/umount.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+uucore = { workspace = true }
+pu_mount = { version = "0.8.0", path = "../mount" }
+
+[[bin]]
+name = "umount"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

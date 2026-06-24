@@ -5,11 +5,20 @@
 #
 # The libpeios runtime dependency is detected automatically from the binary's
 # DT_NEEDED (libpeios.so.0) — the Peios-native + SD-aware applets link it; glibc
-# likewise. No manual [dependencies] needed.
+# likewise. libblkid, however, is dlopen'd by `mount` (not linked), so it carries
+# no DT_NEEDED and MUST be declared explicitly below; the auto-derivation still
+# adds libpeios + glibc on top of it.
 
 [package]
 description = "Peios coreutils — GNU-compatible core utilities plus the Peios-native KACS tools (token, sd, logonse, revstrm)"
 
+[dependencies]
+# `mount` opens libblkid.so.1 at runtime (dlopen) for its -U/-L/UUID=/LABEL=
+# source forms and -t auto type probing. Loaded, not linked → not auto-derived
+# from DT_NEEDED, so it is declared here. ABI is stable on libblkid.so.1, so any
+# version of the package suffices.
+libblkid = "*"
+
 [files]
-# The multi-call binary (coreutils) and every per-applet symlink.
+# The multi-call binary (peiosutils) and every per-applet symlink.
 ":usr/bin/**" = "usr/bin/"

@@ -16,12 +16,20 @@ readme.workspace = true
 [lints]
 workspace = true
 
+[lib]
+path = "src/mkirf.rs"
+doctest = false
+
 [[bin]]
 name = "mkirf"
 path = "src/main.rs"
 
 [dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+thiserror = { workspace = true }
 flate2 = { workspace = true }
+glob = { workspace = true }
 notify = { workspace = true }
 
 [dev-dependencies]

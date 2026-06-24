@@ -112,8 +112,11 @@ feat_common_core = [
   "logonse",
   "ls",
   "mkdir",
+  "mkirf",
   "mktemp",
+  "mkuki",
   "more",
+  "mount",
   "mv",
   "nl",
   "numfmt",
@@ -149,6 +152,7 @@ feat_common_core = [
   "truncate",
   "tsort",
   "tty",
+  "umount",
   "unexpand",
   "uniq",
   "unlink",
@@ -614,6 +618,7 @@ mkuki = { optional = true, version = "0.8.0", package = "pu_mkuki", path = "src/
 mknod = { optional = true, version = "0.8.0", package = "pu_mknod", path = "src/uu/mknod" }
 mktemp = { optional = true, version = "0.8.0", package = "pu_mktemp", path = "src/uu/mktemp" }
 more = { optional = true, version = "0.8.0", package = "pu_more", path = "src/uu/more" }
+mount = { optional = true, version = "0.8.0", package = "pu_mount", path = "src/uu/mount" }
 mv = { optional = true, version = "0.8.0", package = "pu_mv", path = "src/uu/mv" }
 nice = { optional = true, version = "0.8.0", package = "pu_nice", path = "src/uu/nice" }
 nl = { optional = true, version = "0.8.0", package = "pu_nl", path = "src/uu/nl" }
@@ -659,6 +664,7 @@ true = { optional = true, version = "0.8.0", package = "pu_true", path = "src/uu
 truncate = { optional = true, version = "0.8.0", package = "pu_truncate", path = "src/uu/truncate" }
 tsort = { optional = true, version = "0.8.0", package = "pu_tsort", path = "src/uu/tsort" }
 tty = { optional = true, version = "0.8.0", package = "pu_tty", path = "src/uu/tty" }
+umount = { optional = true, version = "0.8.0", package = "pu_umount", path = "src/uu/umount" }
 uname = { optional = true, version = "0.8.0", package = "pu_uname", path = "src/uu/uname" }
 unexpand = { optional = true, version = "0.8.0", package = "pu_unexpand", path = "src/uu/unexpand" }
 uniq = { optional = true, version = "0.8.0", package = "pu_uniq", path = "src/uu/uniq" }

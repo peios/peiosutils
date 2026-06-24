@@ -1,4 +1,4 @@
-# peiosutils-debuginfo — separated debug symbols for the coreutils multi-call
+# peiosutils-debuginfo — separated debug symbols for the peiosutils multi-call
 # binary. build.main splits the DWARF out into a build-id-indexed file under
 # /usr/lib/debug/.build-id/, which gdb/perf/debuginfod locate by the binary's
 # build-id. x86_64 (inherited): DWARF is architecture-specific.
