@@ -1,0 +1,36 @@
+[package]
+name = "pu_reg"
+description = "reg ~ (peiosutils) query and manipulate the Peios registry (LCS)"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/reg"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/reg.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+uucore = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = { workspace = true }
+peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
+peios-sys = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
+
+[[bin]]
+name = "reg"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,5 +1,6 @@
 # peiosutils — the Peios coreutils: GNU-coreutils-compatible file/text utilities
-# (a uutils fork) plus the Peios-native KACS tools (token, sd, logonse, revstrm)
+# (a uutils fork) plus the Peios-native KACS/registry tools (token, sd, reg,
+# logonse, revstrm)
 # and the SD-aware file utilities. A single multi-call binary (`peiosutils`) with
 # one symlink per applet in /usr/bin, busybox-style.
 #
