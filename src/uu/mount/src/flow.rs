@@ -15,7 +15,7 @@ use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 
 use crate::error::{MountError, Result};
-use crate::options::{PropChange, PropKind, SbFlag};
+use crate::options::{ParsedOptions, PropChange, PropKind, SbFlag};
 use crate::request::MountRequest;
 use crate::verb::Verb;
 use crate::{blkid, loopdev, policy, sys};
@@ -153,7 +153,7 @@ fn exec_new(ctx: &Ctx, req: &MountRequest, target: &[u8]) -> Result<()> {
 
     let result = match attempt(false) {
         Ok(()) => Ok(()),
-        Err(e) if should_retry_ro(req, &e) => {
+        Err(e) if should_retry_ro(&req.options, &e) => {
             ctx.say(|| "write-protected; retrying read-only".to_string());
             attempt(true)
         }
@@ -405,8 +405,18 @@ fn move_mount_flags(req: &MountRequest) -> u32 {
     0
 }
 
-fn should_retry_ro(req: &MountRequest, e: &MountError) -> bool {
-    if req.options.explicit_rw || req.options.explicit_ro || req.options.sb_rdonly == Some(true) {
+fn should_retry_ro(opts: &ParsedOptions, e: &MountError) -> bool {
+    // Skip the fallback only when read-only can't help or isn't wanted:
+    //   - explicit_rw: the caller demanded rw; don't silently downgrade it.
+    //   - sb_rdonly already requested: the superblock open is already read-only,
+    //     so a write-protect EACCES/EROFS won't occur (and a retry can't help).
+    // NOT explicit_ro: a bare `ro` is a *mount-level* MOUNT_ATTR_RDONLY, which
+    // leaves the superblock — and so the block-device open mode — read-write. On
+    // read-only media that still trips the write-protect EACCES, and the retry
+    // (which sets the *superblock* ro via fsconfig) is exactly the fix. Guarding
+    // on explicit_ro here is what made `mount -o ro` fail on read-only block
+    // devices (a live ISO, a write-protected USB).
+    if opts.explicit_rw || opts.sb_rdonly == Some(true) {
         return false;
     }
     // Write-protect surfaces as EROFS, or as EACCES from the block/sb layer.
@@ -526,4 +536,61 @@ fn at_fdcwd() -> BorrowedFd<'static> {
     // SAFETY: AT_FDCWD is a well-known special dirfd the *at syscalls accept;
     // it is never closed.
     unsafe { BorrowedFd::borrow_raw(libc::AT_FDCWD) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::options::ParsedOptions;
+    use std::io;
+
+    fn write_protect_err() -> MountError {
+        MountError::Mount {
+            stage: "fsconfig(create)",
+            source: io::Error::from_raw_os_error(libc::EACCES),
+        }
+    }
+
+    // The regression this guards: a bare `-o ro` is mount-level only
+    // (explicit_ro=true) and leaves the superblock read-write, so read-only
+    // media still fails the superblock create with EACCES. The auto-ro fallback
+    // MUST still fire — its retry is what sets the superblock read-only.
+    #[test]
+    fn retries_ro_on_write_protect_even_when_ro_is_explicit() {
+        let mut opts = ParsedOptions::default();
+        opts.explicit_ro = true;
+        assert!(should_retry_ro(&opts, &write_protect_err()));
+    }
+
+    #[test]
+    fn retries_ro_on_write_protect_when_unspecified() {
+        assert!(should_retry_ro(&ParsedOptions::default(), &write_protect_err()));
+    }
+
+    // Explicit rw means "don't silently downgrade" — no fallback.
+    #[test]
+    fn no_retry_when_rw_is_explicit() {
+        let mut opts = ParsedOptions::default();
+        opts.explicit_rw = true;
+        assert!(!should_retry_ro(&opts, &write_protect_err()));
+    }
+
+    // Superblock already read-only: the device opens ro, so write-protect can't
+    // occur and a retry can't help.
+    #[test]
+    fn no_retry_when_superblock_already_ro() {
+        let mut opts = ParsedOptions::default();
+        opts.sb_rdonly = Some(true);
+        assert!(!should_retry_ro(&opts, &write_protect_err()));
+    }
+
+    // Only write-protect errors (EROFS/EACCES) trigger the fallback.
+    #[test]
+    fn no_retry_on_unrelated_error() {
+        let e = MountError::Mount {
+            stage: "fsconfig(create)",
+            source: io::Error::from_raw_os_error(libc::ENOENT),
+        };
+        assert!(!should_retry_ro(&ParsedOptions::default(), &e));
+    }
 }
