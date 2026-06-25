@@ -2134,6 +2134,7 @@ dependencies = [
  "pu_logname",
  "pu_logonse",
  "pu_ls",
+ "pu_lsblk",
  "pu_md5sum",
  "pu_mkdir",
  "pu_mkfifo",
@@ -2878,6 +2879,18 @@ dependencies = [
  "thiserror 2.0.18",
  "uucore",
  "uutils_term_grid",
+]
+
+[[package]]
+name = "pu_lsblk"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "libc",
+ "libloading",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uucore",
 ]
 
 [[package]]

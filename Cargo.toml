@@ -111,6 +111,7 @@ feat_common_core = [
   "ln",
   "logonse",
   "ls",
+  "lsblk",
   "mkdir",
   "mkirf",
   "mktemp",
@@ -609,6 +610,7 @@ kill = { optional = true, version = "0.8.0", package = "pu_kill", path = "src/uu
 link = { optional = true, version = "0.8.0", package = "pu_link", path = "src/uu/link" }
 ln = { optional = true, version = "0.8.0", package = "pu_ln", path = "src/uu/ln" }
 ls = { optional = true, version = "0.8.0", package = "pu_ls", path = "src/uu/ls" }
+lsblk = { optional = true, version = "0.8.0", package = "pu_lsblk", path = "src/uu/lsblk" }
 logname = { optional = true, version = "0.8.0", package = "pu_logname", path = "src/uu/logname" }
 logonse = { optional = true, version = "0.8.0", package = "pu_logonse", path = "src/uu/logonse" }
 mkdir = { optional = true, version = "0.8.0", package = "pu_mkdir", path = "src/uu/mkdir" }

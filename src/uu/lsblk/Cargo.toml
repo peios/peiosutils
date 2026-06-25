@@ -1,0 +1,52 @@
+# lsblk ~ (peiosutils) list block devices.
+#
+# Structured as a clap-free library core (sysfs enumeration, blkid probing,
+# the column engine and renderers) plus a thin clap CLI, mirroring the layout
+# of `pu_mount`. The hardware/topology columns come from an unpatched,
+# Linux-identical /sys/block; the filesystem columns come from libblkid
+# (dlopen'd, exactly like mount); OWNER/MODE come from the device node's
+# Security Descriptor via `uucore::sd_control`, rendered the same way `ls -l`
+# does (owner SID + [type][x][+], no GROUP / no mode bits).
+#
+# The ID-LINK column is sourced from the /dev/disk/by-* symlink farm, NOT a
+# /run/udev/data parser — that fast-path waits on peios-udev defining its db
+# format (see the package TODO).
+
+[package]
+name = "pu_lsblk"
+description = "lsblk ~ (peiosutils) list information about block devices"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/lsblk"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lsblk.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+# `sd-control` pulls in the peios crate's safe SD wrappers (read_sd_display);
+# `format` gives the size formatter used for human-readable SIZE.
+uucore = { workspace = true, features = ["sd-control", "format"] }
+thiserror = { workspace = true }
+# libblkid (filesystem/partition columns) is opened at runtime via dlopen so the
+# crate builds without the util-linux dev files; the peiosutils package declares
+# the libblkid.so.1 runtime dependency. Same approach as pu_mount.
+libloading = "0.8"
+
+[[bin]]
+name = "lsblk"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }
