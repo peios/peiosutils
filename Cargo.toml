@@ -131,6 +131,7 @@ feat_common_core = [
   "pwd",
   "readlink",
   "realpath",
+  "reg",
   "regman",
   "rm",
   "rmdir",
@@ -638,6 +639,7 @@ ptx = { optional = true, version = "0.8.0", package = "pu_ptx", path = "src/uu/p
 pwd = { optional = true, version = "0.8.0", package = "pu_pwd", path = "src/uu/pwd" }
 readlink = { optional = true, version = "0.8.0", package = "pu_readlink", path = "src/uu/readlink" }
 realpath = { optional = true, version = "0.8.0", package = "pu_realpath", path = "src/uu/realpath" }
+reg = { optional = true, version = "0.8.0", package = "pu_reg", path = "src/uu/reg" }
 regman = { optional = true, version = "0.8.0", package = "pu_regman", path = "src/uu/regman" }
 revstrm = { optional = true, version = "0.8.0", package = "pu_revstrm", path = "src/uu/revstrm" }
 rm = { optional = true, version = "0.8.0", package = "pu_rm", path = "src/uu/rm" }

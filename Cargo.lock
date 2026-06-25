@@ -2161,6 +2161,7 @@ dependencies = [
  "pu_pwd",
  "pu_readlink",
  "pu_realpath",
+ "pu_reg",
  "pu_regman",
  "pu_revstrm",
  "pu_rm",
@@ -3170,6 +3171,21 @@ version = "0.8.0"
 dependencies = [
  "clap",
  "fluent",
+ "uucore",
+]
+
+[[package]]
+name = "pu_reg"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "libc",
+ "peios",
+ "peios-sys",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
  "uucore",
 ]
 
