@@ -38,7 +38,16 @@ impl Settings {
         let json = m.get_flag("json") || env_flag("REG_JSON");
         let verbose = m.get_flag("verbose") || env_flag("REG_VERBOSE");
         let quiet = m.get_flag("quiet");
-        let assume_yes = m.get_flag("yes") || env_flag("REG_ASSUME_YES");
+        // `yes` is only defined on the destructive subcommands (via yes_arg());
+        // the read commands don't carry it, so get_flag("yes") would panic on an
+        // undefined arg. try_get_one tolerates its absence (→ false).
+        let assume_yes = m
+            .try_get_one::<bool>("yes")
+            .ok()
+            .flatten()
+            .copied()
+            .unwrap_or(false)
+            || env_flag("REG_ASSUME_YES");
         let layer = m
             .get_one::<String>("layer")
             .cloned()
