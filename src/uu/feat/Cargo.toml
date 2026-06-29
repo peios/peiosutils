@@ -1,0 +1,30 @@
+[package]
+name = "pu_feat"
+description = "feat ~ (peiosutils) install/enable Peios features (the imperative layer above packages)"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/feat"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/feat.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+uucore = { workspace = true }
+peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
+peios-sys = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
+
+[[bin]]
+name = "feat"
+path = "src/main.rs"

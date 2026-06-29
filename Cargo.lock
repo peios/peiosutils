@@ -2119,6 +2119,7 @@ dependencies = [
  "pu_expr",
  "pu_factor",
  "pu_false",
+ "pu_feat",
  "pu_fmt",
  "pu_fold",
  "pu_groups",
@@ -2707,6 +2708,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pu_feat"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "libc",
+ "peios",
+ "peios-sys",
+ "uucore",
+]
+
+[[package]]
 name = "pu_fmt"
 version = "0.8.0"
 dependencies = [
@@ -2963,6 +2975,7 @@ name = "pu_mkuki"
 version = "0.8.0"
 dependencies = [
  "clap",
+ "notify",
  "tempfile",
  "uucore",
 ]
