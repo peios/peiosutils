@@ -9,6 +9,10 @@ use std::error::Error;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::Duration;
+
+use notify::{RecursiveMode, Watcher};
 
 use clap::{Arg, ArgAction, Command};
 use uucore::error::{UResult, USimpleError};
@@ -86,7 +90,12 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     }
 
     let cfg = Config::from_matches(&matches).map_err(|e| USimpleError::new(2, e))?;
-    run(&cfg).map_err(|e| USimpleError::new(1, e.to_string()))
+    if matches.get_flag("watch") {
+        let debounce = *matches.get_one::<u64>("debounce").unwrap_or(&5);
+        watch(&cfg, debounce).map_err(|e| USimpleError::new(1, e.to_string()))
+    } else {
+        run(&cfg).map_err(|e| USimpleError::new(1, e.to_string()))
+    }
 }
 
 pub fn uu_app() -> Command {
@@ -143,6 +152,20 @@ pub fn uu_app() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("print the bundled stub's provenance and exit"),
         )
+        .arg(
+            Arg::new("watch")
+                .long("watch")
+                .action(ArgAction::SetTrue)
+                .help("stay resident and rebuild the UKI whenever --kernel, --initramfs, or --cmdline-file changes"),
+        )
+        .arg(
+            Arg::new("debounce")
+                .long("debounce")
+                .value_name("SECS")
+                .default_value("5")
+                .value_parser(clap::value_parser!(u64))
+                .help("with --watch, settle time before a rebuild"),
+        )
 }
 
 impl Config {
@@ -177,6 +200,98 @@ impl Config {
 
 fn print_stub_info() {
     print!("{DEFAULT_STUB_SOURCE}");
+}
+
+/// `--watch`: the mkuki half of Peios Dynamic Boot. Stay resident and rebuild
+/// the UKI whenever an input changes, so the boot image tracks a new kernel, a
+/// freshly-repacked initramfs (mkirf's half), or an edited cmdline with no
+/// manual step. A foreground loop until killed — supervising it is a service
+/// manager's job, like mkirf's watch mode.
+///
+/// Each input's *parent directory* is watched non-recursively, not the file
+/// itself: that survives the atomic temp+rename writes mkirf and mkuki both do
+/// (which appear as a directory event, where a stale single-file inode watch
+/// would miss them) and catches a versioned kernel being swapped in `/boot`.
+/// Because the watch is non-recursive, a deep write to `--out` nested under a
+/// watched dir (e.g. `/boot/efi/...` under `/boot`) does not retrigger it.
+fn watch(cfg: &Config, debounce_secs: u64) -> Result<(), Box<dyn Error>> {
+    // Build once up front so the UKI is current before the watch begins.
+    rebuild(cfg);
+
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for input in watched_inputs(cfg) {
+        if let Some(dir) = input.parent()
+            && !dir.as_os_str().is_empty()
+        {
+            let dir = dir.to_path_buf();
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+
+    // Guard the one self-retriggering case the non-recursive watch can't avoid:
+    // --out sitting *directly* in a watched directory.
+    if let Some(out_parent) = cfg.out.parent()
+        && dirs.iter().any(|d| d == out_parent)
+    {
+        return Err(format!(
+            "--watch: --out {} sits directly in a watched input directory; \
+             every rebuild would retrigger the watch",
+            cfg.out.display()
+        )
+        .into());
+    }
+
+    let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
+    let mut watcher = notify::recommended_watcher(move |event| {
+        // A send failure only means the receive loop has already exited.
+        let _ = tx.send(event);
+    })?;
+    for dir in &dirs {
+        if let Err(e) = watcher.watch(dir, RecursiveMode::NonRecursive) {
+            eprintln!("mkuki: cannot watch {}: {e}", dir.display());
+        }
+    }
+    eprintln!(
+        "mkuki: watching {} input dir(s) (debounce {debounce_secs}s) — Ctrl-C to stop",
+        dirs.len(),
+    );
+
+    let debounce = Duration::from_secs(debounce_secs);
+    loop {
+        match rx.recv() {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => {
+                eprintln!("mkuki: watch error: {e}");
+                continue;
+            }
+            Err(_) => return Ok(()), // watcher dropped — nothing more to do
+        }
+        // Drain the burst: rebuild only once inputs have been quiet for the
+        // full debounce window.
+        while rx.recv_timeout(debounce).is_ok() {}
+        rebuild(cfg);
+    }
+}
+
+/// One rebuild, logging the outcome. A failed rebuild (e.g. a half-written
+/// kernel mid-copy) must not kill the watcher — fixing the input recovers on the
+/// next change — so the error is reported, not propagated.
+fn rebuild(cfg: &Config) {
+    if let Err(e) = run(cfg) {
+        eprintln!("mkuki: rebuild failed: {e}");
+    }
+}
+
+/// The inputs whose changes should trigger a rebuild. A literal `--cmdline` is
+/// static, so only a `--cmdline-file` is watchable.
+fn watched_inputs(cfg: &Config) -> Vec<PathBuf> {
+    let mut inputs = vec![cfg.kernel.clone(), cfg.initramfs.clone()];
+    if let Cmdline::File(path) = &cfg.cmdline {
+        inputs.push(path.clone());
+    }
+    inputs
 }
 
 fn run(cfg: &Config) -> Result<(), Box<dyn Error>> {
