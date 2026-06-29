@@ -130,7 +130,27 @@ pub fn build() -> Command {
         )
         .subcommand(
             common(Command::new("apply").about("Apply a batch of operations atomically"))
-                .arg(Arg::new("file").required(true).help("Batch file (text or JSON); - for stdin"))
+                .arg(
+                    Arg::new("file")
+                        .required_unless_present("dir")
+                        .conflicts_with("dir")
+                        .help("Batch file (text or JSON); - for stdin"),
+                )
+                .arg(
+                    Arg::new("dir")
+                        .long("dir")
+                        .value_name("DIR")
+                        .help(
+                            "Apply every batch file in DIR (sorted), each as its own \
+                             transaction. A missing or empty DIR applies nothing and succeeds.",
+                        ),
+                )
+                .arg(
+                    Arg::new("once-delete")
+                        .long("once-delete")
+                        .action(ArgAction::SetTrue)
+                        .help("Delete each batch file after it applies successfully (drain)"),
+                )
                 .arg(yes_arg()),
         )
         .subcommand(
