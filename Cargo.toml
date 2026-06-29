@@ -103,6 +103,7 @@ feat_common_core = [
   "expr",
   "factor",
   "false",
+  "feat",
   "fmt",
   "fold",
   "head",
@@ -598,6 +599,7 @@ expand = { optional = true, version = "0.8.0", package = "pu_expand", path = "sr
 expr = { optional = true, version = "0.8.0", package = "pu_expr", path = "src/uu/expr" }
 factor = { optional = true, version = "0.8.0", package = "pu_factor", path = "src/uu/factor" }
 false = { optional = true, version = "0.8.0", package = "pu_false", path = "src/uu/false" }
+feat = { optional = true, version = "0.8.0", package = "pu_feat", path = "src/uu/feat" }
 fmt = { optional = true, version = "0.8.0", package = "pu_fmt", path = "src/uu/fmt" }
 fold = { optional = true, version = "0.8.0", package = "pu_fold", path = "src/uu/fold" }
 groups = { optional = true, version = "0.8.0", package = "pu_groups", path = "src/uu/groups" }
