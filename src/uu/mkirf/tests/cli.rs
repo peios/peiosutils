@@ -204,6 +204,144 @@ fn rejects_a_source_without_init() {
     );
 }
 
+/// A newc entry recovered from a raw (uncompressed) cpio stream: its name,
+/// the absolute offset of its file data, the data length, and the st_mode.
+struct NewcEntry {
+    name: Vec<u8>,
+    data_off: usize,
+    size: usize,
+    mode: u32,
+}
+
+/// Walk the uncompressed newc cpio at the front of `buf`, returning its
+/// entries and the offset just past its `TRAILER!!!` — where the gzip main
+/// archive begins.
+fn walk_early(buf: &[u8]) -> (Vec<NewcEntry>, usize) {
+    let roundup4 = |n: usize| (n + 3) & !3;
+    let mut entries = Vec::new();
+    let mut pos = 0usize;
+    loop {
+        assert_eq!(&buf[pos..pos + 6], b"070701", "newc magic at {pos}");
+        let field = |i: usize| -> usize {
+            let raw = &buf[pos + 6 + i * 8..pos + 6 + i * 8 + 8];
+            usize::from_str_radix(std::str::from_utf8(raw).unwrap(), 16).unwrap()
+        };
+        let mode = field(1) as u32;
+        let size = field(6);
+        let namesize = field(11);
+        // The name field may be NUL-widened for 16-byte data alignment; the
+        // real path is the bytes up to the first NUL.
+        let raw = &buf[pos + 110..pos + 110 + namesize - 1];
+        let name = raw.split(|&b| b == 0).next().unwrap().to_vec();
+        let data_off = pos + roundup4(110 + namesize);
+        let is_trailer = name.starts_with(b"TRAILER!!!");
+        pos = data_off + roundup4(size);
+        if is_trailer {
+            break;
+        }
+        entries.push(NewcEntry {
+            name,
+            data_off,
+            size,
+            mode,
+        });
+    }
+    (entries, pos)
+}
+
+#[test]
+fn early_segments_become_an_aligned_uncompressed_prefix() {
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("src");
+    fs::create_dir(&src).unwrap();
+    sample_tree(&src);
+
+    // Two early segments that share the `kernel/` parent — microcode and an
+    // ACPI table override. The segment dir name (`microcode`/`acpi`) is a
+    // label and must not appear in the cpio paths.
+    let blob = vec![0xABu8; 4099]; // odd size, so data alignment is non-trivial
+    let uc = src.join("++/microcode/kernel/x86/microcode");
+    fs::create_dir_all(&uc).unwrap();
+    fs::write(uc.join("GenuineIntel.bin"), &blob).unwrap();
+    let acpi = src.join("++/acpi/kernel/firmware/acpi");
+    fs::create_dir_all(&acpi).unwrap();
+    fs::write(acpi.join("ssdt.aml"), b"FAKEAML").unwrap();
+
+    let out = dir.path().join("initramfs.cpio.gz");
+    assert!(
+        Command::new(MKIRF)
+            .arg(&src)
+            .arg(&out)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let bytes = fs::read(&out).unwrap();
+
+    // The image opens with an UNCOMPRESSED cpio, not gzip — that is what the
+    // kernel's early scanner reads before any decompression.
+    assert_eq!(&bytes[..6], b"070701", "early region must be uncompressed cpio");
+
+    let (early, gz_start) = walk_early(&bytes);
+    let find = |p: &[u8]| early.iter().find(|e| e.name == p);
+
+    // The microcode blob is present at its kernel-ABI path, 16-byte aligned,
+    // with its bytes intact — the segment label `microcode/` is stripped.
+    let mc = find(b"kernel/x86/microcode/GenuineIntel.bin").expect("microcode entry");
+    assert_eq!(mc.mode & 0o170_000, 0o100_000, "regular file");
+    assert_eq!(mc.data_off % 16, 0, "microcode payload must be 16-byte aligned");
+    assert_eq!(&bytes[mc.data_off..mc.data_off + mc.size], &blob[..]);
+
+    // The ACPI segment rides the same region, also aligned.
+    let aml = find(b"kernel/firmware/acpi/ssdt.aml").expect("acpi entry");
+    assert_eq!(aml.data_off % 16, 0, "acpi payload must be 16-byte aligned");
+
+    // The shared `kernel/` parent appears exactly once despite two segments.
+    assert_eq!(
+        early.iter().filter(|e| e.name == b"kernel").count(),
+        1,
+        "shared parent dir must be de-duplicated",
+    );
+
+    // The gzip main archive follows, and it does NOT carry the `++` tree.
+    assert_eq!(&bytes[gz_start..gz_start + 2], &[0x1f, 0x8b], "gzip after early region");
+    let main = gunzip(&bytes[gz_start..]);
+    assert!(
+        main.windows(4).any(|w| w == b"init"),
+        "main archive still carries the real tree",
+    );
+    assert!(
+        !main.windows(2).any(|w| w == b"++"),
+        "the ++ tree must not leak into the compressed main archive",
+    );
+    assert!(
+        !main
+            .windows(b"GenuineIntel.bin".len())
+            .any(|w| w == b"GenuineIntel.bin"),
+        "microcode must live only in the early region, not the main archive",
+    );
+}
+
+#[test]
+fn no_early_segments_is_a_plain_gzip() {
+    // Without a `++/` tree the output is byte-for-byte the v1 single gzip.
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("src");
+    fs::create_dir(&src).unwrap();
+    sample_tree(&src);
+    let out = dir.path().join("initramfs.cpio.gz");
+    assert!(
+        Command::new(MKIRF)
+            .arg(&src)
+            .arg(&out)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let bytes = fs::read(&out).unwrap();
+    assert_eq!(&bytes[..2], &[0x1f, 0x8b], "no early region → leading gzip");
+}
+
 /// Poll `cond` until it returns true or `timeout` elapses.
 fn wait_for(timeout: Duration, mut cond: impl FnMut() -> bool) -> bool {
     let start = Instant::now();

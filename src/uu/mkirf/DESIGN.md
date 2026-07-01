@@ -3,7 +3,7 @@
 `mkirf` compiles a directory tree into a deterministic initramfs
 `cpio.gz` — the in-memory root filesystem the kernel unpacks at boot.
 
-**Status:** v1 + hook DAG implemented.
+**Status:** v1 + hook DAG + early-region (`++/`) implemented.
 
 ---
 
@@ -30,9 +30,16 @@ mode: rebuild whenever the source tree changes (§9). That is what lets
 `/boot/initramfs/` behave like an ordinary directory — edit a file,
 the initramfs is current again — rather than a build artifact.
 
+A third thing it does, conditionally: the reserved `++/` subdirectory
+(§10) is lifted out of the main archive and emitted as an **uncompressed
+cpio prepended ahead of it** — the kernel's "early initramfs" region, for
+content read before decompression (CPU microcode, ACPI table overrides).
+
 Deferred:
 
 - **`--compress=zstd`** — later addition, no structural change required.
+  Note this only ever changes the *main* archive's compression; the `++/`
+  early region (§10) is uncompressed by kernel contract regardless.
 - **UKI output** — wrapping kernel + cpio + cmdline into a signed-ready
   `.efi`; a boot-stack M3 milestone.
 
@@ -235,3 +242,68 @@ Supervising it — starting it at boot, restarting it if it dies — is a
 service manager's job, and Peios has none yet, so `--watch` is built but
 not yet wired into the running system (boot-design.md §5.9). Recursive
 watching is handled by the `notify` crate.
+
+## 10. The early region — `++/`
+
+The Linux kernel accepts an initramfs that is **several cpio archives
+concatenated**, and it reads any *leading uncompressed* archive before it
+decompresses the rest. Two kernel facilities consume that early region:
+
+- **CPU microcode** — `kernel/x86/microcode/{GenuineIntel,AuthenticAMD}.bin`,
+  applied by the early microcode loader before secondary CPUs come up.
+- **ACPI table overrides** — `kernel/firmware/acpi/*.aml`, applied during
+  ACPI init (`CONFIG_ACPI_TABLE_UPGRADE`).
+
+Both are read *before* decompression, so they cannot live in the
+(compressed) main archive — they need their own uncompressed cpio out
+front. mkirf produces that from a reserved source subdirectory:
+
+```
+<src>/++/<segment>/<files…>
+  ++/microcode/kernel/x86/microcode/GenuineIntel.bin
+  ++/acpi/kernel/firmware/acpi/ssdt.aml
+```
+
+### 10.1 What mkirf does with it
+
+- `++/` is **excluded from the main archive** entirely.
+- Each immediate child of `++/` is one **segment**, whose own contents map
+  onto the cpio root — the segment directory name (`microcode`, `acpi`) is
+  a human label and **does not appear** in the archive. So
+  `++/microcode/kernel/x86/microcode/GenuineIntel.bin` becomes the cpio
+  entry `kernel/x86/microcode/GenuineIntel.bin`.
+- All segments **merge into one uncompressed cpio** with a single trailer,
+  written ahead of the gzip main archive on the same stream. Segments
+  share parent directories (`kernel/`); duplicates collapse, and a genuine
+  file collision between two segments fails the build.
+- The order is deterministic: segments sorted by name, entries in
+  `LC_ALL=C` byte order — same determinism guarantee as §5.
+
+**One archive, one trailer** is load-bearing: the kernel's `find_cpio_data`
+early scan stops at the first `TRAILER!!!`, so every early file must
+precede it. Concatenating per-segment cpios (each with its own trailer)
+would hide everything after the first — hence the merge.
+
+### 10.2 16-byte alignment
+
+The x86 microcode loader reads the blob in place and requires it **16-byte
+aligned** within the initramfs. mkirf guarantees this for every
+regular-file payload in the early region by **NUL-widening the preceding
+entry's name field**: the kernel reads the path up to its first NUL but
+uses `c_namesize` for offset arithmetic, so padding the name with NULs
+shifts the data onto the boundary without changing the path. The region
+begins at image offset 0 (page-aligned in memory once the kernel maps the
+initrd), so a 16-byte file offset is a 16-byte physical alignment.
+
+### 10.3 Why this, and not a tool flag
+
+mkirf stays **format-agnostic**: it knows "early segments", never
+"microcode" or "ACPI". The kernel-ABI specifics — the magic
+`kernel/x86/microcode/` path, the per-vendor blob assembly — live in the
+*packages* that drop a tree into `++/` (e.g. `intel-ucode`, `amd-ucode`),
+not in the tool. And because the convention is a directory the composed
+tree already carries, nothing downstream changes: `mkuki` embeds the
+combined image as a single `.initrd` (no bootloader needed to stack
+initrds), and `--watch` regenerates correctly when a package install drops
+a new segment into `++/`. Packages express *what*; mkirf expresses *how it
+is framed*.

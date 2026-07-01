@@ -97,6 +97,139 @@ pub fn write_archive<W: Write>(w: &mut W, entries: &[Entry]) -> io::Result<()> {
     write_header(w, TRAILER_NAME, 0, 0, 0, 0)
 }
 
+/// 16-byte alignment required of early-region file payloads. The x86 CPU
+/// microcode loader reads the blob in place from the (uncompressed) leading
+/// cpio and needs it 16-byte aligned; ACPI table overrides ride the same
+/// region. See DESIGN.md §10.
+const EARLY_ALIGN: u64 = 16;
+
+/// Write `entries` as a single **uncompressed** newc cpio for the early
+/// (pre-decompression) region of the initramfs image, padding every regular
+/// file's data to a 16-byte boundary measured from the region start.
+///
+/// The whole region is ONE archive ended by ONE trailer: the kernel's
+/// `find_cpio_data` early scan stops at the first `TRAILER!!!`, so every
+/// early file (microcode, ACPI tables) must precede it. The 16-byte data
+/// alignment is achieved by widening the preceding entry's name field with
+/// NUL bytes — the kernel reads the path up to its first NUL but advances by
+/// `c_namesize` to find the data, so NUL-padding the name shifts the payload
+/// onto the boundary without changing the path. See DESIGN.md §10.
+///
+/// `entries` must already be in archive order (directories before their
+/// descendants); the region begins at file offset 0, so offsets here are
+/// absolute within the image.
+pub fn write_early_archive<W: Write>(w: &mut W, entries: &[Entry]) -> io::Result<()> {
+    let mut off: u64 = 0;
+    for entry in entries {
+        off = write_early_entry(w, entry, off)?;
+    }
+    // One trailer for the whole region; it carries no data, so no alignment.
+    write_header(w, TRAILER_NAME, 0, 0, 0, 0)
+}
+
+/// Write one early-region entry starting at byte `off` from the region start,
+/// returning the offset just past it. Regular-file (and inline) payloads land
+/// on a 16-byte boundary; everything else uses the standard 4-byte newc
+/// padding.
+fn write_early_entry<W: Write>(w: &mut W, entry: &Entry, off: u64) -> io::Result<u64> {
+    let mode = entry.body.mode();
+
+    let (filesize, rdevmajor, rdevminor) = match &entry.body {
+        Body::Directory | Body::Fifo => (0, 0, 0),
+        Body::Device { major, minor, .. } => (0, *major, *minor),
+        Body::Symlink { target } => (target.len() as u64, 0, 0),
+        Body::File { size, .. } => (*size, 0, 0),
+        Body::Inline { data, .. } => (data.len() as u64, 0, 0),
+    };
+
+    // Only a regular file's payload must hit the 16-byte boundary.
+    let align16 = matches!(&entry.body, Body::File { .. } | Body::Inline { .. });
+    let off = write_aligned_header(
+        w, &entry.name, mode, filesize, rdevmajor, rdevminor, off, align16,
+    )?;
+
+    let off = match &entry.body {
+        Body::Symlink { target } => {
+            w.write_all(target)?;
+            write_pad(w, target.len() as u64)?;
+            off + target.len() as u64 + pad4(target.len() as u64)
+        }
+        Body::File { source, size, .. } => {
+            let mut file = std::fs::File::open(source)
+                .map_err(|e| io::Error::new(e.kind(), format!("{}: {e}", source.display())))?;
+            let copied = io::copy(&mut file, w)?;
+            if copied != *size {
+                return Err(io::Error::other(format!(
+                    "{}: file changed during archiving ({size} -> {copied} bytes)",
+                    source.display(),
+                )));
+            }
+            write_pad(w, *size)?;
+            off + *size + pad4(*size)
+        }
+        Body::Inline { data, .. } => {
+            w.write_all(data)?;
+            write_pad(w, data.len() as u64)?;
+            off + data.len() as u64 + pad4(data.len() as u64)
+        }
+        Body::Directory | Body::Device { .. } | Body::Fifo => off,
+    };
+    Ok(off)
+}
+
+/// Like [`write_header`], but offset-aware: when `align16`, the name field is
+/// widened with NUL bytes so the file data that follows lands on a 16-byte
+/// boundary relative to the region start. Returns the offset where the data
+/// begins (i.e. just past header + padded name).
+#[allow(clippy::too_many_arguments)]
+fn write_aligned_header<W: Write>(
+    w: &mut W,
+    name: &[u8],
+    mode: u32,
+    filesize: u64,
+    rdevmajor: u64,
+    rdevminor: u64,
+    off: u64,
+    align16: bool,
+) -> io::Result<u64> {
+    let namesize_min = name.len() as u64 + 1; // includes the trailing NUL
+    let namesize = if align16 {
+        // Choose namesize so (off + 110 + namesize) is 16-aligned. Since 16 is
+        // a multiple of 4, the subsequent newc name pad-to-4 is then a no-op.
+        let base = off + 110 + namesize_min;
+        namesize_min + (EARLY_ALIGN - base % EARLY_ALIGN) % EARLY_ALIGN
+    } else {
+        namesize_min
+    };
+
+    let mut hdr = Vec::with_capacity(110);
+    hdr.extend_from_slice(MAGIC);
+    field(&mut hdr, 0)?; //            c_ino
+    field(&mut hdr, mode as u64)?; //  c_mode
+    field(&mut hdr, 0)?; //            c_uid
+    field(&mut hdr, 0)?; //            c_gid
+    field(&mut hdr, 1)?; //            c_nlink
+    field(&mut hdr, 0)?; //            c_mtime
+    field(&mut hdr, filesize)?; //     c_filesize
+    field(&mut hdr, 0)?; //            c_devmajor
+    field(&mut hdr, 0)?; //            c_devminor
+    field(&mut hdr, rdevmajor)?; //    c_rdevmajor
+    field(&mut hdr, rdevminor)?; //    c_rdevminor
+    field(&mut hdr, namesize)?; //     c_namesize (may be NUL-widened)
+    field(&mut hdr, 0)?; //            c_check
+    debug_assert_eq!(hdr.len(), 110);
+
+    w.write_all(&hdr)?;
+    w.write_all(name)?;
+    // The trailing NUL plus any extra NUL bytes that widen the name to namesize.
+    let nul_count = (namesize - name.len() as u64) as usize;
+    w.write_all(&vec![0u8; nul_count])?;
+
+    let consumed = 110 + namesize;
+    write_pad(w, consumed)?;
+    Ok(off + consumed + pad4(consumed))
+}
+
 fn write_entry<W: Write>(w: &mut W, entry: &Entry) -> io::Result<()> {
     let mode = entry.body.mode();
 
@@ -185,11 +318,15 @@ fn field(buf: &mut Vec<u8>, value: u64) -> io::Result<()> {
     Ok(())
 }
 
+/// NUL bytes needed to advance from `written` to the next 4-byte boundary.
+fn pad4(written: u64) -> u64 {
+    (4 - written % 4) % 4
+}
+
 /// Write NUL bytes to advance from `written` bytes to the next 4-byte
 /// boundary.
 fn write_pad<W: Write>(w: &mut W, written: u64) -> io::Result<()> {
-    let pad = (4 - written % 4) % 4;
-    w.write_all(&[0u8; 3][..pad as usize])
+    w.write_all(&[0u8; 3][..pad4(written) as usize])
 }
 
 #[cfg(test)]
@@ -407,5 +544,80 @@ mod tests {
             body: Body::Directory,
         }]);
         assert_eq!(buf.len() % 4, 0);
+    }
+
+    /// Every regular-file payload in the early region must begin on a 16-byte
+    /// boundary measured from the region start, across a range of name and
+    /// data lengths (so the NUL name-widening is genuinely exercised).
+    #[test]
+    fn early_archive_16_byte_aligns_every_payload() {
+        let entries = vec![
+            Entry {
+                name: b"kernel".to_vec(),
+                body: Body::Directory,
+            },
+            Entry {
+                name: b"a".to_vec(),
+                body: Body::Inline {
+                    data: vec![0x11; 1],
+                    executable: false,
+                },
+            },
+            Entry {
+                name: b"kernel/x86".to_vec(),
+                body: Body::Directory,
+            },
+            Entry {
+                name: b"kernel/x86/microcode".to_vec(),
+                body: Body::Directory,
+            },
+            Entry {
+                name: b"kernel/x86/microcode/GenuineIntel.bin".to_vec(),
+                body: Body::Inline {
+                    data: vec![0x22; 4099],
+                    executable: false,
+                },
+            },
+            Entry {
+                name: b"odd-name-len.bin".to_vec(),
+                body: Body::Inline {
+                    data: vec![0x33; 7],
+                    executable: false,
+                },
+            },
+        ];
+
+        let mut buf = Vec::new();
+        write_early_archive(&mut buf, &entries).unwrap();
+
+        // Independently walk the stream and assert each regular file's data
+        // offset is 16-aligned and its bytes survived.
+        let roundup4 = |n: usize| (n + 3) & !3;
+        let mut pos = 0usize;
+        let mut payloads = 0;
+        loop {
+            assert_eq!(&buf[pos..pos + 6], MAGIC);
+            let field = |i: usize| -> usize {
+                let raw = &buf[pos + 6 + i * 8..pos + 6 + i * 8 + 8];
+                usize::from_str_radix(std::str::from_utf8(raw).unwrap(), 16).unwrap()
+            };
+            let mode = field(1) as u32;
+            let size = field(6);
+            let namesize = field(11);
+            let name = &buf[pos + 110..pos + 110 + namesize - 1];
+            let trailer = name.starts_with(TRAILER_NAME);
+            let data_off = pos + roundup4(110 + namesize);
+            if mode & 0o170_000 == S_IFREG {
+                assert_eq!(data_off % 16, 0, "payload not 16-aligned");
+                payloads += 1;
+            }
+            pos = data_off + roundup4(size);
+            if trailer {
+                break;
+            }
+        }
+        assert_eq!(payloads, 3, "all three file payloads checked");
+        // Exactly one trailer ends the whole region.
+        assert_eq!(pos, buf.len());
     }
 }
