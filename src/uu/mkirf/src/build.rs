@@ -31,17 +31,36 @@ pub fn run(src: &Path, out: &Path, excludes: &Excludes) -> Result<()> {
     // the uncompressed early region prepended ahead of it (see collect_early).
     entries.retain(|e| e.name != EARLY_DIR && !starts_with_early(&e.name));
 
-    // Resolve the hook DAG and inject the generated hooks.seq manifest as a
-    // synthetic entry — it is not a file in the source tree.
-    let order = resolve_hooks(src)?;
-    entries.push(cpio::Entry {
-        name: b"hooks.seq".to_vec(),
-        body: cpio::Body::Inline {
-            data: hooks::render_seq(&order),
-            executable: false,
-        },
-    });
-    // walk() returns sorted entries; the injected one must be re-sorted into
+    // Resolve the hook DAG and inject the generated sequence manifests as
+    // synthetic entries — they are not files in the source tree.
+    //
+    // Every version mkirf can project faithfully is emitted, because the
+    // writer (this, in peiosutils) and the reader (prelude) ship in two
+    // independently versioned packages: an image may pair a new mkirf with
+    // an old prelude, and the version lives in the FILE NAME precisely so
+    // one image can satisfy both. Version 1 stays honest for free — a flat
+    // order is derivable from the DAG — and gets dropped on the day some
+    // future format carries something it cannot express.
+    //
+    // Emitted unconditionally, including for a hookless image, where they
+    // are a marker line and nothing else. That is what lets prelude treat a
+    // MISSING sequence as an error rather than having to decide whether the
+    // absence means "no hooks" or "the file I needed is not here".
+    let (hooks, order) = resolve_hooks(src)?;
+    for (version, data) in [
+        (1, hooks::render_seq(&order)),
+        (2, hooks::render_seq_v2(&hooks, &order)),
+    ] {
+        entries.push(cpio::Entry {
+            name: format!("{SEQ_DIR}/hooks.seq.{version}").into_bytes(),
+            body: cpio::Body::Inline {
+                data,
+                executable: false,
+            },
+        });
+    }
+    add_missing_ancestors(&mut entries, SEQ_DIR);
+    // walk() returns sorted entries; the injected ones must be re-sorted into
     // archive order (every directory before its descendants).
     entries.sort_by(|a, b| a.name.cmp(&b.name));
 
@@ -71,6 +90,42 @@ pub fn run(src: &Path, out: &Path, excludes: &Excludes) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Where the generated hook sequences are placed inside the initramfs.
+///
+/// The `/system` tier, not `/usr` and not `/var/state`: these files are
+/// DERIVED — mkirf generates them per image from the hooks directory — which
+/// is what `/system` means in the layout (`system/retc` holds reconciler
+/// output the same way). `/usr` is the vendor tier and no package ships
+/// these; `/var/state` is the mutable tier and these are immutable build
+/// output.
+const SEQ_DIR: &str = "system/prelude";
+
+/// Insert directory entries for every ancestor of `dir` that `entries` does
+/// not already contain.
+///
+/// The sequence files are injected rather than walked, so their parent
+/// directories may not exist in the source tree at all — and a cpio whose
+/// file entries have no parent directory entries does not unpack. mkirf
+/// synthesises them rather than requiring the source tree to provide them,
+/// so the output does not depend on which base-filesystem package the image
+/// happened to compose.
+fn add_missing_ancestors(entries: &mut Vec<cpio::Entry>, dir: &str) {
+    let mut prefix = String::new();
+    for component in dir.split('/') {
+        if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        prefix.push_str(component);
+        let name = prefix.as_bytes();
+        if !entries.iter().any(|e| e.name == name) {
+            entries.push(cpio::Entry {
+                name: name.to_vec(),
+                body: cpio::Body::Directory,
+            });
+        }
+    }
 }
 
 /// The reserved source subdirectory holding early-initramfs segments.
@@ -193,29 +248,36 @@ fn validate_layout(src: &Path) -> Result<()> {
             )));
         }
     }
-    if src.join("hooks.seq").exists() {
-        return Err(Error::Layout(format!(
-            "{}: contains a `hooks.seq`; mkirf generates that file",
-            src.display(),
-        )));
+    // `hooks.seq` at the root is the legacy name mkirf used to generate. It
+    // is no longer written, but it is still rejected here: prelude reads it
+    // as a fallback, so a stray one in the source tree would be picked up as
+    // a sequence nothing generated.
+    for reserved in ["hooks.seq", &format!("{SEQ_DIR}/hooks.seq.1"), &format!("{SEQ_DIR}/hooks.seq.2")] {
+        if src.join(reserved).exists() {
+            return Err(Error::Layout(format!(
+                "{}: contains a `{reserved}`; mkirf generates that file",
+                src.display(),
+            )));
+        }
     }
     Ok(())
 }
 
 /// Discover and resolve the hook DAG under `<src>/hooks/`, returning the
-/// execution order as cpio-absolute paths. A missing `hooks/` directory means
-/// the initramfs has no hooks.
-fn resolve_hooks(src: &Path) -> Result<Vec<String>> {
+/// hooks and their execution order as cpio-absolute paths. A missing
+/// `hooks/` directory means the initramfs has no hooks — which is a valid
+/// image, and produces empty sequence files rather than none.
+fn resolve_hooks(src: &Path) -> Result<(Vec<hooks::Hook>, Vec<String>)> {
     let hooks_dir = src.join("hooks");
     if !hooks_dir.is_dir() {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let hooks = hooks::discover(&hooks_dir).map_err(|e| Error::Hooks(e.to_string()))?;
     let resolved = hooks::resolve(&hooks).map_err(Error::Hooks)?;
     for w in &resolved.warnings {
         eprintln!("mkirf: warning: {w}");
     }
-    Ok(resolved.order)
+    Ok((hooks, resolved.order))
 }
 
 /// Write the initramfs image at `path`: the `early` segments as a leading
