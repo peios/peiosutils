@@ -40,8 +40,14 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
-/// `hooks.seq` format-version marker — the file's first line.
+/// `hooks.seq.1` format-version marker — the file's first line. Version 1
+/// is a flat list: the resolved order and nothing else.
 pub const SEQ_VERSION_LINE: &str = "hookseq 1";
+
+/// `hooks.seq.2` format-version marker. Version 2 carries the DAG — every
+/// hook's declarations alongside the resolved order — so a reader can
+/// schedule rather than replay a fixed sequence.
+pub const SEQ_V2_VERSION_LINE: &str = "hookseq 2";
 
 /// One discovered hook and its parsed ordering metadata.
 #[derive(Debug)]
@@ -240,6 +246,22 @@ fn parse_toml_subset(content: &[(usize, String)]) -> Result<Parsed, String> {
     })
 }
 
+/// Whether `s` is a bare capability token: a letter or digit, then any of
+/// letters, digits, `.`, `_`, `-`.
+///
+/// Enforced rather than merely conventional because `hooks.seq.2` writes
+/// capability names in a whitespace-separated format. A name carrying a
+/// space would produce a file that parses as something else entirely, so
+/// the charset is checked where the name enters the system instead of
+/// being escaped where it leaves.
+fn is_capability_token(s: &str) -> bool {
+    let mut chars = s.chars();
+    if !chars.next().is_some_and(|c| c.is_ascii_alphanumeric()) {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
 /// Parse a TOML inline array of double-quoted strings: `["a", "b"]`.
 /// Deliberately strict — capability names are simple tokens, so no escape
 /// handling is needed and anything fancier is rejected.
@@ -265,11 +287,11 @@ fn parse_string_array(s: &str) -> Result<Vec<String>, String> {
             .strip_prefix('"')
             .and_then(|s| s.strip_suffix('"'))
             .ok_or_else(|| format!("array element `{elem}` is not a double-quoted string"))?;
-        if value.is_empty() {
-            return Err("empty capability name".into());
-        }
-        if value.contains('"') {
-            return Err(format!("array element `{elem}` contains an embedded quote"));
+        if !is_capability_token(value) {
+            return Err(format!(
+                "capability name `{value}` is not a bare token \
+                 (letters or digits, then any of letters, digits, `.`, `_`, `-`)"
+            ));
         }
         out.push(value.to_string());
     }
@@ -440,13 +462,65 @@ fn kahn_sort(constrained: &[&Hook]) -> Result<Vec<usize>, String> {
     Ok(order)
 }
 
-/// Render the `hooks.seq` file body from a resolved order.
+/// Render the `hooks.seq.1` body from a resolved order: the marker, then
+/// one hook path per line.
 pub fn render_seq(order: &[String]) -> Vec<u8> {
     let mut s = String::from(SEQ_VERSION_LINE);
     s.push('\n');
     for path in order {
         s.push_str(path);
         s.push('\n');
+    }
+    s.into_bytes()
+}
+
+/// Render the `hooks.seq.2` body: the marker, then one stanza per hook in
+/// resolved order.
+///
+/// ```text
+/// hookseq 2
+/// hook /hooks/topology.sh
+/// contributes early-topology
+/// hook /hooks/mount-root.sh
+/// provides root-mounted
+/// requires early-topology
+/// ```
+///
+/// A `hook` line opens a stanza and the declaration lines that follow
+/// apply to it. Keys with nothing to say are omitted rather than written
+/// empty, so a hook with no declarations is a bare `hook` line.
+///
+/// The stanzas are in the build-resolved topological order, so a reader
+/// that does not schedule dynamically can run them top to bottom and get
+/// exactly the version-1 behaviour. That is what makes the richer format
+/// a superset rather than a replacement.
+pub fn render_seq_v2(hooks: &[Hook], order: &[String]) -> Vec<u8> {
+    let by_path: HashMap<String, &Hook> =
+        hooks.iter().map(|h| (format!("/hooks/{}", h.name), h)).collect();
+
+    let mut s = String::from(SEQ_V2_VERSION_LINE);
+    s.push('\n');
+    for path in order {
+        s.push_str("hook ");
+        s.push_str(path);
+        s.push('\n');
+        let Some(h) = by_path.get(path) else { continue };
+        for (key, caps) in [
+            ("provides", &h.provides),
+            ("contributes", &h.contributes),
+            ("requires", &h.requires),
+            ("after", &h.after),
+        ] {
+            if caps.is_empty() {
+                continue;
+            }
+            s.push_str(key);
+            for cap in caps {
+                s.push(' ');
+                s.push_str(cap);
+            }
+            s.push('\n');
+        }
     }
     s.into_bytes()
 }

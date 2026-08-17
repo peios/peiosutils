@@ -176,13 +176,99 @@ fn hooks_seq_lists_hooks_in_dependency_order() {
             .success()
     );
 
-    // hooks.seq is stored uncompressed within the cpio; find its body in
-    // the decompressed archive.
+    // The sequences are stored uncompressed within the cpio; find their
+    // bodies in the decompressed archive.
     let archive = gunzip(&fs::read(&out).unwrap());
-    let seq = b"hookseq 1\n/hooks/z-producer.sh\n/hooks/a-consumer.sh\n";
+
+    // Both the entry NAME and the body are asserted. Checking only the body
+    // let an earlier version of this test keep passing when the file moved
+    // out of the archive root, which is precisely what it existed to catch.
+    for name in [
+        b"system/prelude/hooks.seq.1".as_slice(),
+        b"system/prelude/hooks.seq.2".as_slice(),
+    ] {
+        assert!(
+            contains(&archive, name),
+            "no cpio entry named {}",
+            String::from_utf8_lossy(name),
+        );
+    }
+
+    let v1 = b"hookseq 1\n/hooks/z-producer.sh\n/hooks/a-consumer.sh\n";
     assert!(
-        archive.windows(seq.len()).any(|w| w == seq),
-        "hooks.seq not present in dependency order",
+        contains(&archive, v1),
+        "hooks.seq.1 not present in dependency order",
+    );
+
+    // Version 2 carries the declarations that produced that order, with the
+    // stanzas in the same resolved sequence.
+    let v2 = b"hookseq 2\n\
+               hook /hooks/z-producer.sh\nprovides ready\n\
+               hook /hooks/a-consumer.sh\nrequires ready\n";
+    assert!(
+        contains(&archive, v2),
+        "hooks.seq.2 not present, or not in the expected shape",
+    );
+}
+
+/// Whether `haystack` contains `needle` as a contiguous byte run.
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
+#[test]
+fn a_hookless_image_still_gets_both_sequences() {
+    // Emission is unconditional so that prelude can treat a MISSING sequence
+    // as an error. An image with no hooks gets a marker line and no entries,
+    // not an absent file.
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("src");
+    fs::create_dir(&src).unwrap();
+    sample_tree(&src);
+
+    let out = dir.path().join("initramfs.cpio.gz");
+    assert!(
+        Command::new(MKIRF)
+            .arg(&src)
+            .arg(&out)
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let archive = gunzip(&fs::read(&out).unwrap());
+    assert!(contains(&archive, b"system/prelude/hooks.seq.1"));
+    assert!(contains(&archive, b"system/prelude/hooks.seq.2"));
+    assert!(contains(&archive, b"hookseq 1\n"));
+    assert!(contains(&archive, b"hookseq 2\n"));
+}
+
+#[test]
+fn the_sequence_directory_is_created_when_the_source_lacks_it() {
+    // The sequences are injected rather than walked, so their parent
+    // directories may not exist in the source tree. A cpio whose file
+    // entries have no parent directory entries does not unpack.
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("src");
+    fs::create_dir(&src).unwrap();
+    sample_tree(&src);
+    assert!(!src.join("system").exists(), "test premise: no system/ in src");
+
+    let out = dir.path().join("initramfs.cpio.gz");
+    assert!(
+        Command::new(MKIRF)
+            .arg(&src)
+            .arg(&out)
+            .status()
+            .unwrap()
+            .success()
+    );
+
+    let archive = gunzip(&fs::read(&out).unwrap());
+    assert!(contains(&archive, b"system\0"), "no `system` directory entry");
+    assert!(
+        contains(&archive, b"system/prelude\0"),
+        "no `system/prelude` directory entry",
     );
 }
 
