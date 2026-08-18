@@ -272,7 +272,12 @@ fn resolve_hooks(src: &Path) -> Result<(Vec<hooks::Hook>, Vec<String>)> {
     if !hooks_dir.is_dir() {
         return Ok((Vec::new(), Vec::new()));
     }
-    let hooks = hooks::discover(&hooks_dir).map_err(|e| Error::Hooks(e.to_string()))?;
+    let mut hooks = hooks::discover(&hooks_dir).map_err(|e| Error::Hooks(e.to_string()))?;
+    // Before resolving: give every hook that is not part of `initramfs-ready`
+    // the implicit edge that orders it after it. Done here rather than inside
+    // resolve() so the edge is also what gets written into hooks.seq.2 — the
+    // rule lives in one place and the sequence explains itself.
+    hooks::apply_implicit_ordering(&mut hooks);
     let resolved = hooks::resolve(&hooks).map_err(Error::Hooks)?;
     for w in &resolved.warnings {
         eprintln!("mkirf: warning: {w}");

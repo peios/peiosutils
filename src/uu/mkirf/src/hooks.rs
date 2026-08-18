@@ -40,6 +40,27 @@ use std::error::Error;
 use std::fs;
 use std::path::Path;
 
+/// The capability that means "the initramfs itself is usable" — its own
+/// filesystem topology assembled, its console set up, whatever else a hook
+/// needs before it can do anything at all.
+///
+/// It is the one capability with a rule attached: **every hook that does
+/// not supply it is implicitly ordered after it.** Without that, a hook
+/// which must run before all the others could only say so by having every
+/// other hook name it — including hooks written by people who have never
+/// heard of it, and whose forgetting would not fail the build but would
+/// quietly run their hook in an initramfs with no `/bin`.
+///
+/// The exemption is derived rather than declared: you are exempt exactly
+/// when you are part of it. So there is no cycle to construct, and nothing
+/// for a hook author to remember.
+///
+/// mkirf materialises these edges into the sequence as ordinary `after`
+/// entries rather than leaving prelude to know the rule. One
+/// implementation instead of two that have to agree, and a sequence file
+/// that explains itself in a rescue shell.
+pub const INITRAMFS_READY: &str = "initramfs-ready";
+
 /// `hooks.seq.1` format-version marker — the file's first line. Version 1
 /// is a flat list: the resolved order and nothing else.
 pub const SEQ_VERSION_LINE: &str = "hookseq 1";
@@ -379,6 +400,32 @@ pub fn resolve(hooks: &[Hook]) -> Result<Resolved, String> {
         order: paths,
         warnings,
     })
+}
+
+/// Add the implicit `after = [INITRAMFS_READY]` edge to every hook that is
+/// not itself part of `initramfs-ready`.
+///
+/// Applied to the parsed hooks before resolution, so the edge is real
+/// everywhere downstream — it orders the DAG, and it is written into
+/// `hooks.seq.2` like any other declaration.
+///
+/// Two hooks are skipped, each for its own reason:
+///
+///   - **Suppliers of `initramfs-ready`.** They are what the capability
+///     consists of; ordering them after it would be a cycle.
+///   - **Hooks that declared nothing at all.** Those already run last, in
+///     name order, after every constrained hook — so the edge would change
+///     nothing about when they run, and adding it would move them into the
+///     DAG and silently retire the no-metadata escape hatch.
+pub fn apply_implicit_ordering(hooks: &mut [Hook]) {
+    for h in hooks.iter_mut() {
+        if !h.is_constrained() || h.supplies().any(|c| c == INITRAMFS_READY) {
+            continue;
+        }
+        if h.after.iter().all(|c| c != INITRAMFS_READY) {
+            h.after.push(INITRAMFS_READY.to_string());
+        }
+    }
 }
 
 /// A comma-separated, name-sorted list of the hooks matching `pred`, for
@@ -809,6 +856,73 @@ mod tests {
             hook4("z-part.sh", &[], &["cap"], &[], &[]),
         ];
         assert_eq!(order_of(&hooks), ["/hooks/z-part.sh", "/hooks/a-late.sh"]);
+    }
+
+    // --- the initramfs-ready rule ----------------------------------------
+
+    #[test]
+    fn every_declaring_hook_is_ordered_after_initramfs_ready() {
+        let mut hooks = vec![
+            hook("a-topo.sh", &[], &[]),
+            hook4("z-other.sh", &["cap"], &[], &[], &[]),
+        ];
+        hooks[0].contributes = vec![INITRAMFS_READY.to_string()];
+        apply_implicit_ordering(&mut hooks);
+
+        // The contributor is exempt — it IS the capability.
+        assert!(hooks[0].after.is_empty());
+        assert_eq!(hooks[1].after, [INITRAMFS_READY]);
+        // And the edge actually orders them, against the name tie-break.
+        assert_eq!(order_of(&hooks), ["/hooks/a-topo.sh", "/hooks/z-other.sh"]);
+    }
+
+    #[test]
+    fn a_provider_of_initramfs_ready_is_exempt_too() {
+        let mut hooks = vec![hook("topo.sh", &[INITRAMFS_READY], &[])];
+        apply_implicit_ordering(&mut hooks);
+        assert!(hooks[0].after.is_empty(), "would be a cycle");
+        assert!(resolve(&hooks).is_ok());
+    }
+
+    #[test]
+    fn an_unconstrained_hook_does_not_gain_the_edge() {
+        // It already runs after every constrained hook, so the edge would
+        // change nothing — and adding it would pull the hook into the DAG,
+        // retiring the no-metadata escape hatch by accident.
+        let mut nb = hook("late.sh", &[], &[]);
+        nb.has_block = false;
+        let mut hooks = vec![nb, hook("early.sh", &[INITRAMFS_READY], &[])];
+        apply_implicit_ordering(&mut hooks);
+        assert!(hooks[0].after.is_empty());
+        assert_eq!(order_of(&hooks), ["/hooks/early.sh", "/hooks/late.sh"]);
+    }
+
+    #[test]
+    fn the_implicit_edge_is_inert_when_nothing_supplies_it() {
+        // A minimal initramfs with no topology hook: the edge is an `after`
+        // on an unsupplied capability, which is vacuous by construction.
+        let mut hooks = vec![hook4("solo.sh", &["cap"], &[], &[], &[])];
+        apply_implicit_ordering(&mut hooks);
+        assert_eq!(hooks[0].after, [INITRAMFS_READY]);
+        assert_eq!(order_of(&hooks), ["/hooks/solo.sh"]);
+    }
+
+    #[test]
+    fn the_implicit_edge_is_not_added_twice() {
+        let mut hooks = vec![hook4("a.sh", &["cap"], &[], &[], &[INITRAMFS_READY])];
+        apply_implicit_ordering(&mut hooks);
+        assert_eq!(hooks[0].after, [INITRAMFS_READY]);
+    }
+
+    #[test]
+    fn the_implicit_edge_reaches_the_rendered_sequence() {
+        // The rule lives in mkirf alone, so it has to be VISIBLE in the file
+        // prelude reads — otherwise prelude would need to know it too.
+        let mut hooks = vec![hook4("a.sh", &["cap"], &[], &[], &[])];
+        apply_implicit_ordering(&mut hooks);
+        let order = resolve(&hooks).unwrap().order;
+        let body = String::from_utf8(render_seq_v2(&hooks, &order)).unwrap();
+        assert!(body.contains("after initramfs-ready"), "{body}");
     }
 
     #[test]
