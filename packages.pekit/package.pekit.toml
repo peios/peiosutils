@@ -5,7 +5,51 @@
 format = "peipkg"
 
 [package]
-version      = "{{version}}-1"
+# 0.1.3-4: part no longer fstats a device node to decide whether it is one.
+# KACS maps open-for-read to READ_DATA|READ_ATTRIBUTES, but devtmpfs nodes are
+# synthesised with 0xF (no READ_ATTRIBUTES), so `stat` is denied to a caller
+# who can read the device perfectly well — `dd if=/dev/vdb` works where the
+# stat did not. sysfs answers the question without touching the node.
+# Also: `part list` aligns type and name into columns, and an unopenable device
+# reports why (no medium / not permitted / busy) instead of a bare "?".
+#
+# 0.1.3-3: part carries a table's own entry-array geometry instead of assuming
+# its own. 128 entries is the spec MINIMUM, not the maximum — the Peios ISO
+# declares 248 — so the fixed-size array read reported a valid table as damaged,
+# and an edit would have silently shrunk it, discarding entries past 128 and
+# moving first_usable under existing partitions.
+#
+# 0.1.3-2: `part list` with no device lists every disk and its partitions.
+# Structure comes from sysfs, so a disk carrying a table part cannot manage
+# still lists correctly, and an unreadable disk is still shown rather than
+# dropped.
+#
+# 0.1.3: new `part` applet — GPT partitioning, so Peios can create the
+# partitions it already knew how to format and boot from. A minor bump rather
+# than a revision because it adds a command, not a fix. The libblkid dlopen
+# shim moved from src/uu/lsblk/src/blkid.rs into uucore::blkid at the same
+# time: lsblk and part now share it, and pu_mount's own copy is the last one
+# left (see PEI-192).
+#
+# -3: cp treats a source filesystem with no extended attributes at all as
+# "nothing to preserve" rather than a hard error. squashfs images built with no
+# xattr table answer ENOTSUP for every inode type that carries a listxattr op,
+# and overlayfs forwards that verbatim — so `cp -a` used to abort partway
+# through any tree rooted on the live root. Scoped to the listing: ENOTSUP from
+# the destination side is still a real failure to preserve. (PEI-180)
+#
+# -2: cp no longer follows a symlink when copying its security descriptor.
+# It was reading and writing the TARGET's descriptor, which fails with ENOENT
+# whenever the target has not been copied yet — as `/init -> usr/bin/peinit2`
+# has not, when `/init` is reached long before `/usr`.
+#
+# -5: mkirf gains the `contributes` and `after` ordering keys, writes versioned
+# hook sequences to /system/prelude/hooks.seq.<n>, and discovers hooks in
+# /usr/libexec/prelude/hooks.d and /lcl/libexec/prelude/hooks.d as well as the
+# legacy /hooks. This one is not optional for an image whose hook packages have
+# already moved: an older mkirf scans only /hooks, finds nothing there, and
+# writes an empty sequence — so the boot runs no hooks at all.
+version      = "{{version}}-5"
 architecture = "x86_64"
 license      = "MIT"
 homepage     = "https://github.com/peios/peiosutils"
