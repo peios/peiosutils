@@ -1,7 +1,8 @@
 //! Hook DAG — discover initramfs hooks, parse their co-located metadata,
 //! and resolve a deterministic execution order.
 //!
-//! A hook is a regular file directly under `<src>/hooks/`. prelude runs
+//! A hook is a regular file directly under one of the hook directories
+//! (see [`HOOK_DIRS`]). prelude runs
 //! hooks, in the order resolved here, inside the initramfs before
 //! switch_root. Each hook declares its ordering in a fenced comment block
 //! (PEP 723-style); mkirf topologically sorts the resulting capability
@@ -70,11 +71,38 @@ pub const SEQ_VERSION_LINE: &str = "hookseq 1";
 /// schedule rather than replay a fixed sequence.
 pub const SEQ_V2_VERSION_LINE: &str = "hookseq 2";
 
+/// The directories hooks are discovered in, highest precedence first.
+///
+/// Two tiers, mirroring the layout's split everywhere else: `/usr` is what
+/// packages ship, `/lcl` is what the operator puts there by hand. When both
+/// hold a file of the same name the operator's wins, so a shipped hook can
+/// be replaced without deleting a package's payload.
+///
+/// The legacy `hooks/` at the archive root is scanned last and warned
+/// about. A hook in a directory nobody scans is not an error — it simply
+/// is not there, and the boot fails much later with nothing mounted — so
+/// the transition cannot be a flag day. The warning going quiet is what
+/// says the migration is finished.
+pub const HOOK_DIRS: &[&str] = &[
+    "lcl/libexec/prelude/hooks.d",
+    "usr/libexec/prelude/hooks.d",
+    "hooks",
+];
+
+/// The one in [`HOOK_DIRS`] that is on its way out.
+pub const LEGACY_HOOK_DIR: &str = "hooks";
+
 /// One discovered hook and its parsed ordering metadata.
 #[derive(Debug)]
 pub struct Hook {
-    /// File name within `hooks/`, e.g. `"luks-unlock.sh"`.
+    /// File name within its hook directory, e.g. `"luks-unlock.sh"`. The
+    /// tie-break between hooks with no ordering relationship, and what
+    /// `rd.break=<name>` matches on.
     pub name: String,
+    /// Where the hook lives inside the initramfs, absolute — e.g.
+    /// `"/usr/libexec/prelude/hooks.d/luks-unlock.sh"`. This is what the
+    /// sequence records and what prelude execs.
+    pub path: String,
     /// Capabilities this hook satisfies on its own — alternatives, any one
     /// of which suffices.
     pub provides: Vec<String>,
@@ -136,6 +164,12 @@ pub struct Resolved {
 /// subdirectory, say) is left to the walker and not treated as a hook.
 /// The returned hooks are sorted by name.
 pub fn discover(hooks_dir: &Path) -> Result<Vec<Hook>, Box<dyn Error>> {
+    discover_in(hooks_dir, LEGACY_HOOK_DIR)
+}
+
+/// Discover the hooks in one directory. `dest` is that directory's path
+/// inside the initramfs, used to build each hook's absolute path.
+fn discover_in(hooks_dir: &Path, dest: &str) -> Result<Vec<Hook>, Box<dyn Error>> {
     let mut hooks = Vec::new();
     for entry in fs::read_dir(hooks_dir).map_err(|e| format!("{}: {e}", hooks_dir.display()))? {
         let entry = entry.map_err(|e| format!("{}: {e}", hooks_dir.display()))?;
@@ -150,6 +184,7 @@ pub fn discover(hooks_dir: &Path) -> Result<Vec<Hook>, Box<dyn Error>> {
         let text = fs::read_to_string(&path).map_err(|e| format!("hook `{name}`: {e}"))?;
         let parsed = parse_block(&text).map_err(|e| format!("hook `{name}`: {e}"))?;
         hooks.push(Hook {
+            path: format!("/{dest}/{name}"),
             name,
             provides: parsed.provides,
             contributes: parsed.contributes,
@@ -160,6 +195,47 @@ pub fn discover(hooks_dir: &Path) -> Result<Vec<Hook>, Box<dyn Error>> {
     }
     hooks.sort_by(|a, b| a.name.as_bytes().cmp(b.name.as_bytes()));
     Ok(hooks)
+}
+
+/// Discover hooks across every directory in [`HOOK_DIRS`], resolving
+/// same-name collisions by precedence and returning any advisories.
+///
+/// A file name identifies a hook, so the same name in two directories is
+/// one hook with two candidate bodies rather than two hooks. The earlier
+/// directory wins and the shadowed copy is reported — a hook silently
+/// replaced by another package's file, or by a forgotten operator override,
+/// is exactly the sort of thing that should be visible at build time.
+pub fn discover_all(root: &Path) -> Result<(Vec<Hook>, Vec<String>), Box<dyn Error>> {
+    let mut hooks: Vec<Hook> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+
+    for dest in HOOK_DIRS {
+        let dir = root.join(dest);
+        if !dir.is_dir() {
+            continue;
+        }
+        for hook in discover_in(&dir, dest)? {
+            if let Some(winner) = hooks.iter().find(|h| h.name == hook.name) {
+                warnings.push(format!(
+                    "hook `{}` at {} is shadowed by {}",
+                    hook.name, hook.path, winner.path,
+                ));
+                continue;
+            }
+            if *dest == LEGACY_HOOK_DIR {
+                warnings.push(format!(
+                    "hook `{}` is in the legacy {} directory; \
+                     move it to /usr/libexec/prelude/hooks.d (packaged) or \
+                     /lcl/libexec/prelude/hooks.d (local)",
+                    hook.name, hook.path,
+                ));
+            }
+            hooks.push(hook);
+        }
+    }
+
+    hooks.sort_by(|a, b| a.name.as_bytes().cmp(b.name.as_bytes()));
+    Ok((hooks, warnings))
 }
 
 /// The metadata extracted from a single hook script.
@@ -378,9 +454,9 @@ pub fn resolve(hooks: &[Hook]) -> Result<Resolved, String> {
 
     let mut paths: Vec<String> = order
         .iter()
-        .map(|&i| format!("/hooks/{}", constrained[i].name))
+        .map(|&i| constrained[i].path.clone())
         .collect();
-    paths.extend(unconstrained.iter().map(|h| format!("/hooks/{}", h.name)));
+    paths.extend(unconstrained.iter().map(|h| h.path.clone()));
 
     // Unconstrained hooks with no block at all get an advisory: a
     // forgotten block looks identical to a deliberate one, so make it
@@ -526,9 +602,9 @@ pub fn render_seq(order: &[String]) -> Vec<u8> {
 ///
 /// ```text
 /// hookseq 2
-/// hook /hooks/topology.sh
+/// hook /usr/libexec/prelude/hooks.d/topology.sh
 /// contributes early-topology
-/// hook /hooks/mount-root.sh
+/// hook /usr/libexec/prelude/hooks.d/mount-root.sh
 /// provides root-mounted
 /// requires early-topology
 /// ```
@@ -543,7 +619,7 @@ pub fn render_seq(order: &[String]) -> Vec<u8> {
 /// a superset rather than a replacement.
 pub fn render_seq_v2(hooks: &[Hook], order: &[String]) -> Vec<u8> {
     let by_path: HashMap<String, &Hook> =
-        hooks.iter().map(|h| (format!("/hooks/{}", h.name), h)).collect();
+        hooks.iter().map(|h| (h.path.clone(), h)).collect();
 
     let mut s = String::from(SEQ_V2_VERSION_LINE);
     s.push('\n');
@@ -596,6 +672,7 @@ mod tests {
         after: &[&str],
     ) -> Hook {
         Hook {
+            path: format!("/{LEGACY_HOOK_DIR}/{name}"),
             name: name.to_string(),
             provides: strs(provides),
             contributes: strs(contributes),
@@ -988,6 +1065,93 @@ mod tests {
         assert_eq!(got[0].provides, ["x"]);
         assert_eq!(got[1].requires, ["x"]);
         assert!(!got[2].has_block);
+    }
+
+    /// Write `body` to `<root>/<dir>/<name>`, creating the directory.
+    fn put_hook(root: &Path, dir: &str, name: &str, body: &str) {
+        let d = root.join(dir);
+        fs::create_dir_all(&d).unwrap();
+        fs::write(d.join(name), body).unwrap();
+    }
+
+    const EMPTY_BLOCK: &str = "#!/bin/sh\n# /// hook\n# ///\n";
+
+    #[test]
+    fn discover_all_records_each_hooks_own_directory() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        put_hook(root, "usr/libexec/prelude/hooks.d", "a.sh", EMPTY_BLOCK);
+        put_hook(root, "lcl/libexec/prelude/hooks.d", "b.sh", EMPTY_BLOCK);
+
+        let (hooks, warnings) = discover_all(root).unwrap();
+        let paths: Vec<&str> = hooks.iter().map(|h| h.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                "/usr/libexec/prelude/hooks.d/a.sh",
+                "/lcl/libexec/prelude/hooks.d/b.sh",
+            ],
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+    }
+
+    #[test]
+    fn an_operator_hook_shadows_a_packaged_one_of_the_same_name() {
+        // The point of the split: replacing a shipped hook without deleting
+        // a package's payload.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        put_hook(root, "usr/libexec/prelude/hooks.d", "mount.sh", EMPTY_BLOCK);
+        put_hook(root, "lcl/libexec/prelude/hooks.d", "mount.sh", EMPTY_BLOCK);
+
+        let (hooks, warnings) = discover_all(root).unwrap();
+        assert_eq!(hooks.len(), 1, "one name is one hook");
+        assert_eq!(hooks[0].path, "/lcl/libexec/prelude/hooks.d/mount.sh");
+        // Silently swallowing the packaged copy would be the wrong kind of
+        // quiet — say which file lost.
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("/usr/libexec/prelude/hooks.d/mount.sh"));
+        assert!(warnings[0].contains("shadowed"));
+    }
+
+    #[test]
+    fn a_legacy_hook_is_found_and_warned_about() {
+        // Still scanned, because a hook in a directory nobody reads is not
+        // an error — it just is not there, and the boot fails much later.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        put_hook(root, "hooks", "old.sh", EMPTY_BLOCK);
+
+        let (hooks, warnings) = discover_all(root).unwrap();
+        assert_eq!(hooks[0].path, "/hooks/old.sh");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("legacy"), "{warnings:?}");
+        assert!(warnings[0].contains("/usr/libexec/prelude/hooks.d"));
+    }
+
+    #[test]
+    fn a_migrated_hook_shadows_its_legacy_copy_without_a_legacy_warning() {
+        // Mid-migration: the package now ships to the new location while an
+        // old copy lingers. The new one wins, and the only advisory worth
+        // printing is that the stale file is being ignored.
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        put_hook(root, "usr/libexec/prelude/hooks.d", "mount.sh", EMPTY_BLOCK);
+        put_hook(root, "hooks", "mount.sh", EMPTY_BLOCK);
+
+        let (hooks, warnings) = discover_all(root).unwrap();
+        assert_eq!(hooks.len(), 1);
+        assert_eq!(hooks[0].path, "/usr/libexec/prelude/hooks.d/mount.sh");
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("shadowed"), "{warnings:?}");
+    }
+
+    #[test]
+    fn no_hook_directories_at_all_is_not_an_error() {
+        let dir = tempdir().unwrap();
+        let (hooks, warnings) = discover_all(dir.path()).unwrap();
+        assert!(hooks.is_empty());
+        assert!(warnings.is_empty());
     }
 
     #[test]
