@@ -201,10 +201,13 @@ fn hooks_seq_lists_hooks_in_dependency_order() {
     );
 
     // Version 2 carries the declarations that produced that order, with the
-    // stanzas in the same resolved sequence.
+    // stanzas in the same resolved sequence — including the implicit
+    // `after initramfs-ready` mkirf materialises onto every hook that is not
+    // part of that capability. The rule lives only in mkirf, so it has to be
+    // visible here or prelude would have to know it too.
     let v2 = b"hookseq 2\n\
-               hook /hooks/z-producer.sh\nprovides ready\n\
-               hook /hooks/a-consumer.sh\nrequires ready\n";
+               hook /hooks/z-producer.sh\nprovides ready\nafter initramfs-ready\n\
+               hook /hooks/a-consumer.sh\nrequires ready\nafter initramfs-ready\n";
     assert!(
         contains(&archive, v2),
         "hooks.seq.2 not present, or not in the expected shape",
