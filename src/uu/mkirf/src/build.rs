@@ -268,11 +268,14 @@ fn validate_layout(src: &Path) -> Result<()> {
 /// `hooks/` directory means the initramfs has no hooks — which is a valid
 /// image, and produces empty sequence files rather than none.
 fn resolve_hooks(src: &Path) -> Result<(Vec<hooks::Hook>, Vec<String>)> {
-    let hooks_dir = src.join("hooks");
-    if !hooks_dir.is_dir() {
+    let (mut hooks, discovery_warnings) =
+        hooks::discover_all(src).map_err(|e| Error::Hooks(e.to_string()))?;
+    for w in &discovery_warnings {
+        eprintln!("mkirf: warning: {w}");
+    }
+    if hooks.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
-    let mut hooks = hooks::discover(&hooks_dir).map_err(|e| Error::Hooks(e.to_string()))?;
     // Before resolving: give every hook that is not part of `initramfs-ready`
     // the implicit edge that orders it after it. Done here rather than inside
     // resolve() so the edge is also what gets written into hooks.seq.2 — the
