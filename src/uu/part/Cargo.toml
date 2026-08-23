@@ -1,0 +1,55 @@
+# part ~ (peiosutils) manage disk partition tables.
+#
+# Structured as a clap-free library core plus a thin clap CLI, mirroring
+# `pu_lsblk` and `pu_mount`.
+#
+# The GPT itself is built here rather than bound from libfdisk. The split is
+# deliberate and follows the same rule as everywhere else in peiosutils: reuse
+# other people's *data*, own our own *logic*. Identifying an arbitrary foreign
+# partition table is a catalogue that grows with every util-linux release, so
+# that comes from libblkid via `uucore::blkid`. Writing a GPT is a frozen,
+# tightly-specified format whose two fiddly primitives — CRC-32/ISO-HDLC and v4
+# GUIDs — are already workspace dependencies (`crc-fast`, used by cksum, and
+# `rand`). Binding libfdisk for it would mean a large, compile-time-unchecked
+# FFI surface plus a shared library on every install, to avoid writing code
+# that is smaller than the binding.
+
+[package]
+name = "pu_part"
+description = "part ~ (peiosutils) manage disk partition tables"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/part"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/part.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+libc = { workspace = true }
+thiserror = { workspace = true }
+# `blkid` supplies the foreign-table probe; `format` the size formatter shared
+# with lsblk's SIZE column, so `part list` and `lsblk` agree on what "512M"
+# means.
+uucore = { workspace = true, features = ["blkid", "format"] }
+# GPT's two checksums are CRC-32/ISO-HDLC, the same algorithm `cksum -a crc32b`
+# computes — so this is the crate cksum already uses, not a second one.
+crc-fast = { workspace = true, features = ["std"] }
+rand = { workspace = true }
+
+[[bin]]
+name = "part"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

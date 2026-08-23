@@ -14,8 +14,19 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     let want_sddl = matches.get_flag("sddl");
     let want_all = matches.get_flag("all");
 
-    let all = SecInfo::OWNER | SecInfo::GROUP | SecInfo::DACL | SecInfo::SACL | SecInfo::LABEL;
-    let sd = get_sd(target.dirfd(), target.as_path(), all, target.at_flags()).map_err(Error::from)?;
+    // SACL and LABEL are mutually exclusive in one kacs_get_sd call, and the
+    // kernel rejects a request for both with EINVAL. The integrity label is
+    // carried *in* the SACL, so the two are alternative views of the same
+    // storage rather than independent fields: ask for the raw SACL, or ask for
+    // the label extracted from it.
+    //
+    // `show` asks for the label. Reading a raw SACL additionally requires
+    // ACCESS_SYSTEM_SECURITY, so including it would make the ordinary case fail
+    // for every caller without that right — and auditing ACEs have their own
+    // commands (`sd audit` / `sd unaudit`) where the privilege is expected.
+    let info = SecInfo::OWNER | SecInfo::GROUP | SecInfo::DACL | SecInfo::LABEL;
+    let sd =
+        get_sd(target.dirfd(), target.as_path(), info, target.at_flags()).map_err(Error::from)?;
     let bytes = sd.as_bytes();
 
     if bytes.is_empty() {

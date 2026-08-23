@@ -39,6 +39,7 @@ use peios::security::{
 };
 
 use crate::error::{UResult, USimpleError};
+use crate::sid_render::SidStyle;
 
 /// `AT_SYMLINK_NOFOLLOW` for the `at_flags` argument of `get_sd`/`set_sd`.
 const AT_SYMLINK_NOFOLLOW: i32 = 0x100;
@@ -267,8 +268,14 @@ fn info_from_blob(blob: &[u8], sacl_is_label: bool) -> UResult<SecInfo> {
 /// owner SID and whether the DACL is inheritance-protected.
 #[derive(Clone, Debug, Default)]
 pub struct SdDisplay {
-    /// Owner SID rendered as an `S-1-…` string. `None` when the
-    /// descriptor could not be read or carries no owner.
+    /// The owner, rendered by [`crate::sid_render`] in [`SidStyle::Label`]
+    /// style: a well-known name where one exists, the raw `S-1-…` form
+    /// otherwise. `None` when the descriptor could not be read or carries no
+    /// owner.
+    ///
+    /// `Label` rather than `Both` because this is a *column* — `Local System`
+    /// is what a listing wants, not `Local System (S-1-5-18)`. `sd` and
+    /// `token`, which report on one object at a time, default to `Both`.
     pub owner: Option<String>,
     /// True if the DACL is inheritance-protected (`SE_DACL_PROTECTED`):
     /// the file's access control is locked rather than tracking its
@@ -294,7 +301,9 @@ pub fn read_sd_display(path: &Path, follow_symlinks: bool) -> SdDisplay {
         return SdDisplay::default();
     };
     SdDisplay {
-        owner: sd.owner().map(|sid| sid.to_string()),
+        owner: sd
+            .owner()
+            .map(|sid| crate::sid_render::render(sid, SidStyle::Label)),
         protected_dacl: sd.control().contains(Control::DACL_PROTECTED),
     }
 }

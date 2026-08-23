@@ -8,8 +8,9 @@
 //! Layered as a clap-free library core plus a thin CLI ([`cli`] + [`uumain`]),
 //! mirroring `pu_mount`. The pipeline is: enumerate the block-device tree from
 //! sysfs ([`device`]) → enrich each node with filesystem identity from libblkid
-//! ([`blkid`]) and mount points from `/proc/self/mountinfo` ([`mountinfo`]) →
-//! select columns ([`column`]) → render in the requested mode ([`output`]).
+//! ([`uucore::blkid`]) and mount points from `/proc/self/mountinfo`
+//! ([`mountinfo`]) → select columns ([`column`]) → render in the requested mode
+//! ([`output`]).
 //!
 //! Column sourcing (see the design notes in the package memory):
 //! * **sysfs** — topology + hardware columns. `/sys/block` is unpatched on
@@ -21,7 +22,6 @@
 //! * **`/dev/disk/by-*` symlink farm** — `ID`/`ID-LINK`. There is deliberately
 //!   no `/run/udev/data` parser; that fast-path waits on peios-udev.
 
-pub mod blkid;
 pub mod cli;
 pub mod column;
 pub mod config;

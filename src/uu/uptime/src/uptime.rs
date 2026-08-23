@@ -59,18 +59,24 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         uptime_since()
     } else if matches.get_flag(options::PRETTY) {
         pretty_print_uptime()
-    } else if let Some(path) = file_path {
-        uptime_with_file(path)
+    } else if file_path.is_some() {
+        // The FILE form reads a utmp-format login database. Peios has no
+        // utmp -- nothing writes one -- so the form is deferred rather
+        // than left to report a login count with semantics the system
+        // does not have. uptime_with_file below stays compiled.
+        Err(uucore::error::deferred_on_peios(
+            "a native Peios session model (the logged-in-user database; \
+             utmp is not a Peios database)",
+        ))
     } else {
         default_uptime()
     }
 }
 
 pub fn uu_app() -> Command {
-    #[cfg(not(target_env = "musl"))]
+    // No musl utmpx caveat: the user count it warned about is not printed
+    // on Peios at all (see default_uptime).
     let about = translate!("uptime-about");
-    #[cfg(target_env = "musl")]
-    let about = translate!("uptime-about") + &translate!("uptime-about-musl-warning");
 
     let cmd = Command::new("uptime")
         .version(uucore::crate_version!())
@@ -103,6 +109,9 @@ pub fn uu_app() -> Command {
     )
 }
 
+/// Kept compiled but unreachable: see uumain. Revive when Peios has a
+/// session database worth reading.
+#[allow(unused)]
 #[cfg(unix)]
 fn uptime_with_file(file_path: &OsString) -> UResult<()> {
     use std::fs;
@@ -178,10 +187,10 @@ fn uptime_with_file(file_path: &OsString) -> UResult<()> {
 }
 
 fn uptime_since() -> UResult<()> {
-    let uptime = {
-        let (boot_time, _) = process_utmpx(None);
-        get_uptime(boot_time)?
-    };
+    // None: get_uptime reads /proc/uptime and only falls back to the utmp
+    // BOOT_TIME record, which Peios never writes. Asking utmp first would
+    // just be a wasted read.
+    let uptime = get_uptime(None)?;
 
     let since_date = (Timestamp::now() - uptime.seconds()).to_zoned(TimeZone::system());
     writeln!(stdout(), "{}", since_date.strftime("%Y-%m-%d %H:%M:%S"))?;
@@ -190,10 +199,17 @@ fn uptime_since() -> UResult<()> {
 }
 
 /// Default uptime behaviour i.e. when no file argument is given.
+///
+/// PEIOS-DIVERGENCE: the line carries no logged-in-user count. GNU takes
+/// it from utmp; Peios has no utmp and no session database yet (authd is
+/// undecided), so the count would be a constant, silent `0 users`. It is
+/// omitted rather than faked -- the same call `ls -l` makes in dropping
+/// the permission-bits column instead of printing decorative ones. The
+/// field returns, sourced from the KACS logon sessions, once authd lands;
+/// print_nusers below stays compiled for that.
 fn default_uptime() -> UResult<()> {
     print_time()?;
     print_uptime(None)?;
-    print_nusers(None)?;
     print_loadavg()?;
 
     Ok(())

@@ -23,7 +23,7 @@ doctest = false
 
 [dependencies]
 clap = { workspace = true }
-uucore = { workspace = true }
+uucore = { workspace = true, features = ["sid-render"] }
 fluent = { workspace = true }
 glob = { workspace = true }
 libc = { workspace = true }

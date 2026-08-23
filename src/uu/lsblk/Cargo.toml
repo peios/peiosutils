@@ -36,13 +36,11 @@ doctest = false
 clap = { workspace = true }
 libc = { workspace = true }
 # `sd-control` pulls in the peios crate's safe SD wrappers (read_sd_display);
-# `format` gives the size formatter used for human-readable SIZE.
-uucore = { workspace = true, features = ["sd-control", "format"] }
+# `format` gives the size formatter used for human-readable SIZE; `blkid` is the
+# shared dlopen probe in uucore (previously a private copy here, and a second
+# one in pu_mount — see the module docs there).
+uucore = { workspace = true, features = ["sd-control", "format", "blkid"] }
 thiserror = { workspace = true }
-# libblkid (filesystem/partition columns) is opened at runtime via dlopen so the
-# crate builds without the util-linux dev files; the peiosutils package declares
-# the libblkid.so.1 runtime dependency. Same approach as pu_mount.
-libloading = "0.8"
 
 [[bin]]
 name = "lsblk"

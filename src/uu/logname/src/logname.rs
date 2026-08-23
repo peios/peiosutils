@@ -6,44 +6,32 @@
 // spell-checker:ignore (ToDO) getlogin userlogin
 
 use clap::Command;
-use std::ffi::CStr;
 use std::io::{Write, stdout};
+use uucore::entries::uid2usr;
+use uucore::process::getuid;
 use uucore::translate;
-use uucore::{
-    error::{UResult, USimpleError},
-    show_error,
-};
+use uucore::{error::UResult, show_error};
 
+/// The login name of the principal this process runs as.
+///
+/// PEIOS-DIVERGENCE(identity): not `getlogin()`. That reads a utmp record for
+/// the controlling terminal, and Peios keeps no utmp — nothing writes one — so
+/// it has nothing to return and this command printed only an error.
+///
+/// The token is the record of who a process is, and its user SID projects to
+/// the uid. `logname` asks for the *login* identity rather than the current
+/// effective one, which is exactly the primary token: `getuid()` reads the
+/// primary credential and is unaffected by impersonation, where `geteuid()`
+/// follows the effective token. The POSIX question maps onto the KACS one
+/// without stretching either.
+///
+/// The name itself comes back from authd through NSS, canonically qualified.
 fn get_userlogin() -> Option<String> {
-    let login_ptr = unsafe { libc::getlogin() };
-    if login_ptr.is_null() {
-        None
-    } else {
-        Some(String::from_utf8_lossy(unsafe { CStr::from_ptr(login_ptr) }.to_bytes()).to_string())
-    }
+    uid2usr(getuid()).ok()
 }
 
 #[uucore::main(no_signals)]
-#[allow(
-    unreachable_code,
-    unused_variables,
-    reason = "logname is a deliberate not-implemented stub; the real \
-              implementation below is preserved, unreachable, pending authd"
-)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
-    // logname is intentionally a no-op stub on Peios for now.
-    //
-    // It prints the login name recorded for the controlling terminal
-    // (libc::getlogin(), backed by utmp). "Login name" is an authd
-    // identity/session concept that does not exist yet — there is no
-    // login-session model to query. Stubbed like the groups and id
-    // commands; the real implementation is preserved below, unreachable,
-    // and will be wired up once authd lands.
-    return Err(USimpleError::new(
-        1,
-        "not implemented on Peios yet (pending the authd identity model)".to_string(),
-    ));
-
     let _ = uucore::clap_localization::handle_clap_result(uu_app(), args)?;
 
     if let Some(userlogin) = get_userlogin() {

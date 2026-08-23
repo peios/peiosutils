@@ -28,6 +28,31 @@ The produced binaries carry a normal `DT_NEEDED libpeios.so.0` and **no rpath**
 build wants). To run them against this vendored copy locally, set
 `LD_LIBRARY_PATH=deps/lib`.
 
+## Running the test suite locally
+
+Two per-invocation variables, neither of which can live in
+`.cargo/config.toml` — cargo's `[env]` does not reach the binary cargo spawns,
+and the bindgen one has to be computed:
+
+```sh
+export LD_LIBRARY_PATH="$PWD/deps/lib"
+export BINDGEN_EXTRA_CLANG_ARGS="-isystem $(gcc -print-file-name=include)"
+cargo test --locked --no-default-features --features feat_os_unix
+```
+
+`LD_LIBRARY_PATH` is the no-rpath consequence above. The test harness clears
+the environment before spawning the binary and forwards this variable
+explicitly (`tests/uutests/src/lib/util.rs`) — without that forwarding every
+test that runs the binary fails with a loader error rather than an assertion,
+which reads like real test signal and is not.
+
+`BINDGEN_EXTRA_CLANG_ARGS` is needed when the host has libclang but not
+clang's own builtin headers — bindgen then cannot find `stddef.h` and dies
+against `<peios.h>`. On Debian/Ubuntu that means `libclang1-*` is installed but
+`libclang-common-*-dev` is not; installing the latter (or `clang`) fixes it
+properly and makes the variable unnecessary. `pekit.toml` exports the same
+workaround for the packaged build.
+
 ## Provenance / refreshing
 
 The artifacts are **git-ignored** (regenerable); this README and

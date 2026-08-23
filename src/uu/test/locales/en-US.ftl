@@ -95,7 +95,7 @@ test-after-help = Exit with the status determined by EXPRESSION.
         FILE exists and is set-group-ID
 
   -G FILE
-        FILE exists and is owned by the effective group ID
+        FILE exists and carries a group-ID field matching the caller's
 
   -h FILE
         FILE exists and is a symbolic link (same as -L)
@@ -110,7 +110,7 @@ test-after-help = Exit with the status determined by EXPRESSION.
         FILE exists and has been modified since it was last read
 
   -O FILE
-        FILE exists and is owned by the effective user ID
+        FILE exists and carries an owner-ID field matching the caller's
 
   -p FILE
         FILE exists and is a named pipe
@@ -135,6 +135,11 @@ test-after-help = Exit with the status determined by EXPRESSION.
 
   -x FILE
         FILE exists and execute (or search) permission is granted
+
+  NOTE: -O, -G, -g, -u, and -k probe decorative inode fields.
+  The Peios access model does not consult them and they carry no authority.
+  For what may actually be done to a file, use -r, -w, and -x, which are live
+  checks against the file's security descriptor.
 
   Except for -h and -L, all FILE-related tests dereference (follow) symbolic links.
   Beware that parentheses need to be escaped (e.g., by backslashes) for shells.

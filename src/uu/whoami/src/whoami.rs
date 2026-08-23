@@ -14,14 +14,13 @@ use uucore::translate;
 mod platform;
 
 #[uucore::main(no_signals)]
-pub fn uumain(_args: impl uucore::Args) -> UResult<()> {
-    // whoami resolves the effective user ID to a passwd username. Peios
-    // has no native identity model yet -- authd and the token/SID model
-    // are undecided -- so the resolution is deferred. The whoami() helper
-    // below is kept compiled for when that model lands.
-    Err(uucore::error::deferred_on_peios(
-        "a native Peios identity model (effective-user name resolution)",
-    ))
+pub fn uumain(args: impl uucore::Args) -> UResult<()> {
+    uucore::clap_localization::handle_clap_result(uu_app(), args)?;
+    // PEIOS-DIVERGENCE(identity): the effective uid this resolves is a
+    // projection of the token's user SID, and the name comes back from authd
+    // through NSS. The name is the principal's; the number is not the
+    // authority. `id -Z` prints the SID access is decided against.
+    println_verbatim(whoami()?).map_err_context(|| translate!("whoami-error-failed-to-print"))
 }
 
 /// Get the current username

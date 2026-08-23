@@ -20,9 +20,8 @@ test = false
 doctest = false
 
 [dependencies]
-libc = { workspace = true }
 clap = { workspace = true }
-uucore = { workspace = true }
+uucore = { workspace = true, features = ["entries", "process"] }
 fluent = { workspace = true }
 
 [[bin]]

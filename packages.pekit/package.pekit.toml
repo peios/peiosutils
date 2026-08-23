@@ -5,6 +5,17 @@
 format = "peipkg"
 
 [package]
+# 0.1.3-6: `test` and `[` are in the userland at last. The applet was
+# registering under its crate name: the uu_* -> pu_* fork rename left build.rs
+# still matching "uu_test", so the map gained an entry called `pu_test` and `[`
+# was never registered at all. Anything execing /usr/bin/test or /usr/bin/[
+# rather than a shell builtin — find -exec, env, autotools-generated scripts —
+# found nothing there. The semantics were already correct and documented:
+# -r/-w/-x are live KACS access checks against the file's security descriptor,
+# and -O/-G/-u/-g/-k report decorative inode fields that carry no authority;
+# --help now says the latter out loud instead of claiming POSIX ownership.
+# (PEI-201)
+#
 # 0.1.3-4: part no longer fstats a device node to decide whether it is one.
 # KACS maps open-for-read to READ_DATA|READ_ATTRIBUTES, but devtmpfs nodes are
 # synthesised with 0xF (no READ_ATTRIBUTES), so `stat` is denied to a caller
@@ -49,7 +60,7 @@ format = "peipkg"
 # legacy /hooks. This one is not optional for an image whose hook packages have
 # already moved: an older mkirf scans only /hooks, finds nothing there, and
 # writes an empty sequence — so the boot runs no hooks at all.
-version      = "{{version}}-5"
+version      = "{{version}}-7"
 architecture = "x86_64"
 license      = "MIT"
 homepage     = "https://github.com/peios/peiosutils"

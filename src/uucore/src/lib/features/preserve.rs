@@ -35,7 +35,7 @@ use std::path::Path;
 
 use clap::ArgMatches;
 use filetime::FileTime;
-use peios::file::{self, SecInfo};
+use peios::file::{self, OpenFlags, SecInfo};
 use peios::security::{Control, SdView, strip_inherited};
 
 use crate::display::Quotable;
@@ -517,13 +517,37 @@ fn copy_xattrs_filtered(
         fs::set_permissions(dest, perms)?;
     }
 
-    let result: io::Result<()> = (|| {
-        for attr_name in xattr::list(source)? {
+    let result: PreserveResult<()> = (|| {
+        // A source whose filesystem has no extended attributes at all has
+        // nothing to preserve, so there is nothing here to fail. This is a
+        // routine condition, not an edge case: squashfs images built without an
+        // xattr table report ENOTSUP for every inode whose type carries a
+        // `listxattr` op, FAT and 9p have no xattr channel, and overlayfs
+        // forwards the lower layer's answer verbatim. Treating it as an error
+        // made `cp -a` abort partway through any tree rooted on such a
+        // filesystem. (GNU coreutils ignores ENOTSUP/ENOSYS here for the same
+        // reason.)
+        //
+        // Scoped deliberately to the *listing*. ENOTSUP from `set` means the
+        // source did have attributes and the destination cannot hold them —
+        // that is a real failure to preserve, and stays one.
+        let names = match xattr::list(source) {
+            Ok(names) => names,
+            Err(e) if is_unsupported(&e) => return Ok(()),
+            Err(e) => return Err(source_error(e, source)),
+        };
+        for attr_name in names {
             if !keep(&attr_name) {
                 continue;
             }
-            if let Some(value) = xattr::get(source, &attr_name)? {
-                xattr::set(dest, &attr_name, &value)?;
+            let value = xattr::get(source, &attr_name).map_err(|e| source_error(e, source))?;
+            if let Some(value) = value {
+                xattr::set(dest, &attr_name, &value).map_err(|e| {
+                    PreserveError::IoContext(
+                        e,
+                        format!("failed to set extended attributes on {}", dest.quote()),
+                    )
+                })?;
             }
         }
         Ok(())
@@ -535,14 +559,30 @@ fn copy_xattrs_filtered(
         fs::set_permissions(dest, revert_perms)?;
     }
 
-    result.map_err(|e| {
-        PreserveError::IoContext(
-            e,
-            format!("failed to set extended attributes on {}", dest.quote()),
-        )
-    })?;
+    result
+}
 
-    Ok(())
+/// Context for an xattr failure on the *source* side.
+///
+/// Worth its own helper because the whole read/write loop used to share the
+/// destination's context string, so a failure to read the source was reported
+/// against a destination path that was never touched.
+#[cfg(all(unix, not(target_os = "android")))]
+fn source_error(e: io::Error, source: &Path) -> PreserveError {
+    PreserveError::IoContext(
+        e,
+        format!("failed to read extended attributes from {}", source.quote()),
+    )
+}
+
+/// Whether an I/O error means "this filesystem does not do extended
+/// attributes" rather than "this operation failed".
+#[cfg(all(unix, not(target_os = "android")))]
+fn is_unsupported(e: &io::Error) -> bool {
+    matches!(
+        e.raw_os_error(),
+        Some(libc::EOPNOTSUPP) | Some(libc::ENOSYS)
+    )
 }
 
 /// Mirror the source's executable-ness onto `dest`: if the source has any
@@ -600,7 +640,24 @@ pub fn copy_attributes(
         sd_info |= SecInfo::SACL;
     }
     if !sd_info.is_empty() {
-        let sd = file::get_sd(None, source, sd_info, 0)
+        // A symlink carries a descriptor of its own, and it is that descriptor
+        // we are copying. Following the link would read and write the TARGET's
+        // instead, which is wrong twice over: it silently rewrites an object
+        // nobody asked about, and during a tree copy the target usually does
+        // not exist yet — `/init -> usr/bin/peinit2` is created long before
+        // `/usr` is — so the write fails outright with ENOENT and takes the
+        // whole copy down.
+        //
+        // `dest.is_symlink()` is the right test for both sides: `cp -a` implies
+        // `-d`, so a symlink destination means the source was a symlink copied
+        // as a link. The flag is inert on anything that is not a symlink.
+        let at_flags = if dest.is_symlink() {
+            OpenFlags::SYMLINK_NOFOLLOW.bits() as i32
+        } else {
+            0
+        };
+
+        let sd = file::get_sd(None, source, sd_info, at_flags)
             .map_err(|e| PreserveError::Other(format!("kacs_get_sd({}): {e}", source.quote())))?;
 
         // Strip inherited ACEs from any ACL requested only in its
@@ -619,7 +676,7 @@ pub fn copy_attributes(
             sd
         };
 
-        file::set_sd(None, dest, sd_info, &sd, 0)
+        file::set_sd(None, dest, sd_info, &sd, at_flags)
             .map_err(|e| PreserveError::Other(format!("kacs_set_sd({}): {e}", dest.quote())))?;
     }
 

@@ -67,7 +67,7 @@ fn writes_a_uki_from_boot_inputs() {
     let stub = dir.path().join("stub.efi");
     let kernel = dir.path().join("vmlinuz");
     let initramfs = dir.path().join("initramfs.cpio.gz");
-    let out = dir.path().join("system/boot/efi/EFI/BOOT/BOOTX64.EFI");
+    let out = dir.path().join("boot/efi/EFI/BOOT/BOOTX64.EFI");
 
     write_fake_stub(&stub);
     fs::write(&kernel, b"kernel").unwrap();

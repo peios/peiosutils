@@ -34,9 +34,14 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     // Acquire a token for the check.
     let (token, token_label) = open_token(pid)?;
 
-    // Read the SD on the path.
-    let all = SecInfo::OWNER | SecInfo::GROUP | SecInfo::DACL | SecInfo::SACL | SecInfo::LABEL;
-    let sd = get_sd(target.dirfd(), target.as_path(), all, target.at_flags()).map_err(Error::from)?;
+    // Read the SD on the path. SACL and LABEL cannot be requested together —
+    // the label lives in the SACL, so they are alternative views and the kernel
+    // returns EINVAL for both at once. An access check needs the owner, group,
+    // DACL and integrity label; the audit ACEs in a SACL do not affect whether
+    // access is granted, and reading them would need ACCESS_SYSTEM_SECURITY.
+    let info = SecInfo::OWNER | SecInfo::GROUP | SecInfo::DACL | SecInfo::LABEL;
+    let sd =
+        get_sd(target.dirfd(), target.as_path(), info, target.at_flags()).map_err(Error::from)?;
     if sd.as_bytes().is_empty() {
         return Err(Error::Invalid(format!(
             "{}: no SD recorded; access-check needs a descriptor",

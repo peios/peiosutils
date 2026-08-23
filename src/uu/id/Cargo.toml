@@ -22,7 +22,7 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 rustix = { workspace = true }
-uucore = { workspace = true, features = ["entries", "process"] }
+uucore = { workspace = true, features = ["entries", "process", "token-identity"] }
 selinux = { workspace = true, optional = true }
 fluent = { workspace = true }
 

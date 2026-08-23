@@ -10,7 +10,7 @@ use thiserror::Error;
 use uucore::{
     display::Quotable,
     entries::{Locate, Passwd, get_groups_gnu, gid2grp},
-    error::{UError, UResult, USimpleError},
+    error::{UError, UResult},
     format_usage, show,
 };
 
@@ -46,27 +46,25 @@ fn infallible_gid2grp(gid: u32) -> String {
 }
 
 #[uucore::main(no_signals)]
-#[allow(
-    unreachable_code,
-    unused_variables,
-    reason = "groups is a deliberate not-implemented stub; the real \
-              implementation below is preserved, unreachable, pending authd"
-)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
-    // groups is intentionally a no-op stub on Peios for now.
+    // PEIOS-DIVERGENCE(identity): the two query paths answer measurably
+    // different questions here, where on GNU they differ only in ordering.
     //
-    // Its two query paths -- the process-credential path
-    // (getgroups()/getegid(), used when no username is given) and the
-    // /etc/passwd + /etc/group database lookup (used with a username) --
-    // both depend on the Peios identity model, which is not settled
-    // until authd exists. The original implementation is preserved
-    // below, unreachable, and will be restored and adapted to projected
-    // token identity once authd lands.
-    return Err(USimpleError::new(
-        1,
-        "not implemented on Peios yet (pending the authd identity model)".to_string(),
-    ));
-
+    // With no username, the gids come from the process credential -- the
+    // projection of the *token's* group set, which carries what authd stapled
+    // on at mint: Everyone, Authenticated Users, the BUILTIN aliases.
+    //
+    // With a username, they come from the passwd/group path, which reaches
+    // authd's Lookup and returns *recorded* memberships only. Stapled groups
+    // come back Absent by design: their membership is a rule, not an edge, so
+    // there is nothing to enumerate.
+    //
+    // Both lists are also lossy in the same way, and unavoidably: a group
+    // whose SID carries no projected gid (Interactive, Network, Batch,
+    // Service -- deliberately unnumbered so logon-type policy is expressible)
+    // cannot appear, and SE_GROUP_* attributes have nowhere to go, so a
+    // deny-only group is indistinguishable from a granting one. `token groups`
+    // is the lossless view.
     let matches = uucore::clap_localization::handle_clap_result(uu_app(), args)?;
 
     let users: Vec<String> = matches

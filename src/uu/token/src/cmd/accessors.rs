@@ -169,7 +169,7 @@ pub fn privs(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) 
         if e.used {
             tags.push("used");
         }
-        lines.kv(e.name.to_string(), tags.join(", "));
+        lines.kv(e.label(), tags.join(", "));
         arr.push(json!({
             "name": e.name,
             "bit": e.bit,

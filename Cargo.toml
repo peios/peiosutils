@@ -123,6 +123,7 @@ feat_common_core = [
   "nl",
   "numfmt",
   "od",
+  "part",
   "paste",
   "pathchk",
   "pr",
@@ -137,6 +138,7 @@ feat_common_core = [
   "rm",
   "rmdir",
   "sd",
+  "stratafs",
   "seq",
   "shred",
   "shuf",
@@ -631,6 +633,7 @@ nohup = { optional = true, version = "0.8.0", package = "pu_nohup", path = "src/
 nproc = { optional = true, version = "0.8.0", package = "pu_nproc", path = "src/uu/nproc" }
 numfmt = { optional = true, version = "0.8.0", package = "pu_numfmt", path = "src/uu/numfmt" }
 od = { optional = true, version = "0.8.0", package = "pu_od", path = "src/uu/od" }
+part = { optional = true, version = "0.8.0", package = "pu_part", path = "src/uu/part" }
 paste = { optional = true, version = "0.8.0", package = "pu_paste", path = "src/uu/paste" }
 pathchk = { optional = true, version = "0.8.0", package = "pu_pathchk", path = "src/uu/pathchk" }
 pinky = { optional = true, version = "0.8.0", package = "pu_pinky", path = "src/uu/pinky" }
@@ -648,6 +651,7 @@ rm = { optional = true, version = "0.8.0", package = "pu_rm", path = "src/uu/rm"
 rmdir = { optional = true, version = "0.8.0", package = "pu_rmdir", path = "src/uu/rmdir" }
 runcon = { optional = true, version = "0.8.0", package = "pu_runcon", path = "src/uu/runcon" }
 sd = { optional = true, version = "0.8.0", package = "pu_sd", path = "src/uu/sd" }
+stratafs = { optional = true, version = "0.8.0", package = "pu_stratafs", path = "src/uu/stratafs" }
 seq = { optional = true, version = "0.8.0", package = "pu_seq", path = "src/uu/seq" }
 shred = { optional = true, version = "0.8.0", package = "pu_shred", path = "src/uu/shred" }
 shuf = { optional = true, version = "0.8.0", package = "pu_shuf", path = "src/uu/shuf" }

@@ -52,6 +52,8 @@ pub use crate::features::extendedbigdecimal;
 pub use crate::features::fast_inc;
 #[cfg(feature = "format")]
 pub use crate::features::format;
+#[cfg(feature = "blkid")]
+pub use crate::features::blkid;
 #[cfg(feature = "fs")]
 pub use crate::features::fs;
 #[cfg(feature = "hardware")]
@@ -77,10 +79,14 @@ pub use crate::features::ranges;
 pub use crate::features::ringbuffer;
 #[cfg(feature = "sd-control")]
 pub use crate::features::sd_control;
+#[cfg(feature = "sid-render")]
+pub use crate::features::sid_render;
 #[cfg(feature = "sum")]
 pub use crate::features::sum;
 #[cfg(feature = "feat_systemd_logind")]
 pub use crate::features::systemd_logind;
+#[cfg(feature = "token-identity")]
+pub use crate::features::token_identity;
 #[cfg(feature = "time")]
 pub use crate::features::time;
 #[cfg(feature = "update-control")]
