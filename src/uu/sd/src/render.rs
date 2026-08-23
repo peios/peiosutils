@@ -17,61 +17,18 @@ const ACE_TYPE_ACCESS_ALLOWED_CALLBACK: u8 = peios_sys::KACS_ACE_TYPE_ACCESS_ALL
 const ACE_TYPE_ACCESS_DENIED_CALLBACK: u8 = peios_sys::KACS_ACE_TYPE_ACCESS_DENIED_CALLBACK as u8;
 const ACE_TYPE_SYSTEM_AUDIT_CALLBACK: u8 = peios_sys::KACS_ACE_TYPE_SYSTEM_AUDIT_CALLBACK as u8;
 
-/// SID rendering style (matches the `--raw`/`--label` flags on `token`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SidStyle {
-    Both,
-    Raw,
-    Label,
-}
-
-impl Default for SidStyle {
-    fn default() -> Self {
-        SidStyle::Both
-    }
-}
-
-/// Reverse lookup: canonical SID string → human label (mirrors the old
-/// `WellKnownSid::label`).
-fn sid_label(raw: &str) -> Option<&'static str> {
-    Some(match raw {
-        "S-1-0-0" => "Null",
-        "S-1-1-0" => "Everyone",
-        "S-1-5-7" => "Anonymous",
-        "S-1-5-11" => "Authenticated Users",
-        "S-1-5-18" => "LocalSystem",
-        "S-1-5-19" => "LocalService",
-        "S-1-5-20" => "NetworkService",
-        "S-1-5-32-544" => "BUILTIN\\Administrators",
-        "S-1-5-32-545" => "BUILTIN\\Users",
-        "S-1-16-0" => "Untrusted IL",
-        "S-1-16-4096" => "Low IL",
-        "S-1-16-8192" => "Medium IL",
-        "S-1-16-8448" => "Medium-Plus IL",
-        "S-1-16-12288" => "High IL",
-        "S-1-16-16384" => "System IL",
-        "S-1-16-20480" => "Protected-Process IL",
-        _ => return None,
-    })
-}
-
-/// Render a SID human-side. Returns `label (raw)`, just `raw`, or just `label`.
-pub fn sid_human(sid: &SidRef, style: SidStyle) -> String {
-    let raw = sid.to_string();
-    let label = sid_label(&raw).map(str::to_string);
-    match (style, label) {
-        (SidStyle::Raw, _) | (SidStyle::Both, None) => raw,
-        (SidStyle::Label, Some(l)) => l,
-        (SidStyle::Label, None) => raw, // fall back
-        (SidStyle::Both, Some(l)) => format!("{l} ({raw})"),
-    }
-}
+// SID rendering comes from `uucore::sid_render` -- the one place that turns a
+// SID into text, so `sd`, `ls`, `token` and `revstrm` cannot disagree about
+// what a principal is called. This file used to carry its own SidStyle and its
+// own 17-entry table, which said `LocalSystem` where `token`'s said
+// `Local System`.
+pub use uucore::sid_render::{SidStyle, render as sid_human};
 
 /// JSON representation of a SID — always emits both `sid` and `label`
 /// fields (label = null if no well-known match).
 pub fn sid_json(sid: &SidRef) -> Value {
     let raw = sid.to_string();
-    let label = sid_label(&raw);
+    let label = uucore::sid_render::name_for(sid, &raw);
     json!({ "sid": raw, "label": label })
 }
 

@@ -1867,8 +1867,20 @@ impl UCommand {
             if let Some(systemroot) = env::var_os("SYSTEMROOT") {
                 cmd_env.push(("SYSTEMROOT".into(), systemroot));
             }
-        } else if let Some(ld_preload) = env::var_os("LD_PRELOAD") {
-            cmd_env.push(("LD_PRELOAD".into(), ld_preload));
+        } else {
+            if let Some(ld_preload) = env::var_os("LD_PRELOAD") {
+                cmd_env.push(("LD_PRELOAD".into(), ld_preload));
+            }
+            // peiosutils links libpeios, which `deps/` vendors rather than
+            // installs. Those binaries deliberately carry no rpath so that a
+            // packaged build resolves libpeios from the system path (see
+            // deps/README.md), which leaves LD_LIBRARY_PATH as the only way a
+            // locally built binary finds libpeios.so.0. `env_clear()` below
+            // would drop it, and every test that spawns the binary would fail
+            // with a loader error instead of an assertion.
+            if let Some(ld_library_path) = env::var_os("LD_LIBRARY_PATH") {
+                cmd_env.push(("LD_LIBRARY_PATH".into(), ld_library_path));
+            }
         }
         if let Some(llvm_profile) = env::var_os("LLVM_PROFILE_FILE") {
             cmd_env.push(("LLVM_PROFILE_FILE".into(), llvm_profile));

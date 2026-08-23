@@ -6,7 +6,7 @@ pub fn build() -> Command {
     let name_arg = || {
         Arg::new("name")
             .required(true)
-            .help("Feature name (a directory under /usr/libexec/peios/features.d/)")
+            .help("Feature name (a directory under /libexec/features/)")
     };
 
     Command::new("feat")

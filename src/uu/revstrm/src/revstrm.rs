@@ -676,29 +676,21 @@ fn decode_access_mask(mask: u32) -> String {
 /// `S-<rev>-<authority>[-<subauth>...]`. Returns `None` if the length doesn't
 /// match the declared sub-authority count. The authority renders as decimal,
 /// or `0x`-hex if it exceeds 32 bits (per the MS-DTYP convention).
+/// A SID from its wire bytes, or `None` if the bytes are not one -- in which
+/// case the caller falls back to a hex preview rather than inventing a SID.
+///
+/// Delegates to `uucore::sid_render`, the one place that turns a SID into
+/// text. This was a hand-rolled formatter that did not even use `Sid`'s own
+/// `Display`, which is how `revstrm` came to be the fifth spelling of this in
+/// the tree.
+///
+/// `Both` rather than `Raw`: this is a human-facing debug printer, and the
+/// style keeps the raw form while adding a name where one is known, so nothing
+/// that used to be printed is lost. revstrm's independence is about the KMES
+/// consumption protocol it exists to be a reference for -- not about how a SID
+/// is spelled on a terminal.
 fn sid_to_string(b: &[u8]) -> Option<String> {
-    if b.len() < 8 {
-        return None;
-    }
-    let revision = b[0];
-    let sub_count = b[1] as usize;
-    if b.len() != 8 + 4 * sub_count {
-        return None;
-    }
-    let authority = b[2..8].iter().fold(0u64, |acc, &x| (acc << 8) | u64::from(x));
-    let mut s = String::from("S-");
-    let _ = write!(s, "{revision}-");
-    if authority < 0x1_0000_0000 {
-        let _ = write!(s, "{authority}");
-    } else {
-        let _ = write!(s, "0x{authority:012x}");
-    }
-    for i in 0..sub_count {
-        let off = 8 + 4 * i;
-        let sub = u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]);
-        let _ = write!(s, "-{sub}");
-    }
-    Some(s)
+    uucore::sid_render::render_bytes(b, uucore::sid_render::SidStyle::Both)
 }
 
 /// The pretty form of one value: either an inline fragment (a scalar, an empty

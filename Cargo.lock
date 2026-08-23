@@ -2152,6 +2152,7 @@ dependencies = [
  "pu_nproc",
  "pu_numfmt",
  "pu_od",
+ "pu_part",
  "pu_paste",
  "pu_pathchk",
  "pu_pinky",
@@ -2182,6 +2183,7 @@ dependencies = [
  "pu_split",
  "pu_stat",
  "pu_stdbuf",
+ "pu_stratafs",
  "pu_stty",
  "pu_sum",
  "pu_sync",
@@ -2856,7 +2858,6 @@ version = "0.8.0"
 dependencies = [
  "clap",
  "fluent",
- "libc",
  "uucore",
 ]
 
@@ -2900,7 +2901,6 @@ version = "0.8.0"
 dependencies = [
  "clap",
  "libc",
- "libloading",
  "tempfile",
  "thiserror 2.0.18",
  "uucore",
@@ -3087,6 +3087,19 @@ dependencies = [
  "half",
  "libc",
  "rustix",
+ "uucore",
+]
+
+[[package]]
+name = "pu_part"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "crc-fast",
+ "libc",
+ "rand 0.10.1",
+ "tempfile",
+ "thiserror 2.0.18",
  "uucore",
 ]
 
@@ -3444,6 +3457,19 @@ version = "0.8.0"
 dependencies = [
  "ctor",
  "libc",
+]
+
+[[package]]
+name = "pu_stratafs"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uucore",
+ "xattr",
 ]
 
 [[package]]
@@ -4631,6 +4657,7 @@ dependencies = [
  "jiff",
  "jiff-icu",
  "libc",
+ "libloading",
  "md-5",
  "memchr",
  "nix",

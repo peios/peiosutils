@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 
 /// Vendor feature library. Definitions are shipped here (as plain files) by
 /// `feat-<name>` packages; feat only reads and runs them.
-pub const FEATURES_DIR: &str = "/usr/libexec/peios/features.d";
+pub const FEATURES_DIR: &str = "/libexec/features";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -127,7 +127,18 @@ pub fn run_phase(name: &str, phase: Phase) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_name;
+    use std::path::Path;
+
+    use super::{feature_dir, validate_name, FEATURES_DIR};
+
+    #[test]
+    fn feature_library_is_opened_through_the_runtime_view() {
+        assert_eq!(FEATURES_DIR, "/libexec/features");
+        assert_eq!(
+            feature_dir("dynamic-boot"),
+            Path::new(FEATURES_DIR).join("dynamic-boot")
+        );
+    }
 
     #[test]
     fn accepts_ordinary_names() {

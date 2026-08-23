@@ -13,7 +13,7 @@ use std::path::Path;
 pub fn main() {
     const ENV_FEATURE_PREFIX: &str = "CARGO_FEATURE_";
     const FEATURE_PREFIX: &str = "feat_";
-    const OVERRIDE_PREFIX: &str = "uu_";
+    const OVERRIDE_PREFIX: &str = "pu_";
 
     // Do not rebuild build script unless the script itself or the enabled features are modified
     // See <https://doc.rust-lang.org/cargo/reference/build-scripts.html#change-detection>
@@ -65,9 +65,11 @@ pub fn main() {
     for krate in &crates {
         let map_value = format!("({krate}::uumain, {krate}::uu_app)");
         match krate.as_ref() {
-            // 'test' is named uu_test to avoid collision with rust core crate 'test'.
+            // 'test' is named pu_test to avoid collision with rust core crate 'test'
+            // (every other util takes a dep alias equal to its applet name; 'test'
+            // cannot, so it keeps the crate-prefixed alias and is remapped here).
             // It can also be invoked by name '[' for the '[ expr ] syntax'.
-            "uu_test" => {
+            "pu_test" => {
                 entries.push(("test", map_value.clone()));
                 entries.push(("[", map_value.clone()));
             }

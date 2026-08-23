@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::blkid::{self, FsInfo};
+use uucore::blkid::{self, BlkidInfo as FsInfo};
 use crate::config::Config;
 use crate::error::{LsblkError, Result};
 use crate::mountinfo::MountMap;
@@ -196,7 +196,7 @@ fn collect_record(
         hotplug,
         parent_kname: parent_disk.map(str::to_string),
         mountpoints: mounts.lookup(maj, min),
-        fs: blkid::probe(&devpath).unwrap_or_default(),
+        fs: blkid::probe_lossy(&devpath).unwrap_or_default(),
         children: Vec::new(),
         depth: 0,
     };

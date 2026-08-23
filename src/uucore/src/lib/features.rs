@@ -10,6 +10,8 @@
 pub mod backup_control;
 #[cfg(feature = "benchmark")]
 pub mod benchmark;
+#[cfg(feature = "blkid")]
+pub mod blkid;
 #[cfg(feature = "buf-copy")]
 pub mod buf_copy;
 #[cfg(feature = "checksum")]
@@ -49,10 +51,14 @@ pub mod ranges;
 pub mod ringbuffer;
 #[cfg(feature = "sd-control")]
 pub mod sd_control;
+#[cfg(feature = "sid-render")]
+pub mod sid_render;
 #[cfg(feature = "sum")]
 pub mod sum;
 #[cfg(feature = "time")]
 pub mod time;
+#[cfg(feature = "token-identity")]
+pub mod token_identity;
 #[cfg(feature = "update-control")]
 pub mod update_control;
 #[cfg(feature = "uptime")]

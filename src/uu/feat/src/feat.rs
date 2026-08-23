@@ -1,7 +1,7 @@
 // feat ~ (peiosutils) — entry point.
 //
 // A *feature* is the most basic mechanism for "I need to be more than just
-// install files." It is a directory under `/usr/libexec/peios/features.d/<name>/`
+// install files." It is a directory under `/libexec/features/<name>/`
 // holding up to four lifecycle scripts — `install.sh`, `enable.sh`,
 // `disable.sh`, `uninstall.sh` — any of which may be absent (a missing script
 // is a no-op for that phase). It is the deliberately low-level, imperative layer

@@ -8,6 +8,13 @@
 # package — it only adds docs + non-en-US locales — so peiosutils does not hard
 # depend on it.
 
+# The man pages are the reason: rebuilding the index after they land is what
+# makes `man -k` and `apropos` find them. PSPU §5.24 makes this a SHOULD
+# rather than a MUST because lookup degrades to a filesystem scan without it
+# -- suboptimal, not broken. (Top-level, not inside a table: TOML would
+# otherwise scope it to whichever table precedes it.)
+side_effects = ["man-db"]
+
 [package]
 architecture = "noarch"
 description = "Peios coreutils — man pages, shell completions, and locale data"

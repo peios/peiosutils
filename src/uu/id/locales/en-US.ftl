@@ -9,16 +9,25 @@ id-after-help = The id utility displays the user and group names and numeric IDs
   that user are displayed. In this case, the real and effective IDs are
   assumed to be the same.
 
+  NOTE: these numbers are projections of the token's SIDs. They are what Linux
+  programs see and what filesystems store, but nothing is decided by them — the
+  access model uses the SIDs they came from. The context field on the default
+  line carries that identity; `token` shows the whole token.
+
+  The real and effective IDs differ only under impersonation, which is what the
+  distinction means here. A setuid bit does not change a token, so -r rarely
+  reports anything the effective IDs did not.
+
 # Context help text
-id-context-help-disabled = print only the security context of the process (not enabled)
 id-context-help-enabled = print only the security context of the process
+id-context-help-peios = print only the security context of the process — its KACS
+  token identity, as USER-SID:INTEGRITY
 
 # Error messages
 id-error-names-real-ids-require-flags = printing only names or real IDs requires -u, -g, or -G
 id-error-zero-not-permitted-default = option --zero not permitted in default format
 id-error-cannot-print-context-with-user = cannot print security context when user specified
 id-error-cannot-get-context = can't get process context
-id-error-context-security-only = --context (-Z) works only on an SELinux/SMACK-enabled kernel
 id-error-no-such-user = { $user }: no such user
 id-error-cannot-find-group-name = cannot find name for group ID { $gid }
 id-error-cannot-find-user-name = cannot find name for user ID { $uid }
@@ -26,8 +35,8 @@ id-error-audit-retrieve = couldn't retrieve information
 
 # Help text for command-line arguments
 id-help-ignore = ignore, for compatibility with other versions
-id-help-audit = Display the process audit user ID and other process audit properties,
-  which requires privilege (not available on Linux).
+id-help-audit = Display the process audit user ID and other process audit properties
+  (a BSD facility; Peios audits through eventd and has no BSM session to report).
 id-help-user = Display only the effective user ID as a number.
 id-help-group = Display only the effective group ID as a number
 id-help-groups = Display only the different group IDs as white-space separated numbers,

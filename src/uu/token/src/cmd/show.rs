@@ -192,8 +192,11 @@ fn render_privs_into(snap: &PrivSnapshot, lines: &mut Lines, json: &mut serde_js
         if e.used {
             tags.push("used");
         }
-        lines.kv(e.name.to_string(), tags.join(", "));
+        lines.kv(e.label(), tags.join(", "));
         arr.push(json!({
+            // null rather than a placeholder: a consumer parsing this should be
+            // able to tell "this build has no name for bit 40" from a privilege
+            // actually called that.
             "name": e.name,
             "bit": e.bit,
             "enabled": e.enabled,

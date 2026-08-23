@@ -21,7 +21,7 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 libc = { workspace = true }
-uucore = { workspace = true }
+uucore = { workspace = true, features = ["sid-render"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }

@@ -34,33 +34,17 @@
 #![allow(dead_code)]
 
 use clap::{Arg, ArgAction, Command};
-use std::ffi::CStr;
 use std::io::{self, Write};
 use uucore::display::Quotable;
 use uucore::entries::{self, Group, Locate, Passwd};
 use uucore::error::UResult;
 use uucore::error::{USimpleError, set_exit_code};
 pub use uucore::libc;
-use uucore::libc::getlogin;
 use uucore::line_ending::LineEnding;
 use uucore::translate;
 
 use rustix::process::{Uid, getegid, geteuid, getgid, getuid};
 use uucore::{format_usage, show_error};
-
-macro_rules! cstr2cow {
-    ($v:expr) => {
-        unsafe {
-            let ptr = $v;
-            // Must be not null to call cstr2cow
-            if ptr.is_null() {
-                None
-            } else {
-                Some({ CStr::from_ptr(ptr) }.to_string_lossy())
-            }
-        }
-    };
-}
 
 fn get_context_help_text() -> String {
     #[cfg(any(
@@ -73,7 +57,7 @@ fn get_context_help_text() -> String {
         all(feature = "selinux", any(target_os = "android", target_os = "linux")),
         all(feature = "smack", target_os = "linux"),
     )))]
-    return translate!("id-context-help-disabled");
+    return translate!("id-context-help-peios");
 }
 
 mod options {
@@ -130,27 +114,12 @@ struct State {
 
 #[uucore::main(no_signals)]
 #[allow(clippy::cognitive_complexity)]
-#[allow(
-    unreachable_code,
-    unused_variables,
-    reason = "id is a deliberate not-implemented stub; the real \
-              implementation below is preserved, unreachable, pending authd"
-)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
-    // id is intentionally a no-op stub on Peios for now.
-    //
-    // id displays user and group identity -- real/effective UID/GID,
-    // supplementary groups, and (under KACS) projected token identity.
-    // Both what "identity" means and how it is queried depend on the
-    // Peios identity model, which is not settled until authd exists.
-    // The original implementation is preserved below, unreachable, and
-    // will be restored and adapted once authd lands. The groups stub is
-    // blocked on the same dependency.
-    return Err(USimpleError::new(
-        1,
-        "not implemented on Peios yet (pending the authd identity model)".to_string(),
-    ));
-
+    // PEIOS-DIVERGENCE(identity): the numbers this prints are *projections*
+    // of the token's SIDs, not the authority. uid/gid are what Linux sees and
+    // what filesystems store; KACS decides by SID. The `context=` field on the
+    // default line carries the authoritative half -- see id_print below and
+    // uucore::token_identity for why it includes the integrity level.
     let matches = uucore::clap_localization::handle_clap_result(uu_app(), args)?;
     let mut lock = io::stdout().lock();
 
@@ -235,10 +204,23 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             }
         }
 
-        // Neither SELinux nor SMACK supported
+        // Neither SELinux nor SMACK -- which on Peios is the normal case and
+        // not a failure. Peios' security context is the KACS token: the user
+        // SID access is actually decided against, plus the integrity level.
+        // Integrity is part of it because the SID alone does not distinguish
+        // an elevated token from the filtered token derived from it -- both
+        // carry the same user SID, and the projection has nowhere to put the
+        // SE_GROUP_* attributes that differ.
+        //
+        // `-r` selects the primary token rather than the effective one, which
+        // under KACS is the impersonation boundary rather than the setuid one.
+        if let Some(context) = uucore::token_identity::context(state.rflag) {
+            write!(lock, "{context}{line_ending}")?;
+            return Ok(());
+        }
         return Err(USimpleError::new(
             1,
-            translate!("id-error-context-security-only"),
+            translate!("id-error-cannot-get-context"),
         ));
     }
 
@@ -274,9 +256,14 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             return Ok(());
         }
         if matches.get_flag(options::OPT_AUDIT) {
-            // BSD's `id` ignores specified users
-            auditid()?;
-            return Ok(());
+            // BSD audit (BSM) session properties. On Linux this compiled to a
+            // no-op that printed nothing and exited 0 -- silent success for
+            // something that never happened. Peios audits through eventd
+            // (PSD-008) and has no BSM session to report, so say so. auditid()
+            // below stays compiled for the BSD targets that have one.
+            return Err(uucore::error::not_applicable_on_peios(
+                "BSM audit sessions are a BSD facility; Peios audits through eventd",
+            ));
         }
 
         let (uid, gid) = possible_pw.as_ref().map_or(
@@ -518,12 +505,15 @@ fn pretty(possible_pw: Option<Passwd>) -> io::Result<()> {
                 .join(" ")
         )?;
     } else {
-        let login = cstr2cow!(getlogin().cast_const());
         let uid = getuid().as_raw();
         if let Ok(p) = Passwd::locate(uid) {
-            if let Some(user_name) = login {
-                writeln!(lock, "{}\t{user_name}", translate!("id-output-login"))?;
-            }
+            // The login name comes from the token rather than getlogin():
+            // getlogin() reads a utmp that Peios does not keep, so it has
+            // nothing to return and the line used to vanish silently. The
+            // token is the record of who this process is, and its user SID
+            // projects to exactly this uid -- so the principal's name is the
+            // login name. `logname` answers the same question the same way.
+            writeln!(lock, "{}\t{}", translate!("id-output-login"), p.name)?;
             writeln!(lock, "{}\t{}", translate!("id-output-uid"), p.name)?;
         } else {
             writeln!(lock, "{}\t{uid}", translate!("id-output-uid"))?;
@@ -751,6 +741,26 @@ fn id_print(state: &State, groups: &[u32]) -> io::Result<()> {
         // print SMACK label (does not depend on "-Z")
         if let Ok(label) = uucore::smack::get_smack_label_for_self() {
             write!(lock, " context={label}")?;
+        }
+    }
+
+    // PEIOS-DIVERGENCE(identity): the token identity, in the field GNU
+    // reserves for the label that actually decides. Without it `id` prints
+    // byte-identical output for an elevated token and the filtered token
+    // derived from it -- same user SID, same group numbers, the whole
+    // difference living in SE_GROUP_* attributes the projection cannot carry.
+    //
+    // Guarded like the two blocks above: not for a named user, who has no
+    // token here to read; and suppressed under POSIXLY_CORRECT, so a caller
+    // that asked for the POSIX shape still gets it. The token selector is
+    // `false` because the default format rejects `-r` before reaching here.
+    #[cfg(not(any(
+        all(feature = "selinux", any(target_os = "linux", target_os = "android")),
+        all(feature = "smack", target_os = "linux"),
+    )))]
+    if !state.user_specified && std::env::var_os("POSIXLY_CORRECT").is_none() {
+        if let Some(context) = uucore::token_identity::context(false) {
+            write!(lock, " context={context}")?;
         }
     }
 

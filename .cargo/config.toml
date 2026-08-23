@@ -24,3 +24,9 @@ LIBSTDBUF_DIR = "/usr/local/libexec/coreutils"
 PEIOS_LIB_DIR = { value = "deps/lib", relative = true }
 PEIOS_INCLUDE = { value = "deps/include", relative = true }
 PKM_UAPI = { value = "deps/include", relative = true }
+
+# Deliberately NOT setting LD_LIBRARY_PATH here: cargo's [env] does not reach
+# the binary cargo spawns, so it would be dead config. The built binaries carry
+# no rpath on purpose (a packaged build resolves libpeios from the system
+# path), which makes LD_LIBRARY_PATH=deps/lib a per-invocation requirement for
+# running or testing locally. See deps/README.md.
