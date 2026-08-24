@@ -17,7 +17,7 @@ side_effects = ["man-db"]
 
 [package]
 architecture = "noarch"
-description = "Peios coreutils — man pages, shell completions, and locale data"
+description = "Peios coreutils - man pages, shell completions, and locale data"
 
 [files]
 ":usr/share/man/**"             = "usr/share/man/"

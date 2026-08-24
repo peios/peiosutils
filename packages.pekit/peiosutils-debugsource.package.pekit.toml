@@ -9,7 +9,7 @@
 # without symbols is useless.
 
 [package]
-description = "Peios coreutils — debug sources"
+description = "Peios coreutils - debug sources"
 
 [dependencies]
 peiosutils-debuginfo = "{{version}}"
