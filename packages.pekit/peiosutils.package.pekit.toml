@@ -10,7 +10,7 @@
 # auto-derivation still adds libpeios + glibc on top of it.
 
 [package]
-description = "Peios coreutils — GNU-compatible core utilities plus the Peios-native KACS/registry tools (token, sd, reg, logonse, revstrm)"
+description = "Peios coreutils - GNU-compatible core utilities plus the Peios-native KACS/registry tools (token, sd, reg, logonse, revstrm)"
 
 [dependencies]
 # `mount` opens libblkid.so.1 at runtime (dlopen) for its -U/-L/UUID=/LABEL=

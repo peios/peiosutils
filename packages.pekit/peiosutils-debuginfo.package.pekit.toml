@@ -4,7 +4,7 @@
 # build-id. x86_64 (inherited): DWARF is architecture-specific.
 
 [package]
-description = "Peios coreutils — debugging symbols"
+description = "Peios coreutils - debugging symbols"
 
 [dependencies]
 # Symbols correspond to a specific peiosutils build (matched by build-id at debug
