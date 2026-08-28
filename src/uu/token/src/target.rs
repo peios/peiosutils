@@ -90,7 +90,7 @@ impl TargetSpec {
             TargetSpec::SelfTok { .. } => "kacs_open_self_token",
             TargetSpec::Pid(_) => "kacs_open_process_token",
             TargetSpec::Thread { .. } => "kacs_open_thread_token",
-            TargetSpec::Peer(_) => "kacs_open_peer_token",
+            TargetSpec::Peer(_) => "getsockopt(SOL_KACS, KACS_SO_PEER_TOKEN)",
         }
     }
 }
