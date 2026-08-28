@@ -60,7 +60,7 @@ format = "peipkg"
 # legacy /hooks. This one is not optional for an image whose hook packages have
 # already moved: an older mkirf scans only /hooks, finds nothing there, and
 # writes an empty sequence — so the boot runs no hooks at all.
-version      = "{{version}}-7"
+version      = "{{version}}-8"
 architecture = "x86_64"
 license      = "MIT"
 homepage     = "https://github.com/peios/peiosutils"
