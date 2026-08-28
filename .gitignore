@@ -23,3 +23,6 @@ lib*.a
 
 # Local planning scratch — util-linux/base-userland expansion inventory
 commands.md
+
+# pekit build output
+/out/
