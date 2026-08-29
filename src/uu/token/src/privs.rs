@@ -40,7 +40,7 @@ const PRIVILEGES: &[(u32, &str)] = &[
     (24, "SeRemoteShutdown"),
     (29, "SeImpersonate"),
     (35, "SeCreateSymbolicLink"),
-    (63, "SeBindPrivilegedPort"),
+    // 63 was SeBindPrivilegedPort; retired for port reservations, not reused.
 ];
 
 /// Name → bit index. Case-insensitive.
