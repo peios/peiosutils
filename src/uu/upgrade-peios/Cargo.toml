@@ -1,0 +1,29 @@
+[package]
+name = "pu_upgrade_peios"
+description = "upgrade-peios ~ (peiosutils) move an installed Peios to the next release of its edition"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/upgrade-peios"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/upgrade_peios.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[[bin]]
+name = "upgrade-peios"
+path = "src/main.rs"

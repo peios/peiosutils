@@ -161,6 +161,7 @@ feat_common_core = [
   "unexpand",
   "uniq",
   "unlink",
+  "upgrade_peios",
   "vdir",
   "wc",
   "yes",
@@ -679,6 +680,7 @@ uname = { optional = true, version = "0.8.0", package = "pu_uname", path = "src/
 unexpand = { optional = true, version = "0.8.0", package = "pu_unexpand", path = "src/uu/unexpand" }
 uniq = { optional = true, version = "0.8.0", package = "pu_uniq", path = "src/uu/uniq" }
 unlink = { optional = true, version = "0.8.0", package = "pu_unlink", path = "src/uu/unlink" }
+upgrade_peios = { optional = true, version = "0.8.0", package = "pu_upgrade_peios", path = "src/uu/upgrade-peios" }
 uptime = { optional = true, version = "0.8.0", package = "pu_uptime", path = "src/uu/uptime" }
 users = { optional = true, version = "0.8.0", package = "pu_users", path = "src/uu/users" }
 vdir = { optional = true, version = "0.8.0", package = "pu_vdir", path = "src/uu/vdir" }

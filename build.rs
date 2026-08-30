@@ -76,6 +76,12 @@ pub fn main() {
             k if k.starts_with(OVERRIDE_PREFIX) => {
                 entries.push((&k[OVERRIDE_PREFIX.len()..], map_value.clone()));
             }
+            // Applet names may carry a hyphen; a Cargo feature/dep alias
+            // cannot reach the map with one, so the alias is underscored
+            // and the applet name restored here.
+            "upgrade_peios" => {
+                entries.push(("upgrade-peios", map_value.clone()));
+            }
             "false" | "true" => {
                 entries.push((
                     krate.as_str(),
