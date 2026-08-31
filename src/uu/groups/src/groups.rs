@@ -47,24 +47,30 @@ fn infallible_gid2grp(gid: u32) -> String {
 
 #[uucore::main(no_signals)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
-    // PEIOS-DIVERGENCE(identity): the two query paths answer measurably
-    // different questions here, where on GNU they differ only in ordering.
+    // PEIOS-DIVERGENCE(identity): the two query paths reach the answer by
+    // different routes, but the same constraint truncates both, so today they
+    // agree -- and both are much shorter than the token.
     //
-    // With no username, the gids come from the process credential -- the
-    // projection of the *token's* group set, which carries what authd stapled
-    // on at mint: Everyone, Authenticated Users, the BUILTIN aliases.
+    // With no username, the gids come from the process credential: the gids
+    // the kernel projected from the token's group set. With a username, they
+    // come from the passwd/group path, which reaches authd's Lookup and
+    // returns recorded memberships.
     //
-    // With a username, they come from the passwd/group path, which reaches
-    // authd's Lookup and returns *recorded* memberships only. Stapled groups
-    // come back Absent by design: their membership is a rule, not an edge, so
-    // there is nothing to enumerate.
+    // A group survives either route only if its SID has a projected gid, and
+    // most do not. Measured on a live image (PEI-206), an administrator's
+    // token holds seven groups and both forms print two -- the primary group
+    // and the recorded membership. Everyone (S-1-1-0), Local (S-1-2-0),
+    // Interactive (S-1-5-4), the logon session and the user's own SID all
+    // carry no gid and appear in neither.
     //
-    // Both lists are also lossy in the same way, and unavoidably: a group
-    // whose SID carries no projected gid (Interactive, Network, Batch,
-    // Service -- deliberately unnumbered so logon-type policy is expressible)
-    // cannot appear, and SE_GROUP_* attributes have nowhere to go, so a
-    // deny-only group is indistinguishable from a granting one. `token groups`
-    // is the lossless view.
+    // Everyone's absence is the one that misleads: it grants real access
+    // (an ACE allowing Everyone grants the caller) through a group this
+    // command reports the caller is not in. Interactive/Network/Batch/Service
+    // are unnumbered deliberately, so logon-type policy is expressible.
+    //
+    // SE_GROUP_* attributes also have nowhere to go, so a deny-only group is
+    // indistinguishable from a granting one. `token show --all` is the
+    // lossless view.
     let matches = uucore::clap_localization::handle_clap_result(uu_app(), args)?;
 
     let users: Vec<String> = matches
