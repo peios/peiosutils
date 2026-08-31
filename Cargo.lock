@@ -1648,6 +1648,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
+name = "libauthd"
+version = "0.0.1"
+source = "git+https://github.com/peios/authd.git?tag=v0.0.13#dbade050d817e9afe4348ce4a09578b5b50f6910"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2998,7 +3006,6 @@ version = "0.8.0"
 dependencies = [
  "clap",
  "libc",
- "libloading",
  "peios",
  "tempfile",
  "thiserror 2.0.18",
@@ -4717,6 +4724,7 @@ dependencies = [
  "itertools 0.14.0",
  "jiff",
  "jiff-icu",
+ "libauthd",
  "libc",
  "libloading",
  "md-5",

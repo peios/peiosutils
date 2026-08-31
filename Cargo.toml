@@ -563,7 +563,10 @@ phf.workspace = true
 regex = { workspace = true, optional = true }
 selinux = { workspace = true, optional = true }
 textwrap.workspace = true
-uucore.workspace = true
+# sid-resolver is installed by the multiplexer in src/bin/peiosutils.rs, so
+# every utility renders a principal the same way. It only fills the seam in
+# uucore::sid_render; nothing here renders a SID by itself.
+uucore = { workspace = true, features = ["sid-resolver"] }
 zip = { workspace = true, optional = true }
 
 

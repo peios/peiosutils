@@ -51,6 +51,18 @@ Currently defined functions:
 
 #[allow(clippy::cognitive_complexity)]
 fn main() {
+    // Before any utility runs, so that whichever one it is renders a principal
+    // the same way. Nothing connects here: the resolver dials `/run/ident.sock`
+    // on its first lookup, so a command that never prints a SID never touches
+    // it, and one that runs before authd does prints SIDs and carries on.
+    //
+    // Unconditional, and the uucore dependency turns the feature on rather than
+    // forwarding a feature of ours. Naming a principal is not an optional part
+    // of this binary, and a `cfg` here would silently be false -- it would test
+    // *our* features, not uucore's, so the install would compile away and the
+    // only symptom would be SIDs where names should be.
+    uucore::sid_resolver::install();
+
     let utils = util_map();
     let mut args = uucore::args_os();
 

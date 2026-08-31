@@ -53,6 +53,8 @@ pub mod ringbuffer;
 pub mod sd_control;
 #[cfg(feature = "sid-render")]
 pub mod sid_render;
+#[cfg(feature = "sid-resolver")]
+pub mod sid_resolver;
 #[cfg(feature = "sum")]
 pub mod sum;
 #[cfg(feature = "time")]

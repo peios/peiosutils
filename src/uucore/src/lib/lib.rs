@@ -81,6 +81,8 @@ pub use crate::features::ringbuffer;
 pub use crate::features::sd_control;
 #[cfg(feature = "sid-render")]
 pub use crate::features::sid_render;
+#[cfg(feature = "sid-resolver")]
+pub use crate::features::sid_resolver;
 #[cfg(feature = "sum")]
 pub use crate::features::sum;
 #[cfg(feature = "feat_systemd_logind")]
