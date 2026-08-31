@@ -33,12 +33,12 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 libc = { workspace = true }
-uucore = { workspace = true }
+# `blkid` is the shared libblkid probe (§7), opened at runtime via dlopen so
+# the crate builds without the util-linux dev files; the peiosutils package
+# declares the libblkid.so.1 runtime dependency explicitly. It lived here as a
+# private shim until it was the third copy of one file — see src/blkid.rs.
+uucore = { workspace = true, features = ["blkid"] }
 thiserror = { workspace = true }
-# libblkid (§7) is opened at runtime via dlopen so the crate builds without the
-# util-linux dev files; the peiosutils package declares the libblkid.so.1
-# runtime dependency explicitly.
-libloading = "0.8"
 # KACS mount policy (§8) goes through the peios crate's safe wrappers over
 # libpeios (File::mount_set_policy + security::sddl). Same git pin as pu_token.
 peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }

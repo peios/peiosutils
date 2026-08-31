@@ -14,7 +14,6 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::FileTypeExt;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
@@ -51,16 +50,23 @@ impl Device {
 
         // Whether this is a block device is answered by sysfs, NOT by fstat.
         //
-        // KACS maps an open-for-read to READ_DATA | READ_ATTRIBUTES
-        // (kacs/file_access.c, the FMODE_READ arm), but the descriptors
-        // synthesised for devtmpfs nodes grant 0xF — READ_DATA, WRITE_DATA,
-        // APPEND_DATA, READ_EA — with no READ_ATTRIBUTES. So `fstat` on a
-        // device node can be denied to a caller who can perfectly well read the
-        // device: `dd if=/dev/vdb` succeeds where `stat` does not.
+        // `fstat` on a device node can be denied to a caller who can read the
+        // device perfectly well: `dd if=/dev/vdb` succeeds where `stat` does
+        // not, as SYSTEM, in the same shell. That observation is solid and
+        // reproducible; **why** it happens is still open (PEI-196).
+        //
+        // It is NOT the access mask, though an earlier version of this comment
+        // said so. `sd show` renders masks in short form and the `f` on those
+        // descriptors is the composite FILE_ALL (0x001F01FF) — full access,
+        // including READ_ATTRIBUTES — not hex 0xF. Reading a letter as a hex
+        // digit produced a confident, wrong root cause that outlived its
+        // correction in three other files; see the `sd-show-renders-masks-as-
+        // letters` note before reasoning about bits from `sd show` output.
         //
         // Statting was only ever a way to ask a question sysfs answers for
-        // free, so this is a straight improvement rather than a workaround —
-        // `part` now works wherever `dd` does, which is the right bar.
+        // free, so avoiding it is a straight improvement rather than a
+        // workaround — `part` works wherever `dd` does, which is the right bar,
+        // and it will keep working however PEI-196 is eventually explained.
         let is_block = sysfs_name(path)
             .map(|n| Path::new(&format!("/sys/class/block/{n}")).is_dir())
             .unwrap_or(false);

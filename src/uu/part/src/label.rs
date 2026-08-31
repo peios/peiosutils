@@ -403,7 +403,7 @@ mod tests {
         g.entry_size = 128;
         g.first_usable_lba = 2 + arr;
         g.last_usable_lba = g.last_lba() - arr - 1;
-        g.entries.resize(248, crate::gpt::entry::GptEntry::default());
+        g.entries.resize(248, GptEntry::default());
         g
     }
 
