@@ -57,6 +57,10 @@ os_display = "0.1.3"
 # Peios SD-creation flag group (`sd-control` feature) and attribute
 # preservation (`preserve` feature).
 peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0", optional = true }
+# The ident wire format, for turning a SID into a principal name
+# (`sid-resolver`). Dependency-free apart from libc by design, because it is
+# also linked into authd itself.
+libauthd = { git = "https://github.com/peios/authd.git", tag = "v0.0.13", optional = true }
 filetime = { workspace = true, optional = true }
 
 # Benchmark dependencies (optional)
@@ -195,6 +199,10 @@ sd-control = ["dep:peios", "sid-render"]
 # The single SID renderer (labels + the principal-name seam). See
 # features/sid_render.rs for why it is one place and not five.
 sid-render = ["dep:peios"]
+# Fills that seam: asks authd for the names only it can know. Separate from
+# sid-render so the renderer keeps working -- naming what it knows statically
+# and leaving the rest as SIDs -- without an authority dependency.
+sid-resolver = ["sid-render", "dep:libauthd"]
 # The KACS token identity behind `id`'s `context=` field, shared by the
 # identity tools (id, groups, whoami, logname) so they render it one way.
 token-identity = ["dep:peios"]
