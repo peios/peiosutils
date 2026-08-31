@@ -1,8 +1,9 @@
 // spell-checker:ignore (libs) mkirf initramfs cpio uucore uumain
-//! mkirf ~ (peiosutils) — compile an initramfs source tree into a deterministic cpio.gz.
+//! mkirf ~ (peiosutils) — compile an initramfs source tree into a deterministic compressed cpio.
 //!
 //! `mkirf <src-dir> <out-file>` walks `<src-dir>`, whose contents map 1:1 onto
-//! `/` inside the initramfs, and writes a gzip-compressed newc cpio archive to
+//! `/` inside the initramfs, and writes a compressed newc cpio archive (zstd
+//! by default, `--compress gzip` for a kernel without zstd support) to
 //! `<out-file>`. The output is byte-deterministic: identical input trees
 //! produce identical archives. `--watch` keeps the archive current as the
 //! source tree is edited like an ordinary directory. See `DESIGN.md`.
@@ -39,9 +40,9 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let excludes = walk::Excludes::compile(&cfg.excludes)
         .map_err(|e| USimpleError::new(2, format!("--exclude: {e}")))?;
     let result = if cfg.watch {
-        watch::watch(&cfg.src, &cfg.out, cfg.debounce_secs, &excludes)
+        watch::watch(&cfg.src, &cfg.out, cfg.debounce_secs, &excludes, cfg.compress)
     } else {
-        build::run(&cfg.src, &cfg.out, &excludes)
+        build::run(&cfg.src, &cfg.out, &excludes, cfg.compress)
     };
     result.map_err(|e| USimpleError::new(e.exit_code(), e.to_string()))
 }

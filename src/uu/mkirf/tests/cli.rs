@@ -21,18 +21,41 @@ fn sample_tree(root: &Path) {
 }
 
 #[test]
-fn produces_a_gzip_archive() {
+fn produces_a_zstd_archive_by_default() {
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("src");
+    fs::create_dir(&src).unwrap();
+    sample_tree(&src);
+    let out = dir.path().join("initramfs.cpio.zst");
+
+    let status = Command::new(MKIRF).arg(&src).arg(&out).status().unwrap();
+    assert!(status.success());
+
+    let bytes = fs::read(&out).unwrap();
+    assert_eq!(&bytes[..4], &[0x28, 0xb5, 0x2f, 0xfd], "zstd magic");
+}
+
+#[test]
+fn compress_gzip_produces_a_gzip_archive() {
     let dir = tempdir().unwrap();
     let src = dir.path().join("src");
     fs::create_dir(&src).unwrap();
     sample_tree(&src);
     let out = dir.path().join("initramfs.cpio.gz");
 
-    let status = Command::new(MKIRF).arg(&src).arg(&out).status().unwrap();
+    let status = Command::new(MKIRF)
+        .args(["--compress", "gzip"])
+        .arg(&src)
+        .arg(&out)
+        .status()
+        .unwrap();
     assert!(status.success());
 
     let bytes = fs::read(&out).unwrap();
     assert_eq!(&bytes[..2], &[0x1f, 0x8b], "gzip magic");
+    let mut raw = Vec::new();
+    GzDecoder::new(&bytes[..]).read_to_end(&mut raw).unwrap();
+    assert_eq!(&raw[..6], b"070701", "gzip member holds the newc cpio");
 }
 
 #[test]
@@ -94,9 +117,13 @@ fn archive_extracts_with_gnu_cpio() {
     sample_tree(&src);
     fs::set_permissions(src.join("usr/bin/tool"), PermissionsExt::from_mode(0o755)).unwrap();
 
+    // Exercised through the gzip path: the host `gzip` tool is a safe
+    // assumption everywhere this suite runs, a host `zstd` tool is not,
+    // and the cpio bytes under test are identical either way.
     let out = dir.path().join("initramfs.cpio.gz");
     assert!(
         Command::new(MKIRF)
+            .args(["--compress", "gzip"])
             .arg(&src)
             .arg(&out)
             .status()
@@ -136,11 +163,9 @@ fn archive_extracts_with_gnu_cpio() {
     );
 }
 
-/// Decompress a gzip blob to its raw bytes.
-fn gunzip(bytes: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
-    GzDecoder::new(bytes).read_to_end(&mut out).unwrap();
-    out
+/// Decompress the default (zstd) main member to its raw bytes.
+fn decompress(bytes: &[u8]) -> Vec<u8> {
+    zstd::stream::decode_all(bytes).unwrap()
 }
 
 #[test]
@@ -178,7 +203,7 @@ fn hooks_seq_lists_hooks_in_dependency_order() {
 
     // The sequences are stored uncompressed within the cpio; find their
     // bodies in the decompressed archive.
-    let archive = gunzip(&fs::read(&out).unwrap());
+    let archive = decompress(&fs::read(&out).unwrap());
 
     // Both the entry NAME and the body are asserted. Checking only the body
     // let an earlier version of this test keep passing when the file moved
@@ -239,7 +264,7 @@ fn a_hookless_image_still_gets_both_sequences() {
             .success()
     );
 
-    let archive = gunzip(&fs::read(&out).unwrap());
+    let archive = decompress(&fs::read(&out).unwrap());
     assert!(contains(&archive, b"system/prelude/hooks.seq.1"));
     assert!(contains(&archive, b"system/prelude/hooks.seq.2"));
     assert!(contains(&archive, b"hookseq 1\n"));
@@ -267,7 +292,7 @@ fn the_sequence_directory_is_created_when_the_source_lacks_it() {
             .success()
     );
 
-    let archive = gunzip(&fs::read(&out).unwrap());
+    let archive = decompress(&fs::read(&out).unwrap());
     assert!(contains(&archive, b"system\0"), "no `system` directory entry");
     assert!(
         contains(&archive, b"system/prelude\0"),
@@ -393,8 +418,12 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
     );
 
     // The gzip main archive follows, and it does NOT carry the `++` tree.
-    assert_eq!(&bytes[gz_start..gz_start + 2], &[0x1f, 0x8b], "gzip after early region");
-    let main = gunzip(&bytes[gz_start..]);
+    assert_eq!(
+        &bytes[gz_start..gz_start + 4],
+        &[0x28, 0xb5, 0x2f, 0xfd],
+        "zstd after early region"
+    );
+    let main = decompress(&bytes[gz_start..]);
     assert!(
         main.windows(4).any(|w| w == b"init"),
         "main archive still carries the real tree",
@@ -428,7 +457,11 @@ fn no_early_segments_is_a_plain_gzip() {
             .success()
     );
     let bytes = fs::read(&out).unwrap();
-    assert_eq!(&bytes[..2], &[0x1f, 0x8b], "no early region → leading gzip");
+    assert_eq!(
+        &bytes[..4],
+        &[0x28, 0xb5, 0x2f, 0xfd],
+        "no early region → leading zstd"
+    );
 }
 
 /// Poll `cond` until it returns true or `timeout` elapses.
