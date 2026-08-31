@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
 
+use crate::cli::Compress;
 use crate::error::{Error, Result};
 use crate::walk::Excludes;
 
@@ -24,7 +25,13 @@ use crate::walk::Excludes;
 ///
 /// Builds once on startup so the watch never begins from a stale
 /// archive, then watches `src` recursively until the process is killed.
-pub fn watch(src: &Path, out: &Path, debounce_secs: u64, excludes: &Excludes) -> Result<()> {
+pub fn watch(
+    src: &Path,
+    out: &Path,
+    debounce_secs: u64,
+    excludes: &Excludes,
+    compress: Compress,
+) -> Result<()> {
     if out_inside_src(src, out) {
         return Err(Error::Usage(
             "--watch: <out-file> must not be inside <src-dir> — \
@@ -35,7 +42,7 @@ pub fn watch(src: &Path, out: &Path, debounce_secs: u64, excludes: &Excludes) ->
     let debounce = Duration::from_secs(debounce_secs);
 
     // Build once up front: the watch must not start from a stale cpio.
-    rebuild(src, out, excludes);
+    rebuild(src, out, excludes, compress);
 
     let (tx, rx) = mpsc::channel::<notify::Result<notify::Event>>();
     let mut watcher = notify::recommended_watcher(move |event| {
@@ -65,15 +72,15 @@ pub fn watch(src: &Path, out: &Path, debounce_secs: u64, excludes: &Excludes) ->
         // Drain the burst: rebuild only once the tree has been quiet for
         // the full debounce window.
         while rx.recv_timeout(debounce).is_ok() {}
-        rebuild(src, out, excludes);
+        rebuild(src, out, excludes, compress);
     }
 }
 
 /// Run one build, logging the outcome. In watch mode a failed build —
 /// say, a hook edited into a dependency cycle — must not kill the
 /// watcher, so the error is reported but not propagated.
-fn rebuild(src: &Path, out: &Path, excludes: &Excludes) {
-    if let Err(e) = crate::build::run(src, out, excludes) {
+fn rebuild(src: &Path, out: &Path, excludes: &Excludes, compress: Compress) {
+    if let Err(e) = crate::build::run(src, out, excludes, compress) {
         eprintln!("mkirf: rebuild failed: {e}");
     }
 }

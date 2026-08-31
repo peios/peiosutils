@@ -1,7 +1,8 @@
 # mkirf — Design
 
-`mkirf` compiles a directory tree into a deterministic initramfs
-`cpio.gz` — the in-memory root filesystem the kernel unpacks at boot.
+`mkirf` compiles a directory tree into a deterministic compressed
+initramfs cpio — the in-memory root filesystem the kernel unpacks at
+boot.
 
 **Status:** v1 + hook DAG + early-region (`++/`) implemented.
 
@@ -10,16 +11,16 @@
 ## 1. Scope
 
 ```
-mkirf [--watch] [--debounce <secs>] <src-dir> <out-file>
+mkirf [--watch] [--debounce <secs>] [--compress <algo>] <src-dir> <out-file>
 ```
 
 - `<src-dir>` is the **literal cpio root** — its contents map 1:1 onto
   `/` inside the initramfs.
-- `<out-file>` is the gzip-compressed newc cpio archive.
+- `<out-file>` is the compressed newc cpio archive (zstd by default).
 
 mkirf does two things with that directory:
 
-1. **Packs it** into a deterministic `cpio.gz` (§3–§6).
+1. **Packs it** into a deterministic compressed cpio (§3–§6).
 2. **Resolves the hook DAG and validates the layout** (§8) — it
    understands the prelude initramfs convention: an executable `/init`,
    and hook scripts under `hooks/` whose ordering metadata it sorts into
@@ -37,16 +38,13 @@ content read before decompression (CPU microcode, ACPI table overrides).
 
 Deferred:
 
-- **`--compress=zstd`** — later addition, no structural change required.
-  Note this only ever changes the *main* archive's compression; the `++/`
-  early region (§10) is uncompressed by kernel contract regardless.
 - **UKI output** — wrapping kernel + cpio + cmdline into a signed-ready
   `.efi`; a boot-stack M3 milestone.
 
 ## 2. mkirf and the boot design
 
 The **packing** half of mkirf — "populated directory → deterministic
-`cpio.gz`" — is a pure function, independent of the boot design. v1 was
+compressed cpio" — is a pure function, independent of the boot design. v1 was
 built on that basis, ahead of the prelude rewrite.
 
 The **hook DAG** half (§8) is not independent: mkirf parses hook
@@ -137,25 +135,28 @@ Guaranteed by:
 - normalising `uid` / `gid` / `mtime` / `ino` as in §4;
 - enumerating entries in a stable order — `LC_ALL=C` byte order on the
   path;
-- gzip with no embedded mtime or filename (the `gzip -n` equivalent).
+- a fixed compressor at a fixed level; the gzip member additionally
+  embeds no mtime or filename (the `gzip -n` equivalent).
 
 ## 6. Compression
 
-gzip for v1 — universally present in kernel decompressor configs, and the
-format the reproducibility approach is settled against. `--compress=zstd`
-is a future addition with no structural change (the kernel decompresses
-both, given the right config).
+zstd (level 3, single-threaded) by default; `--compress=gzip` (level 6)
+remains for a kernel built without `CONFIG_RD_ZSTD`. Measured on a real
+image (a 133 MB tree): zstd -3 compresses ~9x faster than gzip -6 to a
+slightly smaller archive, and the kernel decompresses it ~6x faster at
+every boot. Single-threading keeps the output independent of the build
+host's core count; any fixed level is deterministic. The early region
+(§10) is uncompressed either way.
 
-Level 6, not 9. Measured on a real image (a 133 MB tree): level 9 saves
-~0.16% of output size over level 6 and takes more than twice as long,
-and mkirf runs on every image rebuild. Any fixed level is equally
-deterministic.
+Within gzip, level 6 rather than 9: level 9 saves ~0.16% of output size
+and takes more than twice as long, and mkirf runs on every image
+rebuild.
 
 ## 7. Implementation notes
 
 - Rust, in the `peiosutils` workspace as the `mkirf` utility. Static-musl
   binary, consistent with prelude / peinit / peiosutils.
-- Dependencies kept minimal: just `flate2` for gzip. newc is
+- Dependencies kept minimal: `flate2` for gzip and `zstd` for zstd. newc is
   hand-written; the hook metadata parser is hand-written (§8.1);
   parsing two positional arguments is `std::env::args`.
 
