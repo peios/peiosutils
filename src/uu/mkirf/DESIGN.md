@@ -146,6 +146,11 @@ format the reproducibility approach is settled against. `--compress=zstd`
 is a future addition with no structural change (the kernel decompresses
 both, given the right config).
 
+Level 6, not 9. Measured on a real image (a 133 MB tree): level 9 saves
+~0.16% of output size over level 6 and takes more than twice as long,
+and mkirf runs on every image rebuild. Any fixed level is equally
+deterministic.
+
 ## 7. Implementation notes
 
 - Rust, in the `peiosutils` workspace as the `mkirf` utility. Static-musl
