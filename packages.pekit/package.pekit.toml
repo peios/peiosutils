@@ -5,6 +5,29 @@
 format = "peipkg"
 
 [package]
+# 0.1.4-10: a SID renders as a principal's name. uucore::sid_render has always
+# named well-known SIDs from a static table and left everything else as a raw
+# S-1-…, with set_resolver as the declared seam for the names only the
+# authority can know; sid_resolver fills it, asking authd over /run/ident.sock.
+# So `ls -l` shows `alice` rather than S-1-5-21-…-1001.
+#
+# A connection per lookup and a cache per process. authd closes a connection
+# idle for 120s and a walk of a large tree can outlast that, so connect, ask,
+# close — and the cache is what makes that affordable. Per process on purpose:
+# one `ls -lR` costs a lookup per distinct principal rather than per file, and
+# two separate commands share nothing, so a rename in lpsd shows on the next
+# one. Nothing to invalidate. Misses are cached too, since a SID the authority
+# cannot name is exactly the case that would otherwise cost a round trip per
+# file.
+#
+# Every failure — no socket, no authority, a timeout, a bad reply — renders the
+# raw SID. A tool that lists files must not fail because a name server did not
+# answer, and the renderer still works with no authority at all.
+#
+# Needs authd 0.0.13-13 or later: before it, /run/ident.sock inherited SYSTEM
+# and Administrators from /run and no ordinary principal could reach the
+# resolver, so this would have named owners for administrators only (PEI-571).
+#
 # 0.1.4-9: mount's private libblkid shim is gone — the FFI now lives once, in
 # uucore::blkid, shared by mount, lsblk and part. It was three near-identical
 # copies of one dlopen wrapper; lsblk's went in 0.1.3-1 and this is the last.
@@ -87,7 +110,7 @@ format = "peipkg"
 # legacy /hooks. This one is not optional for an image whose hook packages have
 # already moved: an older mkirf scans only /hooks, finds nothing there, and
 # writes an empty sequence — so the boot runs no hooks at all.
-version      = "{{version}}-9"
+version      = "{{version}}-10"
 architecture = "x86_64"
 license      = "MIT"
 homepage     = "https://github.com/peios/peiosutils"
