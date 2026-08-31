@@ -304,7 +304,11 @@ fn write_image(path: &Path, early: &[cpio::Entry], main: &[cpio::Entry]) -> Resu
         cpio::write_early_archive(&mut bw, early).map_err(|e| Error::Io(e.to_string()))?;
     }
 
-    let mut gz = GzBuilder::new().mtime(0).write(bw, Compression::new(9));
+    // Level 6, not 9: on a real image the difference is ~0.16% of output
+    // size for more than twice the compression time, and mkirf sits on
+    // every image rebuild's critical path. Determinism is unaffected —
+    // any fixed level compresses identical input to identical output.
+    let mut gz = GzBuilder::new().mtime(0).write(bw, Compression::new(6));
     cpio::write_archive(&mut gz, main).map_err(|e| Error::Io(e.to_string()))?;
     gz.finish()
         .map_err(|e| Error::Io(e.to_string()))?
