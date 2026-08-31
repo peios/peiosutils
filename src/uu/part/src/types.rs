@@ -97,6 +97,7 @@ mod tests {
             let g = Guid::parse(guid).unwrap_or_else(|| panic!("{alias} has a bad GUID"));
             assert_eq!(g.to_string(), *guid, "{alias} must be canonical uppercase");
             assert!(describe(&g).is_some(), "{alias} should describe");
+            // `super::` is required here: the loop binding shadows the fn.
             assert_eq!(super::alias(&g), Some(*alias));
         }
     }
@@ -105,6 +106,6 @@ mod tests {
     fn describe_is_none_for_an_unknown_type() {
         let unknown = Guid::parse("11111111-2222-3333-4444-555555555555").unwrap();
         assert!(describe(&unknown).is_none());
-        assert!(super::alias(&unknown).is_none());
+        assert!(alias(&unknown).is_none());
     }
 }

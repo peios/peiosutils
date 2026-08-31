@@ -89,6 +89,14 @@ pub enum BlkidError {
     Ambiguous,
     /// Probed cleanly and found nothing.
     NoSignature,
+    /// A `UUID=`/`LABEL=`/… spec matched no device.
+    ///
+    /// Deliberately distinct from `NoSignature`: the question asked was "which
+    /// device is this?", not "what is on it?", and a caller resolving a source
+    /// spec needs to say "cannot find device for UUID=…" rather than "no
+    /// filesystem signature found". Conflating them was a latent bug here —
+    /// unnoticed only because the sole caller at the time never resolved specs.
+    SpecUnresolved,
     /// libblkid failed for a reason it did not distinguish.
     ProbeFailed,
     /// An argument contained an interior NUL and cannot cross the FFI boundary.
@@ -103,6 +111,7 @@ impl fmt::Display for BlkidError {
             Self::OpenFailed => write!(f, "cannot open for probing"),
             Self::Ambiguous => write!(f, "ambiguous: multiple filesystem signatures"),
             Self::NoSignature => write!(f, "no filesystem signature found"),
+            Self::SpecUnresolved => write!(f, "cannot find a device matching the spec"),
             Self::ProbeFailed => write!(f, "probe failed"),
             Self::Nul => write!(f, "argument contains a NUL byte"),
         }
@@ -111,11 +120,33 @@ impl fmt::Display for BlkidError {
 
 impl std::error::Error for BlkidError {}
 
-/// Probe a device for its filesystem and partition identity.
+/// Which libblkid probe chains to enable.
 ///
-/// Enables both superblock and partition probing, so the result carries `TYPE`
-/// and `PTTYPE` together — a whole disk answers the latter, a partition both.
+/// This is not a tuning knob — it changes what counts as an error.
+/// `blkid_do_safeprobe` propagates `-2` (ambiguous) from **any** enabled chain,
+/// so enabling partitions means a disk carrying conflicting partition tables —
+/// a hybrid MBR/GPT, say — becomes ambiguous even when its filesystem
+/// signature is perfectly clear. A caller that only wants the filesystem type
+/// must not be failed by a partition-table disagreement it never asked about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Chains {
+    /// libblkid's own defaults: superblocks only, default flags. What
+    /// `mount -t auto` has always used, and the safest answer to "what
+    /// filesystem is this?".
+    Default,
+    /// Superblocks with LABEL/UUID/TYPE/VERSION, plus the partition chain.
+    /// What `lsblk` and `part` want, since they report `PTTYPE` too.
+    WithPartitions,
+}
+
+/// Probe a device for its filesystem and partition identity, enabling both
+/// chains. See [`probe_with`] when the partition chain must stay out of it.
 pub fn probe(device: &[u8]) -> Result<BlkidInfo, BlkidError> {
+    probe_with(device, Chains::WithPartitions)
+}
+
+/// Probe a device with an explicit chain selection.
+pub fn probe_with(device: &[u8], chains: Chains) -> Result<BlkidInfo, BlkidError> {
     let lib = library()?;
     let dev = cstr(device)?;
 
@@ -139,9 +170,14 @@ pub fn probe(device: &[u8]) -> Result<BlkidInfo, BlkidError> {
         if pr.is_null() {
             return Err(BlkidError::OpenFailed);
         }
-        enable_super(pr, 1);
-        set_flags(pr, SUBLKS_FLAGS);
-        enable_parts(pr, 1);
+        // Default leaves the chains exactly as libblkid configures them —
+        // deliberately not "superblocks on, partitions off", because touching
+        // the chain configuration at all is what this variant exists to avoid.
+        if chains == Chains::WithPartitions {
+            enable_super(pr, 1);
+            set_flags(pr, SUBLKS_FLAGS);
+            enable_parts(pr, 1);
+        }
 
         // blkid_do_safeprobe: 0 success, 1 nothing found, -2 ambiguous.
         let rc = safeprobe(pr);
@@ -210,7 +246,7 @@ pub fn resolve_spec(raw: &[u8]) -> Result<Vec<u8>, BlkidError> {
             sym(lib, b"blkid_evaluate_spec\0")?;
         let p = eval(c.as_ptr(), std::ptr::null_mut());
         if p.is_null() {
-            return Err(BlkidError::NoSignature);
+            return Err(BlkidError::SpecUnresolved);
         }
         let out = CStr::from_ptr(p).to_bytes().to_vec();
         libc::free(p.cast());
