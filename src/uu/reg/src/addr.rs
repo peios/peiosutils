@@ -57,6 +57,17 @@ impl KeyPath {
         }
     }
 
+    /// The proper ancestors of this path, outermost first: for `A\B\C` that
+    /// is `A`, then `A\B`. Empty for a single-component (hive-root) path,
+    /// which has no ancestor to create.
+    pub fn ancestors(&self) -> Vec<KeyPath> {
+        (1..self.components.len())
+            .map(|n| KeyPath {
+                components: self.components[..n].to_vec(),
+            })
+            .collect()
+    }
+
     /// Append a child component (used when walking subkeys).
     pub fn child(&self, name: &str) -> KeyPath {
         let mut components = self.components.clone();
@@ -107,6 +118,33 @@ pub fn display_value_name(name: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ancestors_walk_outermost_first() {
+        let p = KeyPath::parse("Machine/System/Network/TcpIp/PortReservations").unwrap();
+        let got: Vec<String> = p.ancestors().iter().map(|a| a.to_abi()).collect();
+        assert_eq!(
+            got,
+            vec![
+                r"Machine",
+                r"Machine\System",
+                r"Machine\System\Network",
+                r"Machine\System\Network\TcpIp",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_hive_root_has_no_ancestors() {
+        assert!(KeyPath::parse("Machine").unwrap().ancestors().is_empty());
+    }
+
+    #[test]
+    fn ancestors_exclude_the_path_itself() {
+        let p = KeyPath::parse("Machine/System").unwrap();
+        let got: Vec<String> = p.ancestors().iter().map(|a| a.to_abi()).collect();
+        assert_eq!(got, vec!["Machine"]);
+    }
 
     #[test]
     fn parse_accepts_both_separators() {

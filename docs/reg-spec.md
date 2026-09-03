@@ -201,6 +201,19 @@ repeating `--layer` on every mutation.)
 | `reg new <key> [--layer NAME] [-p] [--volatile]` | Create a key with no values. `--volatile` makes it RAM-only (children must also be volatile). |
 | `reg del <key> [value] [--layer NAME] [-r]` | Delete a value (if `value` given) or a key. Value deletion removes *this layer's* entry only (lower layers resurface). Key deletion requires the key be empty unless `-r/--recursive` (the tool walks and deletes children). |
 
+**`-p/--parents`.** The ABI creates exactly the key it is named, so the tool
+walks the path outermost-first and creates *every* missing ancestor, not just
+the deepest one. Each ancestor is opened-or-created with `CREATE_SUB_KEY` alone
+— the only right the walk needs, since an ancestor exists here to hold the next
+component — so a path may be extended beneath ancestors the caller is not
+permitted to modify.
+
+Ancestors are created in the target layer but do **not** inherit the leaf's
+create flags: `--volatile` describes the key the user asked for. The volatile
+rule runs the other way (a volatile key's children must also be volatile), so a
+volatile leaf beneath persistent ancestors is well-formed, while persistent
+ancestors implied by a volatile leaf would not be.
+
 ### 4.3 Layer masking & key visibility
 
 These expose LCS's tombstone / hide primitives, which are distinct from
