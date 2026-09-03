@@ -26,6 +26,7 @@ pub fn run(m: &ArgMatches) -> Result<()> {
 
     // Open (or, with -p, open/create) the key with set-value access.
     let key = if m.get_flag("parents") {
+        cmd::create_ancestors(&path, set.layer_arg(), &set)?;
         Key::create(
             None,
             &path.to_abi(),

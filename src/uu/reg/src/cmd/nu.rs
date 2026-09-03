@@ -18,6 +18,10 @@ pub fn run(m: &ArgMatches) -> Result<()> {
         flags |= CreateFlags::VOLATILE;
     }
 
+    if m.get_flag("parents") {
+        cmd::create_ancestors(&path, set.layer_arg(), &set)?;
+    }
+
     let (_key, disp) = Key::create(
         None,
         &path.to_abi(),
