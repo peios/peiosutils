@@ -42,8 +42,16 @@ const DRAIN_SCRIPT: &str = "10-apply-seeds.sh";
 const DRAIN: &str = "#!/bin/sh
 # Placed by peiso / upgrade-peios. Apply the queued registry seeds, draining
 # each after it applies (--once-delete). Run every boot by peinit; a no-op
-# once the queue is empty.
-exec /bin/reg apply --dir /lcl/policy/autoapply.d --once-delete
+# once the queues are empty.
+#
+# Two directories, in this order: autoapply.d is what this system applies
+# wherever it is running, autoapply.live.d is what only a boot medium applies.
+# An installed machine has no second directory, and `reg apply --dir` on one
+# that is not there applies nothing and succeeds -- so this is the same script
+# on both, which is what lets peiso and upgrade-peios write the same one.
+set -e
+/bin/reg apply --dir /lcl/policy/autoapply.d --once-delete
+exec /bin/reg apply --dir /lcl/policy/autoapply.live.d --once-delete
 ";
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -246,15 +254,35 @@ fn unquote(v: &str) -> String {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Release {
     #[serde(default)]
     registry: Registry,
 }
 
+/// The release's three seed lists. Only one of them is this tool's.
+///
+/// `deny_unknown_fields` on both, so a key a newer release adds stops an
+/// older upgrade-peios loudly rather than being ignored — the whole
+/// reason release.toml is read strictly is that silently dropping a list
+/// produces a system missing exactly the policy the operator upgraded to
+/// get.
+///
+/// The two it declines are declined for the same reason, from opposite
+/// ends: an upgrade is neither making a boot medium nor making a machine.
+/// `live_autoapply` belongs to an image being built, and
+/// `install_autoapply` to a machine being installed — re-applying that
+/// one here would resurrect a first-boot flow on a system that has been
+/// running for a year.
 #[derive(Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Registry {
     #[serde(default)]
     autoapply: Vec<String>,
+    #[serde(default, rename = "live_autoapply")]
+    _live_autoapply: Vec<String>,
+    #[serde(default, rename = "install_autoapply")]
+    _install_autoapply: Vec<String>,
 }
 
 /// The seeds the installed release asks for, in release.toml order.
