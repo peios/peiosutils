@@ -114,6 +114,7 @@ feat_common_core = [
   "ls",
   "lsblk",
   "mkdir",
+  "mkexec",
   "mkirf",
   "mktemp",
   "mkuki",
@@ -624,6 +625,7 @@ lsblk = { optional = true, version = "0.8.0", package = "pu_lsblk", path = "src/
 logname = { optional = true, version = "0.8.0", package = "pu_logname", path = "src/uu/logname" }
 logonse = { optional = true, version = "0.8.0", package = "pu_logonse", path = "src/uu/logonse" }
 mkdir = { optional = true, version = "0.8.0", package = "pu_mkdir", path = "src/uu/mkdir" }
+mkexec = { optional = true, version = "0.8.0", package = "pu_mkexec", path = "src/uu/mkexec" }
 mkfifo = { optional = true, version = "0.8.0", package = "pu_mkfifo", path = "src/uu/mkfifo" }
 mkirf = { optional = true, version = "0.8.0", package = "pu_mkirf", path = "src/uu/mkirf" }
 mkuki = { optional = true, version = "0.8.0", package = "pu_mkuki", path = "src/uu/mkuki" }
