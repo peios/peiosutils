@@ -14,7 +14,7 @@ use std::ffi::{CString, OsStr};
 use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 
-use crate::error::{MountError, Result};
+use crate::error::{annotate, os_code, MountError, Result};
 use crate::options::{ParsedOptions, PropChange, PropKind, SbFlag};
 use crate::request::MountRequest;
 use crate::verb::Verb;
@@ -423,7 +423,7 @@ fn should_retry_ro(opts: &ParsedOptions, e: &MountError) -> bool {
     matches!(
         e,
         MountError::Mount { source, .. } | MountError::Permission { source, .. }
-            if matches!(source.raw_os_error(), Some(libc::EROFS) | Some(libc::EACCES))
+            if matches!(os_code(source), Some(libc::EROFS) | Some(libc::EACCES))
     )
 }
 
@@ -513,11 +513,7 @@ fn with_log(stage: &'static str, fs_fd: BorrowedFd<'_>, source: std::io::Error) 
     if errors.is_empty() {
         MountError::from_syscall(stage, source)
     } else {
-        let detail = errors.join("; ");
-        MountError::from_syscall(
-            stage,
-            std::io::Error::new(source.kind(), format!("{detail} ({source})")),
-        )
+        MountError::from_syscall(stage, annotate(source, &errors.join("; ")))
     }
 }
 
@@ -582,6 +578,30 @@ mod tests {
         let mut opts = ParsedOptions::default();
         opts.sb_rdonly = Some(true);
         assert!(!should_retry_ro(&opts, &write_protect_err()));
+    }
+
+    // The regression this guards: the kernel explains a failed superblock
+    // create through the fs log ("Can't open blockdev"), and with_log used
+    // to fold that text into a custom io::Error whose raw_os_error() is
+    // None — so the EROFS a CD-ROM returns was never recognised as
+    // write-protect and the fallback never fired. The annotation must keep
+    // the errno visible to this predicate, and to the exit-code mapping.
+    #[test]
+    fn retries_ro_when_the_error_carries_the_kernel_log() {
+        let source = annotate(
+            io::Error::from_raw_os_error(libc::EROFS),
+            "/dev/sr0: Can't open blockdev",
+        );
+        assert_eq!(os_code(&source), Some(libc::EROFS));
+        let e = MountError::from_syscall("fsconfig(create)", source);
+        assert!(e.to_string().contains("Can't open blockdev"));
+        assert!(should_retry_ro(&ParsedOptions::default(), &e));
+
+        let denied = MountError::from_syscall(
+            "fsconfig(create)",
+            annotate(io::Error::from_raw_os_error(libc::EACCES), "denied"),
+        );
+        assert!(matches!(denied, MountError::Permission { .. }));
     }
 
     // Only write-protect errors (EROFS/EACCES) trigger the fallback.
