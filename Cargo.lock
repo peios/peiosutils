@@ -2158,6 +2158,7 @@ dependencies = [
  "pu_lsblk",
  "pu_md5sum",
  "pu_mkdir",
+ "pu_mkexec",
  "pu_mkfifo",
  "pu_mkirf",
  "pu_mknod",
@@ -2943,6 +2944,15 @@ version = "0.8.0"
 dependencies = [
  "clap",
  "fluent",
+ "uucore",
+]
+
+[[package]]
+name = "pu_mkexec"
+version = "0.8.0"
+dependencies = [
+ "clap",
+ "tempfile",
  "uucore",
 ]
 

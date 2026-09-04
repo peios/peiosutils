@@ -110,7 +110,15 @@ format = "peipkg"
 # legacy /hooks. This one is not optional for an image whose hook packages have
 # already moved: an older mkirf scans only /hooks, finds nothing there, and
 # writes an empty sequence — so the boot runs no hooks at all.
-version      = "{{version}}-12"
+#
+# -13: new applet `mkexec`, which sets a file's executable mark. Nothing on an
+# image could set that bit before: there is no `chmod`, `install` is deferred
+# awaiting the Peios-native attribute model, and `sd` governs the security
+# descriptor rather than the mark. A file that arrived without it — pushed onto
+# a running machine, or written by a program that never set one — was therefore
+# unrunnable by everyone including SYSTEM, since the kernel's DAC layer refuses
+# exec below the access-control layer and DAC_OVERRIDE does not waive it.
+version      = "{{version}}-13"
 architecture = "x86_64"
 license      = "MIT"
 homepage     = "https://github.com/peios/peiosutils"

@@ -1,0 +1,30 @@
+[package]
+name = "pu_mkexec"
+description = "mkexec ~ (peiosutils) mark a regular file executable"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/mkexec"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/mkexec.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+
+[[bin]]
+name = "mkexec"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }
