@@ -34,7 +34,13 @@ pub fn create(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
         "spec_bytes": spec.len(),
         "result_fd": raw_fd,
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 pub fn install(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
@@ -51,7 +57,13 @@ pub fn install(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
         "spec_bytes": spec.len(),
         "status": "installed",
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 fn read_spec_input(matches: &clap::ArgMatches) -> Result<Vec<u8>> {
@@ -66,6 +78,5 @@ fn read_spec_input(matches: &clap::ArgMatches) -> Result<Vec<u8>> {
             .map_err(|e| Error::InvalidSpec(format!("reading stdin: {e}")))?;
         return Ok(buf);
     }
-    std::fs::read(Path::new(path))
-        .map_err(|e| Error::InvalidSpec(format!("reading {path}: {e}")))
+    std::fs::read(Path::new(path)).map_err(|e| Error::InvalidSpec(format!("reading {path}: {e}")))
 }

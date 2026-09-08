@@ -17,7 +17,10 @@ pub fn access_mask_names(mask: u32) -> String {
         (TokenAccess::ADJUST_PRIVS.bits(), "ADJUST_PRIVS"),
         (TokenAccess::ADJUST_GROUPS.bits(), "ADJUST_GROUPS"),
         (TokenAccess::ADJUST_DEFAULT.bits(), "ADJUST_DEFAULT"),
-        (TokenAccess::ADJUST_SESSIONID.bits(), "ADJUST_SESSIONID"),
+        (
+            TokenAccess::ADJUST_INTERACTIVITY_SCOPE.bits(),
+            "ADJUST_INTERACTIVITY_SCOPE",
+        ),
     ];
     let names: Vec<&str> = pairs
         .iter()
@@ -115,8 +118,7 @@ impl CmdOutput {
             OutputMode::Json => {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&self.json)
-                        .unwrap_or_else(|_| "{}".into())
+                    serde_json::to_string_pretty(&self.json).unwrap_or_else(|_| "{}".into())
                 );
             }
         }

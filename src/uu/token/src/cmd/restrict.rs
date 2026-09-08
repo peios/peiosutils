@@ -24,11 +24,7 @@ use std::os::fd::{AsRawFd, IntoRawFd};
 const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
 const KACS_TOKEN_DUPLICATE: u32 = TokenAccess::DUPLICATE.bits();
 
-pub fn run(
-    matches: &clap::ArgMatches,
-    target: TargetSpec,
-    mode: OutputMode,
-) -> Result<()> {
+pub fn run(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let drop_mask = parse_drop_privs(matches.get_one::<String>("drop-privs"))?;
     let deny_indices = parse_indices(matches.get_one::<String>("deny"))?;
     let restrict_sids = parse_sid_list(matches.get_one::<String>("restrict"))?;
@@ -72,7 +68,13 @@ pub fn run(
         "flags": flags,
         "result_fd": raw_fd,
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 fn parse_drop_privs(arg: Option<&String>) -> Result<u64> {
@@ -80,7 +82,10 @@ fn parse_drop_privs(arg: Option<&String>) -> Result<u64> {
     let trimmed = s.trim();
 
     // Numeric mask (hex or decimal).
-    let numeric = if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    let numeric = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         u64::from_str_radix(hex, 16).ok()
     } else if trimmed.chars().all(|c| c.is_ascii_digit()) {
         trimmed.parse::<u64>().ok()

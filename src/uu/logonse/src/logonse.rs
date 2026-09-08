@@ -36,9 +36,12 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             };
         }
     };
-    let (name, sub) = matches
-        .subcommand()
-        .ok_or_else(|| USimpleError::new(1, "logonse: subcommand required (list|show|create|destroy|psb)"))?;
+    let (name, sub) = matches.subcommand().ok_or_else(|| {
+        USimpleError::new(
+            1,
+            "logonse: subcommand required (list|show|create|destroy|psb)",
+        )
+    })?;
     let json_mode = sub.get_flag("json");
     let res = match name {
         "list" => cmd_list(json_mode),
@@ -212,7 +215,7 @@ fn session_id_for_pid(pid: i32) -> Option<u64> {
         let _ = libc::close(pidfd);
     }
     let tok = tok?;
-    tok.session_id().ok().map(|v| v.0)
+    tok.auth_id().ok().map(|v| v.0)
 }
 
 // ---------------------------------------------------------------------------

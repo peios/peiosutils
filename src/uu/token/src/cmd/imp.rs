@@ -21,11 +21,7 @@ use std::os::fd::BorrowedFd;
 
 const KACS_TOKEN_IMPERSONATE: u32 = TokenAccess::IMPERSONATE.bits();
 
-pub fn impersonate(
-    matches: &clap::ArgMatches,
-    target: TargetSpec,
-    mode: OutputMode,
-) -> Result<()> {
+pub fn impersonate(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let exec_argv: Vec<String> = matches
         .get_many::<String>("exec")
         .map(|v| v.cloned().collect())
@@ -58,7 +54,13 @@ pub fn impersonate(
             "exec": serde_json::Value::Null,
             "warning": "impersonation dropped at process exit",
         });
-        return cmd::emit(CmdOutput { human: lines, json: out }, mode);
+        return cmd::emit(
+            CmdOutput {
+                human: lines,
+                json: out,
+            },
+            mode,
+        );
     }
 
     // Exec form: replace the process. From here we don't return.
@@ -89,7 +91,13 @@ pub fn revert(mode: OutputMode) -> Result<()> {
     let mut lines = Lines::new();
     lines.section("revert");
     lines.kv("status", "ok");
-    cmd::emit(CmdOutput { human: lines, json: json!({"status": "ok"}) }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: json!({"status": "ok"}),
+        },
+        mode,
+    )
 }
 
 // ---------------------------------------------------------------------------

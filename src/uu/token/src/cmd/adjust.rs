@@ -1,5 +1,5 @@
 // `token adjust ...` — mutate a token's privileges, groups, default
-// DACL, or session id.
+// DACL, or interactivity scope.
 //
 // Each adjustment maps to a single KACS ioctl exposed by libp-token.
 
@@ -8,13 +8,13 @@ use crate::error::{Error, Result};
 use crate::privs;
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use peios::token::{GroupAdjustment, PrivilegeAdjustment, SessionId, TokenAccess};
+use peios::token::{GroupAdjustment, InteractivityScope, PrivilegeAdjustment, TokenAccess};
 use serde_json::json;
 
 const KACS_TOKEN_ADJUST_PRIVS: u32 = TokenAccess::ADJUST_PRIVS.bits();
 const KACS_TOKEN_ADJUST_GROUPS: u32 = TokenAccess::ADJUST_GROUPS.bits();
 const KACS_TOKEN_ADJUST_DEFAULT: u32 = TokenAccess::ADJUST_DEFAULT.bits();
-const KACS_TOKEN_ADJUST_SESSIONID: u32 = TokenAccess::ADJUST_SESSIONID.bits();
+const KACS_TOKEN_ADJUST_INTERACTIVITY_SCOPE: u32 = TokenAccess::ADJUST_INTERACTIVITY_SCOPE.bits();
 
 const SE_PRIVILEGE_ENABLED: u32 = peios_sys::KACS_PRIVILEGE_ATTR_ENABLED;
 const SE_PRIVILEGE_REMOVED: u32 = peios_sys::KACS_PRIVILEGE_ATTR_REMOVED;
@@ -23,11 +23,7 @@ const SE_PRIVILEGE_REMOVED: u32 = peios_sys::KACS_PRIVILEGE_ATTR_REMOVED;
 // privs
 // ---------------------------------------------------------------------------
 
-pub fn privs(
-    matches: &clap::ArgMatches,
-    target: TargetSpec,
-    mode: OutputMode,
-) -> Result<()> {
+pub fn privs(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let entries: Vec<String> = matches
         .get_many::<String>("entries")
         .map(|v| v.cloned().collect())
@@ -66,7 +62,13 @@ pub fn privs(
         "previous_enabled": format!("0x{previous:016x}"),
         "entries": arr,
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 fn parse_priv_entries(entries: &[String]) -> Result<Vec<PrivilegeAdjustment>> {
@@ -108,11 +110,7 @@ fn describe_priv_attrs(a: u32) -> &'static str {
 // groups
 // ---------------------------------------------------------------------------
 
-pub fn groups(
-    matches: &clap::ArgMatches,
-    target: TargetSpec,
-    mode: OutputMode,
-) -> Result<()> {
+pub fn groups(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let entries: Vec<String> = matches
         .get_many::<String>("entries")
         .map(|v| v.cloned().collect())
@@ -126,8 +124,7 @@ pub fn groups(
     let tok = target.open(KACS_TOKEN_ADJUST_GROUPS)?;
     let previous = tok.adjust_groups(&parsed)?;
 
-    let previous_words: Vec<String> =
-        previous.0.iter().map(|w| format!("0x{w:016x}")).collect();
+    let previous_words: Vec<String> = previous.0.iter().map(|w| format!("0x{w:016x}")).collect();
     let mut lines = Lines::new();
     lines.section("adjust groups");
     lines.kv("entries", parsed.len().to_string());
@@ -143,7 +140,13 @@ pub fn groups(
             "enable": e.enable,
         })).collect::<Vec<_>>(),
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 fn parse_group_entries(entries: &[String]) -> Result<Vec<GroupAdjustment>> {
@@ -174,11 +177,7 @@ fn parse_group_entries(entries: &[String]) -> Result<Vec<GroupAdjustment>> {
 // default (DACL + owner/group indices)
 // ---------------------------------------------------------------------------
 
-pub fn default(
-    matches: &clap::ArgMatches,
-    target: TargetSpec,
-    mode: OutputMode,
-) -> Result<()> {
+pub fn default(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let sddl_str = matches.get_one::<String>("dacl").cloned();
     let owner_idx = matches.get_one::<u16>("owner-idx").copied();
     let group_idx = matches.get_one::<u16>("group-idx").copied();
@@ -216,7 +215,13 @@ pub fn default(
         "owner_idx": owner_idx,
         "group_idx": group_idx,
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 fn parse_dacl(sddl: &str) -> Result<peios::security::Acl> {
@@ -226,8 +231,8 @@ fn parse_dacl(sddl: &str) -> Result<peios::security::Acl> {
     // takes just an ACL, so we parse the SD, pull its DACL view, and rebuild a
     // standalone `Acl` from the DACL's ACEs (the new `Acl` has no public
     // raw-bytes constructor, so we re-add each ACE through `AclBuilder`).
-    let sd = peios::security::sddl::parse(sddl)
-        .map_err(|e| Error::Usage(format!("bad SDDL: {e}")))?;
+    let sd =
+        peios::security::sddl::parse(sddl).map_err(|e| Error::Usage(format!("bad SDDL: {e}")))?;
     let view = sd
         .view()
         .map_err(|e| Error::Usage(format!("parsed SD did not round-trip: {e}")))?;
@@ -256,23 +261,29 @@ fn parse_dacl(sddl: &str) -> Result<peios::security::Acl> {
 }
 
 // ---------------------------------------------------------------------------
-// session
+// interactivity scope
 // ---------------------------------------------------------------------------
 
-pub fn session(
+pub fn interactivity_scope(
     matches: &clap::ArgMatches,
     target: TargetSpec,
     mode: OutputMode,
 ) -> Result<()> {
-    let new_id = *matches
-        .get_one::<u32>("session-id")
-        .ok_or_else(|| Error::Usage("adjust session: missing <id>".into()))?;
-    let tok = target.open(KACS_TOKEN_ADJUST_SESSIONID)?;
-    tok.set_session_id(SessionId(new_id as u64))?;
+    let new_scope = *matches
+        .get_one::<u32>("scope")
+        .ok_or_else(|| Error::Usage("adjust interactivity-scope: missing <scope>".into()))?;
+    let tok = target.open(KACS_TOKEN_ADJUST_INTERACTIVITY_SCOPE)?;
+    tok.set_interactivity_scope(InteractivityScope(new_scope))?;
 
     let mut lines = Lines::new();
-    lines.section("adjust session");
-    lines.kv("new_session_id", new_id.to_string());
-    let out = json!({ "new_session_id": new_id });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    lines.section("adjust interactivity scope");
+    lines.kv("new_interactivity_scope", new_scope.to_string());
+    let out = json!({ "new_interactivity_scope": new_scope });
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }

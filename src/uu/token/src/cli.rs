@@ -170,12 +170,13 @@ fn adjust_subcommand() -> Command {
                 .arg(json_arg()),
         )
         .subcommand(
-            Command::new("session")
-                .about("Replace the token's session id")
+            Command::new("interactivity-scope")
+                .visible_alias("session")
+                .about("Replace the token's interactive-environment scope")
                 .arg(
-                    Arg::new("session-id")
+                    Arg::new("scope")
                         .required(true)
-                        .help("New session id (u32)")
+                        .help("New interactivity scope (u32)")
                         .value_parser(clap::value_parser!(u32)),
                 )
                 .args(target_args())
@@ -329,7 +330,10 @@ fn install_subcommand() -> Command {
 /// Parse `0x...` or decimal into `u32`. Used as a clap value parser.
 fn parse_u32_mask(s: &str) -> Result<u32, String> {
     let trimmed = s.trim();
-    if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         u32::from_str_radix(hex, 16).map_err(|e| format!("{e}"))
     } else {
         trimmed.parse::<u32>().map_err(|e| format!("{e}"))

@@ -30,12 +30,7 @@ pub fn run(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> 
     cmd::emit(out, mode)
 }
 
-fn render_query(
-    name: &str,
-    class: TokenClass,
-    bytes: &[u8],
-    _tok: &Token,
-) -> Result<CmdOutput> {
+fn render_query(name: &str, class: TokenClass, bytes: &[u8], _tok: &Token) -> Result<CmdOutput> {
     let mut lines = Lines::new();
     let mut json = json!({
         "class": name,
@@ -74,7 +69,10 @@ fn render_query(
         });
         lines.detail(format!("present:            0x{:016x}", snap.present));
         lines.detail(format!("enabled:            0x{:016x}", snap.enabled));
-        lines.detail(format!("enabled_by_default: 0x{:016x}", snap.enabled_by_default));
+        lines.detail(format!(
+            "enabled_by_default: 0x{:016x}",
+            snap.enabled_by_default
+        ));
         lines.detail(format!("used:               0x{:016x}", snap.used));
     } else if cls == sys::KACS_TOKEN_CLASS_GROUPS
         || cls == sys::KACS_TOKEN_CLASS_RESTRICTED_SIDS
@@ -97,7 +95,7 @@ fn render_query(
     } else if cls == sys::KACS_TOKEN_CLASS_TYPE
         || cls == sys::KACS_TOKEN_CLASS_ELEVATION_TYPE
         || cls == sys::KACS_TOKEN_CLASS_IMPERSONATION_LEVEL
-        || cls == sys::KACS_TOKEN_CLASS_SESSION_ID
+        || cls == sys::KACS_TOKEN_CLASS_INTERACTIVITY_SCOPE
         || cls == sys::KACS_TOKEN_CLASS_MANDATORY_POLICY
         || cls == sys::KACS_TOKEN_CLASS_LOGON_TYPE
     {
@@ -141,12 +139,15 @@ fn parse_class(name: &str) -> Result<TokenClass> {
         "groups" => sys::KACS_TOKEN_CLASS_GROUPS,
         "privileges" | "privs" => sys::KACS_TOKEN_CLASS_PRIVILEGES,
         "type" => sys::KACS_TOKEN_CLASS_TYPE,
-        "integrity" | "integritylevel" | "integrity-level" => {
-            sys::KACS_TOKEN_CLASS_INTEGRITY_LEVEL
-        }
+        "integrity" | "integritylevel" | "integrity-level" => sys::KACS_TOKEN_CLASS_INTEGRITY_LEVEL,
         "owner" => sys::KACS_TOKEN_CLASS_OWNER,
         "primarygroup" | "primary-group" => sys::KACS_TOKEN_CLASS_PRIMARY_GROUP,
-        "sessionid" | "session-id" | "session" => sys::KACS_TOKEN_CLASS_SESSION_ID,
+        "interactivityscope"
+        | "interactivity-scope"
+        | "scope"
+        | "sessionid"
+        | "session-id"
+        | "session" => sys::KACS_TOKEN_CLASS_INTERACTIVITY_SCOPE,
         "restrictedsids" | "restricted-sids" => sys::KACS_TOKEN_CLASS_RESTRICTED_SIDS,
         "source" => sys::KACS_TOKEN_CLASS_SOURCE,
         "statistics" | "stats" => sys::KACS_TOKEN_CLASS_STATISTICS,
@@ -170,4 +171,28 @@ fn parse_class(name: &str) -> Result<TokenClass> {
         other => return Err(Error::Usage(format!("unknown query class: {other}"))),
     };
     Ok(TokenClass(raw))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_class;
+    use peios_sys as sys;
+
+    #[test]
+    fn interactivity_scope_has_canonical_and_legacy_names() {
+        for name in [
+            "interactivity-scope",
+            "interactivityscope",
+            "scope",
+            "session",
+            "session-id",
+            "sessionid",
+        ] {
+            assert_eq!(
+                parse_class(name).expect("known token class").0,
+                sys::KACS_TOKEN_CLASS_INTERACTIVITY_SCOPE,
+                "alias {name}"
+            );
+        }
+    }
 }

@@ -13,11 +13,7 @@ use std::os::fd::{AsRawFd, IntoRawFd};
 
 const KACS_TOKEN_DUPLICATE: u32 = TokenAccess::DUPLICATE.bits();
 
-pub fn run(
-    matches: &clap::ArgMatches,
-    target: TargetSpec,
-    mode: OutputMode,
-) -> Result<()> {
+pub fn run(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> Result<()> {
     let token_type = match matches.get_one::<String>("type").map(String::as_str) {
         Some("primary") | None => TokenType::Primary,
         Some("impersonation") | Some("imp") => TokenType::Impersonation,
@@ -59,5 +55,11 @@ pub fn run(
         "access_mask": access,
         "result_fd": raw_fd,
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }

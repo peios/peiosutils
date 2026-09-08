@@ -1,0 +1,20 @@
+# Runtime multicall binary and one symlink per applet. Documentation and
+# translations remain optional in dev.peios.peiosutils-common.
+
+[package]
+name        = "dev.peios.peiosutils"
+description = "Peios core userspace utilities and native security, registry, storage, and boot tools"
+
+[provides]
+peiosutils = "{{version}}-1"
+
+[replaces]
+peiosutils = "<= 0.1.4-15"
+
+[dependencies]
+# mount and lsblk dlopen libblkid rather than gaining a DT_NEEDED entry.
+"org.kernel.libblkid" = "*"
+
+[files]
+"@source:LICENSE" = "usr/share/licenses/dev.peios.peiosutils/LICENSE"
+":usr/bin/**"     = "usr/bin"
