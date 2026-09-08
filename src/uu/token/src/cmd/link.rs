@@ -46,7 +46,13 @@ pub fn link(matches: &clap::ArgMatches, mode: OutputMode) -> Result<()> {
         "filtered_fd": filtered_fd,
         "session_id": session_id,
     });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }
 
 pub fn linked(target: TargetSpec, mode: OutputMode) -> Result<()> {
@@ -58,5 +64,11 @@ pub fn linked(target: TargetSpec, mode: OutputMode) -> Result<()> {
     lines.section("linked");
     lines.kv("linked_fd", fd.to_string());
     let out = json!({ "linked_fd": raw_fd });
-    cmd::emit(CmdOutput { human: lines, json: out }, mode)
+    cmd::emit(
+        CmdOutput {
+            human: lines,
+            json: out,
+        },
+        mode,
+    )
 }

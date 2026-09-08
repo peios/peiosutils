@@ -32,18 +32,53 @@ pub fn dispatch(matches: &ArgMatches) -> Result<()> {
     match name {
         "show" => run_show(sub, false),
         "query" => query::run(sub, parse_target(sub)?, parse_output_mode(sub)),
-        "user" => accessors::user(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
-        "owner" => accessors::owner(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
-        "group" => accessors::group(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
+        "user" => accessors::user(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
+        "owner" => accessors::owner(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
+        "group" => accessors::group(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
         "privs" => accessors::privs(sub, parse_target(sub)?, parse_output_mode(sub)),
-        "groups" => accessors::groups(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
+        "groups" => accessors::groups(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
         "claims" => accessors::claims(sub, parse_target(sub)?, parse_output_mode(sub)),
-        "caps" => accessors::caps(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
-        "integrity" => accessors::integrity(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
+        "caps" => accessors::caps(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
+        "integrity" => accessors::integrity(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
         "stats" => accessors::stats(sub, parse_target(sub)?, parse_output_mode(sub)),
         "source" => accessors::source(sub, parse_target(sub)?, parse_output_mode(sub)),
         "origin" => accessors::origin(sub, parse_target(sub)?, parse_output_mode(sub)),
-        "logon" => accessors::logon(sub, parse_target(sub)?, parse_sid_style(sub), parse_output_mode(sub)),
+        "logon" => accessors::logon(
+            sub,
+            parse_target(sub)?,
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
         "default-dacl" => accessors::default_dacl(sub, parse_target(sub)?, parse_output_mode(sub)),
         "adjust" => dispatch_adjust(sub),
         "duplicate" | "dup" => dup::run(sub, parse_target(sub)?, parse_output_mode(sub)),
@@ -59,16 +94,18 @@ pub fn dispatch(matches: &ArgMatches) -> Result<()> {
 }
 
 fn dispatch_adjust(matches: &ArgMatches) -> Result<()> {
-    let (name, sub) = matches
-        .subcommand()
-        .ok_or_else(|| Error::Usage("adjust: subcommand required (privs|groups|default|session)".into()))?;
+    let (name, sub) = matches.subcommand().ok_or_else(|| {
+        Error::Usage(
+            "adjust: subcommand required (privs|groups|default|interactivity-scope)".into(),
+        )
+    })?;
     let mode = parse_output_mode(sub);
     let target = parse_target(sub)?;
     match name {
         "privs" => adjust::privs(sub, target, mode),
         "groups" => adjust::groups(sub, target, mode),
         "default" => adjust::default(sub, target, mode),
-        "session" => adjust::session(sub, target, mode),
+        "interactivity-scope" => adjust::interactivity_scope(sub, target, mode),
         other => Err(Error::Usage(format!("unknown adjust subcommand: {other}"))),
     }
 }
@@ -93,7 +130,10 @@ pub fn parse_target(matches: &ArgMatches) -> Result<TargetSpec> {
     let peer = matches.get_one::<i32>("peer").copied();
     let want_self = matches.get_flag("self");
 
-    let selected = [pid.is_some(), peer.is_some(), want_self].iter().filter(|b| **b).count();
+    let selected = [pid.is_some(), peer.is_some(), want_self]
+        .iter()
+        .filter(|b| **b)
+        .count();
     if selected > 1 {
         return Err(Error::Usage(
             "target flags --self, --pid, --peer are mutually exclusive".into(),

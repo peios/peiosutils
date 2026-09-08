@@ -28,7 +28,7 @@ fluent = { workspace = true }
 glob = { workspace = true }
 libc = { workspace = true }
 # Peios-native dependency: not coreutils, not tracked against upstream.
-peios = { git = "https://github.com/peios/peios-rs.git", tag = "v0.2.0" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "f4309f78fbaa878a14429a5e07d778dba9ddfab7" }
 
 [[bin]]
 name = "revstrm"

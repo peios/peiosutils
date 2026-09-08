@@ -1,0 +1,16 @@
+[package]
+name        = "dev.peios.peiosutils-debuginfo"
+description = "Debugging symbols for peiosutils"
+
+[provides]
+peiosutils-debuginfo = "{{version}}-1"
+
+[replaces]
+peiosutils-debuginfo = "<= 0.1.4-15"
+
+[dependencies]
+"dev.peios.peiosutils" = "= {{version}}-1"
+
+[files]
+"@source:LICENSE"   = "usr/share/licenses/dev.peios.peiosutils-debuginfo/LICENSE"
+":usr/lib/debug/**" = "usr/lib/debug"

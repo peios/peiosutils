@@ -1,150 +1,358 @@
-# peiosutils — the Peios coreutils: GNU-coreutils-compatible file/text utilities
-# (a uutils fork) plus the Peios-native KACS/registry tools (token, sd, reg,
-# logonse, revstrm)
-# and the SD-aware file utilities. A single multi-call binary (`peiosutils`) with
-# one symlink per applet in /usr/bin, busybox-style.
+# peiosutils — Peios's core userspace utility suite.
 #
-# One build.main tree fans into several packages (the Fedora coreutils split):
-#   peiosutils             the multi-call binary + the /usr/bin applet symlinks
-#   peiosutils-common      man pages, shell completions, locale data (noarch)
-#   peiosutils-debuginfo   split DWARF (/usr/lib/debug)
-#   peiosutils-debugsource referenced Rust sources (/usr/src/debug)
-#
-# The Peios-native + SD-aware tools link libpeios (the userspace C ABI) through
-# the `peios` crate, so the build needs libpeios's headers + .so (peios-sys
-# bindgens against the headers and links the runtime object) and clang (for
-# bindgen). libpeios is supplied by the vendored deps/ tree (deps/refresh.sh) —
-# the build bridge until the root self-hosts libpeios-devel + kernel-headers;
-# .cargo/config.toml points peios-sys at it via relative PEIOS_* env. When those
-# packages exist, drop deps/ and let peios-sys resolve via the shipped peios.pc.
+# One locked Rust build emits the multicall runtime, architecture-independent
+# documentation/data, split debug information, debug sources, and a generated
+# corresponding-source package. Network access is confined to build.vendor;
+# build.main and its tests consume only Cargo.lock-pinned source.
 
 out_dir = "out"
 
+[source_package]
+name = "dev.peios.peiosutils-source"
+
+[build.vendor]
+command = '''
+set -eu
+
+PEIOS_RS_REV=f4309f78fbaa878a14429a5e07d778dba9ddfab7
+LIBPEIOS_REV=4e7104773b618ada060e3e91c1609545f32a0e1b
+PKM_REV=b5519e6da3ecd4ce854c6299af6844f0a6ce05dd
+PKM_SHORT=$(printf %.7s "$PKM_REV")
+RUST_VERSION=1.98.1
+RUST_SHA256=5326b36c53de11d148c8f8dab6553a3d1006c2cfd32123683073fad3c302605b
+RUST_SIGNER=108F66205EAEB0AAA8DD5E1C85AB96E6FA1BE5FE
+export CARGO_HOME=/tmp/cargo-peiosutils-vendor
+mkdir -p "$CARGO_HOME" "$PEKIT_OUT"
+
+# The lock must carry the reviewed peios-rs compatibility commit, rather than
+# silently following a branch or the pre-libpeios-0.5 v0.2.0 tag.
+grep -F "peios-rs.git?rev=$PEIOS_RS_REV#$PEIOS_RS_REV" Cargo.lock >/dev/null
+cargo vendor --locked "$PEKIT_OUT/vendor" > "$PEKIT_OUT/cargo-config.toml"
+test -s "$PEKIT_OUT/cargo-config.toml"
+test -n "$(find "$PEKIT_OUT/vendor" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+
+# Debian cannot install a Peios ABI library. Give the reference rung the exact
+# released libpeios source and its complete locked dependency set so it can
+# build a private test-only copy. The native rung below must use the packaged
+# dev.peios.libpeios-devel instead.
+git clone --filter=blob:none --no-checkout \
+  https://github.com/peios/libpeios.git "$PEKIT_OUT/libpeios"
+git -C "$PEKIT_OUT/libpeios" checkout --detach "$LIBPEIOS_REV"
+test "$(git -C "$PEKIT_OUT/libpeios" rev-parse HEAD)" = "$LIBPEIOS_REV"
+
+export CARGO_HOME=/tmp/cargo-peiosutils-libpeios-vendor
+mkdir -p "$CARGO_HOME"
+cargo vendor --locked --manifest-path "$PEKIT_OUT/libpeios/Cargo.toml" \
+  "$PEKIT_OUT/libpeios-vendor" > "$PEKIT_OUT/libpeios-cargo-config.toml"
+test -s "$PEKIT_OUT/libpeios-cargo-config.toml"
+
+# libpeios's public headers include the matching PKM UAPI. Preserve it from the
+# exact Cargo-locked checkout, using the same invariant as libpeios's package.
+PKM_ROOT=
+for candidate in "$CARGO_HOME"/git/checkouts/pkm-*/*; do
+  [ -d "$candidate/uapi/pkm" ] || continue
+  [ "$(basename "$candidate")" = "$PKM_SHORT" ] || continue
+  [ -z "$PKM_ROOT" ] || { echo "multiple PKM checkouts match $PKM_REV" >&2; exit 1; }
+  PKM_ROOT=$candidate
+done
+test -n "$PKM_ROOT" || { echo "Cargo did not materialize locked PKM checkout $PKM_REV" >&2; exit 1; }
+cp -R "$PKM_ROOT/uapi" "$PEKIT_OUT/pkm-uapi"
+test -f "$PEKIT_OUT/pkm-uapi/pkm/pkm.h"
+
+# Debian stable's Rust is below this source tree's declared MSRV. Vendor the
+# same signed 1.98.1 compiler release used by Peios's native package so the
+# reference rung is both current and reproducible; build.main installs it only
+# inside that disposable Debian build output.
+for tool in curl gpg tar sha256sum; do
+  command -v "$tool" >/dev/null || { echo "missing Rust toolchain acquisition tool: $tool" >&2; exit 1; }
+done
+RUST_BASE=rust-$RUST_VERSION-x86_64-unknown-linux-gnu
+RUST_ARCHIVE=$PEKIT_OUT/$RUST_BASE.tar.xz
+RUST_SIGNATURE=$RUST_ARCHIVE.asc
+curl --fail --location --retry 3 --output "$RUST_ARCHIVE" \
+  "https://static.rust-lang.org/dist/$RUST_BASE.tar.xz"
+curl --fail --location --retry 3 --output "$RUST_SIGNATURE" \
+  "https://static.rust-lang.org/dist/$RUST_BASE.tar.xz.asc"
+printf '%s  %s\n' "$RUST_SHA256" "$RUST_ARCHIVE" | sha256sum --check --status
+GNUPGHOME=$PEKIT_OUT/rust-gnupg
+export GNUPGHOME
+mkdir -m 0700 "$GNUPGHOME"
+gpg --batch --quiet --import keys/rust-release.asc
+STATUS=$(gpg --batch --status-fd 1 --verify "$RUST_SIGNATURE" "$RUST_ARCHIVE" 2>/dev/null)
+printf '%s\n' "$STATUS" | grep -F "[GNUPG:] VALIDSIG $RUST_SIGNER " >/dev/null
+mkdir -p "$PEKIT_OUT/rust-dist"
+tar -xf "$RUST_ARCHIVE" -C "$PEKIT_OUT/rust-dist"
+test -x "$PEKIT_OUT/rust-dist/$RUST_BASE/install.sh"
+rm -rf "$GNUPGHOME"
+rm -f "$RUST_ARCHIVE" "$RUST_SIGNATURE"
+'''
+
+[build.vendor.dependencies.peipkg]
+"org.git.kernel.dash" = "*"
+"org.gnu.coreutils"   = "*"
+"org.gnu.findutils"   = "*"
+"org.gnu.grep"        = "*"
+"org.rust-lang.rust"  = ">= 1.98.1"
+"org.tukaani.xz-utils" = "*"
+
+[build.vendor.dependencies.apt]
+dash            = "*"
+coreutils       = "*"
+findutils       = "*"
+grep            = "*"
+git             = "*"
+cargo           = "*"
+rustc           = "*"
+ca-certificates = "*"
+curl            = "*"
+gnupg           = "*"
+xz-utils        = "*"
+
 [build.main]
-command = """
+needs = ["vendor"]
+command = '''
 set -eu
 set -o pipefail 2>/dev/null || true
 
-for tool in cargo rustc gcc objcopy strip readelf debugedit; do
+for tool in cargo rustc gcc objcopy strip readelf debugedit pkg-config; do
   command -v "$tool" >/dev/null || { echo "missing required peiosutils build tool: $tool" >&2; exit 1; }
 done
 
-# libpeios comes from the vendored deps/ tree (headers + pkm uapi headers +
-# libpeios.so) — the build bridge until the root self-hosts libpeios-devel +
-# kernel-headers. peios-sys reads its location from .cargo/config.toml's relative
-# PEIOS_* env (PEIOS_LIB_DIR=deps/lib, PEIOS_INCLUDE/PKM_UAPI=deps/include), so we
-# only need to ensure the tree is populated. See deps/README.md.
-[ -d deps/lib ] && [ -d deps/include/peios ] || {
-  echo "deps/ is not vendored — run ./deps/refresh.sh (or LIBPEIOS=.. PKM=.. ./deps/refresh.sh)" >&2
-  exit 1
-}
+SRC=$(pwd -P)
+BINDIR=usr/bin
+SHAREDIR=usr/share
+DEBUG_PREFIX=/usr/src/debug/dev.peios.peiosutils
+DEBUG_ROOT=$PEKIT_OUT$DEBUG_PREFIX
+export CARGO_HOME=$PEKIT_OUT/cargo-home
+mkdir -p "$CARGO_HOME"
+cp "$PEKIT_VENDOR_OUT/cargo-config.toml" "$CARGO_HOME/config.toml"
 
-SRC="$(pwd)"
-BINDIR="usr/bin"
-SHAREDIR="usr/share"
-export LD_LIBRARY_PATH="$SRC/deps/lib"   # the multicall links libpeios; needed to run it
+VERSION=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -1)
+test "$VERSION" = "$PEKIT_VERSION"
 
-# peios-sys runs bindgen against <peios.h>, whose includes need the freestanding
-# C headers (stddef.h, ...). A full clang ships them in its resource dir; if only
-# libclang is present (no resource dir), point bindgen at GCC's freestanding
-# headers so the include resolves. Harmless when clang already has its own.
+# The Peios rung proves the declared package interface. Debian has no libpeios
+# package, so it builds an exact, Cargo-locked private 0.5.0 copy solely for the
+# reference tests and never stages it into peiosutils's package payload.
+if [ "${PEKIT_NATIVE_ROOT:-0}" = 1 ]; then
+  test "$(pkg-config --modversion peios)" = 0.5.0
+  LIBPEIOS_DIR=$(pkg-config --variable=libdir peios)
+  export LIBCLANG_PATH=/usr/lib/x86_64-linux-peios
+else
+  RUST_VERSION=1.98.1
+  RUST_BASE=rust-$RUST_VERSION-x86_64-unknown-linux-gnu
+  RUST_TOOLCHAIN=$PEKIT_OUT/rust-toolchain
+  sh "$PEKIT_VENDOR_OUT/rust-dist/$RUST_BASE/install.sh" \
+    --prefix="$RUST_TOOLCHAIN" \
+    --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu \
+    --disable-ldconfig
+  export PATH="$RUST_TOOLCHAIN/bin:$PATH"
+  test "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION"
+  test "$(cargo --version | cut -d' ' -f2)" = "$RUST_VERSION"
+
+  BOOTSTRAP=$PEKIT_OUT/libpeios-bootstrap
+  BOOTSTRAP_CARGO=$PEKIT_OUT/libpeios-cargo-home
+  mkdir -p "$BOOTSTRAP" "$BOOTSTRAP_CARGO"
+  cp "$PEKIT_VENDOR_OUT/libpeios-cargo-config.toml" "$BOOTSTRAP_CARGO/config.toml"
+  CARGO_HOME="$BOOTSTRAP_CARGO" \
+    cargo build --release --locked --offline \
+      --manifest-path "$PEKIT_VENDOR_OUT/libpeios/Cargo.toml" \
+      --target-dir "$BOOTSTRAP/target"
+  mkdir -p "$BOOTSTRAP/lib" "$BOOTSTRAP/include/peios"
+  cp "$BOOTSTRAP/target/release/libpeios.so" "$BOOTSTRAP/lib/libpeios.so.0"
+  ln -s libpeios.so.0 "$BOOTSTRAP/lib/libpeios.so"
+  cp "$PEKIT_VENDOR_OUT/libpeios/include/peios.h" "$BOOTSTRAP/include/"
+  cp "$PEKIT_VENDOR_OUT/libpeios/include/peios/"*.h "$BOOTSTRAP/include/peios/"
+  export PEIOS_LIB_DIR="$BOOTSTRAP/lib"
+  export PEIOS_INCLUDE="$BOOTSTRAP/include"
+  export PKM_UAPI="$PEKIT_VENDOR_OUT/pkm-uapi"
+  LIBPEIOS_DIR=$BOOTSTRAP/lib
+fi
+export LD_LIBRARY_PATH="$LIBPEIOS_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export BINDGEN_EXTRA_CLANG_ARGS="-isystem $(gcc -print-file-name=include) ${BINDGEN_EXTRA_CLANG_ARGS:-}"
 
-# Full *nix applet set, one multi-call binary, with full DWARF embedded (for the
-# debug split below); libstdbuf is embedded (no external libexec object).
+# Keep source references independent of checkout and build-root paths. The
+# workspace RUSTFLAGS already supplies the distribution linker hardening.
+export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$PEKIT_WORKSPACE_ROOT=$DEBUG_PREFIX/.workspace --remap-path-prefix=$PEKIT_OUT_BASE=$DEBUG_PREFIX/.build --remap-path-prefix=$PEKIT_VENDOR_OUT/vendor=$DEBUG_PREFIX/vendor --remap-path-prefix=$SRC=$DEBUG_PREFIX"
+PREFIX_MAPS="-ffile-prefix-map=$PEKIT_VENDOR_OUT/vendor=$DEBUG_PREFIX/vendor -ffile-prefix-map=$PEKIT_VENDOR_OUT=$DEBUG_PREFIX/vendor -ffile-prefix-map=$PEKIT_OUT_BASE=$DEBUG_PREFIX/.build -ffile-prefix-map=$SRC=$DEBUG_PREFIX"
+export CFLAGS="${CFLAGS:+$CFLAGS }$PREFIX_MAPS"
+export CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$PREFIX_MAPS"
+
+TARGET=$PEKIT_OUT/target
+
+# Unit coverage for the Peios-native ABI users and the applets required during
+# early boot. Broader GNU-conformance tests remain upstream-oriented and are
+# not allowed to obscure failures in Peios's intentionally divergent model.
+cargo test --release --locked --offline --target-dir "$TARGET" \
+  -p pu_token -p pu_logonse -p pu_mount -p pu_lsblk \
+  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep
+
 CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=off \
-  cargo build --release --locked --no-default-features --features feat_os_unix
+  cargo build --release --locked --offline --target-dir "$TARGET" \
+    --no-default-features --features feat_os_unix
+cargo build --release --locked --offline --target-dir "$TARGET" \
+  --no-default-features --features "uudoc feat_os_unix" --bin uudoc
 
-# uudoc — the man-page / shell-completion generator. Its own feature set; the
-# binary itself is a build tool, not shipped.
-cargo build --release --locked --no-default-features --features "uudoc feat_os_unix" --bin uudoc
-
-# --- Binaries (peiosutils): multi-call + per-applet symlinks, busybox-style ---
+# Runtime: one multicall binary and an exact symlink for every advertised
+# applet. No duplicate copies of the executable are shipped.
 mkdir -p "$PEKIT_OUT/$BINDIR"
-install -m 0755 target/release/peiosutils "$PEKIT_OUT/$BINDIR/peiosutils"
-APPLETS=$(target/release/peiosutils --list)
-for a in $APPLETS; do
-  [ "$a" = "peiosutils" ] && continue
-  ln -sf peiosutils "$PEKIT_OUT/$BINDIR/$a"
+install -m 0755 "$TARGET/release/peiosutils" "$PEKIT_OUT/$BINDIR/peiosutils"
+APPLETS=$("$TARGET/release/peiosutils" --list)
+for required in cat dirname lsblk mktemp mount sleep; do
+  printf '%s\n' "$APPLETS" | grep -Fx "$required" >/dev/null || {
+    echo "required peiosutils applet is absent: $required" >&2
+    exit 1
+  }
+done
+for applet in $APPLETS; do
+  [ "$applet" = peiosutils ] && continue
+  ln -s peiosutils "$PEKIT_OUT/$BINDIR/$applet"
 done
 
-# --- peiosutils-common: man pages + zsh/bash/fish completions + locale data ---
-UUDOC=target/release/uudoc
+# Architecture-independent manuals, completions and translated messages.
+UUDOC=$TARGET/release/uudoc
 mkdir -p "$PEKIT_OUT/$SHAREDIR/man/man1" \
          "$PEKIT_OUT/$SHAREDIR/zsh/site-functions" \
          "$PEKIT_OUT/$SHAREDIR/bash-completion/completions" \
          "$PEKIT_OUT/$SHAREDIR/fish/vendor_completions.d"
-for a in $APPLETS; do
-  m="$PEKIT_OUT/$SHAREDIR/man/man1/$a.1"
-  "$UUDOC" manpage "$a"        > "$m" 2>/dev/null || rm -f "$m"
-  z="$PEKIT_OUT/$SHAREDIR/zsh/site-functions/_$a"
-  "$UUDOC" completion "$a" zsh > "$z" 2>/dev/null || rm -f "$z"
-  b="$PEKIT_OUT/$SHAREDIR/bash-completion/completions/$a.bash"
-  "$UUDOC" completion "$a" bash > "$b" 2>/dev/null || rm -f "$b"
-  fsh="$PEKIT_OUT/$SHAREDIR/fish/vendor_completions.d/$a.fish"
-  "$UUDOC" completion "$a" fish > "$fsh" 2>/dev/null || rm -f "$fsh"
+for applet in $APPLETS; do
+  manpage="$PEKIT_OUT/$SHAREDIR/man/man1/$applet.1"
+  "$UUDOC" manpage "$applet" > "$manpage" 2>/dev/null || rm -f "$manpage"
+  zsh="$PEKIT_OUT/$SHAREDIR/zsh/site-functions/_$applet"
+  "$UUDOC" completion "$applet" zsh > "$zsh" 2>/dev/null || rm -f "$zsh"
+  bash="$PEKIT_OUT/$SHAREDIR/bash-completion/completions/$applet.bash"
+  "$UUDOC" completion "$applet" bash > "$bash" 2>/dev/null || rm -f "$bash"
+  fish="$PEKIT_OUT/$SHAREDIR/fish/vendor_completions.d/$applet.fish"
+  "$UUDOC" completion "$applet" fish > "$fish" 2>/dev/null || rm -f "$fish"
 done
-
-# Locale message catalogs (the en-US baseline is embedded in the binary).
-for d in src/uu/*/locales; do
-  [ -d "$d" ] || continue
-  prog=$(basename "$(dirname "$d")")
-  for f in "$d"/*.ftl; do
-    [ -e "$f" ] || continue
-    [ "$(basename "$f")" = "en-US.ftl" ] && continue
-    mkdir -p "$PEKIT_OUT/$SHAREDIR/locales/$prog"
-    install -m 0644 "$f" "$PEKIT_OUT/$SHAREDIR/locales/$prog/"
+for directory in src/uu/*/locales; do
+  [ -d "$directory" ] || continue
+  program=$(basename "$(dirname "$directory")")
+  for catalog in "$directory"/*.ftl; do
+    [ -e "$catalog" ] || continue
+    [ "$(basename "$catalog")" = en-US.ftl ] && continue
+    mkdir -p "$PEKIT_OUT/$SHAREDIR/locales/$program"
+    install -m 0644 "$catalog" "$PEKIT_OUT/$SHAREDIR/locales/$program/"
   done
 done
 
-# --- Debug split (mirrors libpeios): DWARF -> build-id file, sources staged ----
-# debugedit rewrites the builder's source prefix to /usr/src/debug/peiosutils and
-# lists referenced sources; objcopy splits the DWARF into a build-id-indexed
-# .debug; strip removes it from the shipped binary. Only this repo's own sources
-# resolve under $SRC — std / cargo-registry / git-dep paths fall outside and are
-# skipped (the peios/peios-sys git-dep sources live in ~/.cargo, not $SRC).
-bin="$PEKIT_OUT/$BINDIR/peiosutils"
-debugedit -b "$SRC" -d /usr/src/debug/peiosutils -l "$PEKIT_OUT/.srclist" -n "$bin"
-bid=$(readelf -n "$bin" | sed -n 's/^[[:space:]]*Build ID: //p' | head -1)
-if [ -n "$bid" ]; then
-  p2=$(printf %s "$bid" | cut -c1-2); rest=$(printf %s "$bid" | cut -c3-)
-  mkdir -p "$PEKIT_OUT/usr/lib/debug/.build-id/$p2"
-  objcopy --only-keep-debug "$bin" "$PEKIT_OUT/usr/lib/debug/.build-id/$p2/$rest.debug"
-  chmod 0644 "$PEKIT_OUT/usr/lib/debug/.build-id/$p2/$rest.debug"
-fi
-strip "$bin"
+# Installed-payload smoke tests catch multicall dispatch and loader failures,
+# including the removed pre-0.5 peios_token_session_id symbol that prompted
+# this rebuild.
+BIN=$PEKIT_OUT/$BINDIR/peiosutils
+test "$(printf 'closure-ok\n' | "$BIN" cat)" = closure-ok
+test "$("$BIN" dirname /usr/lib/test)" = /usr/lib
+SMOKE=$PEKIT_OUT/.smoke
+mkdir -p "$SMOKE"
+test -d "$(TMPDIR="$SMOKE" "$BIN" mktemp -d)"
+"$BIN" sleep 0
+"$BIN" lsblk --help >/dev/null
+"$BIN" mount --help >/dev/null
+"$BIN" token --help >/dev/null
+"$BIN" token adjust --help | grep -F interactivity-scope >/dev/null
+"$BIN" logonse --help >/dev/null
 
-tr '\\0' '\\n' < "$PEKIT_OUT/.srclist" | sort -u | while IFS= read -r rel; do
-  [ -n "$rel" ] || continue
-  case "$rel" in */) continue;; esac
-  [ -f "$SRC/$rel" ] || continue
-  mkdir -p "$PEKIT_OUT/usr/src/debug/peiosutils/$(dirname "$rel")"
-  cp "$SRC/$rel" "$PEKIT_OUT/usr/src/debug/peiosutils/$rel"
+# Split build-ID-indexed DWARF and retain all referenced in-tree or vendored
+# sources. The stripped runtime gets a GNU debuglink back to its companion.
+LIST=$PEKIT_OUT/.debug-sources
+debugedit -b "$SRC" -d "$DEBUG_PREFIX" -l "$LIST" -n "$BIN"
+BUILD_ID=$(readelf -n "$BIN" | sed -n 's/^[[:space:]]*Build ID: //p')
+test -n "$BUILD_ID"
+FIRST=$(printf %s "$BUILD_ID" | cut -c1-2)
+REST=$(printf %s "$BUILD_ID" | cut -c3-)
+DEBUG=$PEKIT_OUT/usr/lib/debug/.build-id/$FIRST/$REST.debug
+mkdir -p "$(dirname "$DEBUG")" "$DEBUG_ROOT"
+objcopy --only-keep-debug "$BIN" "$DEBUG"
+strip --strip-unneeded "$BIN"
+objcopy --add-gnu-debuglink="$DEBUG" "$BIN"
+
+tr '\0' '\n' < "$LIST" | LC_ALL=C sort -u | while IFS= read -r source; do
+  [ -n "$source" ] || continue
+  case "$source" in */) continue ;; esac
+  case "$source" in
+    "$DEBUG_PREFIX"/vendor/*) relative=${source#"$DEBUG_PREFIX"/}; origin=$PEKIT_VENDOR_OUT/$relative ;;
+    "$DEBUG_PREFIX"/*)        relative=${source#"$DEBUG_PREFIX"/}; origin=$SRC/$relative ;;
+    vendor/*)                 relative=$source; origin=$PEKIT_VENDOR_OUT/$source ;;
+    *)                        relative=$source; origin=$SRC/$source ;;
+  esac
+  [ -f "$origin" ] || continue
+  mkdir -p "$DEBUG_ROOT/$(dirname "$relative")"
+  cp "$origin" "$DEBUG_ROOT/$relative"
 done
-rm -f "$PEKIT_OUT/.srclist"
-"""
+rm -f "$LIST"
+test -n "$(find "$DEBUG_ROOT" -type f -print -quit)"
 
-# Build deps. Rust toolchain (cargo + rustc) builds the workspace, gcc drives the
-# final link, clang supplies libclang for peios-sys's bindgen run, and the debug
-# split uses binutils (objcopy/strip/readelf) + debugedit. libpeios's headers/.so
-# come from the vendored deps/ tree (deps/refresh.sh) rather than a build-dep
-# package, until the build root self-hosts libpeios-devel + kernel-headers — then
-# drop deps/ and add those two here (peios-sys resolves via the shipped peios.pc).
+# ELF, ABI, package-split and path-leak policy.
+readelf -h "$BIN" | grep -E 'Type:[[:space:]]+DYN' >/dev/null
+readelf -lW "$BIN" | grep 'GNU_RELRO' >/dev/null
+readelf -lW "$BIN" | grep -E 'GNU_STACK[[:space:]].*RW[[:space:]]' >/dev/null
+readelf -dW "$BIN" | grep 'BIND_NOW' >/dev/null
+readelf -dW "$BIN" | grep 'Shared library: \[libpeios.so.0\]' >/dev/null
+if readelf -dW "$BIN" | grep -E '(RPATH|RUNPATH|TEXTREL)' >/dev/null; then
+  echo "runtime contains a forbidden dynamic tag" >&2
+  exit 1
+fi
+if readelf -SW "$BIN" | grep '\.debug_info' >/dev/null; then
+  echo "runtime still contains unsplit debug information" >&2
+  exit 1
+fi
+readelf -SW "$DEBUG" 2>/dev/null | grep '\.debug_info' >/dev/null
+test "$(readelf -n "$DEBUG" 2>/dev/null | sed -n 's/^[[:space:]]*Build ID: //p')" = "$BUILD_ID"
+if readelf --dyn-syms -W "$BIN" | grep 'peios_token_session_id' >/dev/null; then
+  echo "runtime still references the removed token-session-id ABI" >&2
+  exit 1
+fi
+readelf --dyn-syms -W "$BIN" | grep 'peios_token_interactivity_scope' >/dev/null
+readelf --dyn-syms -W "$BIN" | grep 'peios_token_statistics' >/dev/null
+if grep -aF "$SRC" "$BIN" "$DEBUG" >/dev/null; then
+  echo "source checkout path leaked into an ELF payload" >&2
+  exit 1
+fi
+if grep -aF "$PEKIT_OUT_BASE" "$BIN" "$DEBUG" >/dev/null; then
+  echo "Pekit build path leaked into an ELF payload" >&2
+  exit 1
+fi
+
+for applet in $APPLETS; do
+  path=$PEKIT_OUT/$BINDIR/$applet
+  if [ "$applet" = peiosutils ]; then
+    test -f "$path" && [ ! -L "$path" ]
+  else
+    test -L "$path"
+    test "$(readlink "$path")" = peiosutils
+  fi
+done
+test -n "$(find "$PEKIT_OUT/$SHAREDIR/man/man1" -type f -print -quit)"
+test -n "$(find "$PEKIT_OUT/$SHAREDIR/bash-completion/completions" -type f -print -quit)"
+rm -rf "$SMOKE"
+'''
+
 [build.main.dependencies.peipkg]
-cargo = "*"
-rust = "*"
-gcc = "*"
-clang = "*"
-binutils = "*"
-debugedit = "*"
+"org.git.kernel.dash"      = "*"
+"org.gnu.coreutils"        = "*"
+"org.gnu.findutils"        = "*"
+"org.gnu.grep"             = "*"
+"org.gnu.sed"              = "*"
+"org.rust-lang.rust"       = ">= 1.98.1"
+"org.gnu.gcc"              = ">= 16, < 17"
+"org.gnu.binutils"         = "*"
+"org.sourceware.debugedit" = "*"
+"org.llvm.clang-devel"     = ">= 22.1.8, < 23"
+"org.pkgconf.pkgconf"      = "*"
+"dev.peios.libpeios-devel" = "= 0.5.0-1"
 
 [build.main.dependencies.apt]
-cargo = "*"
-rustc = "*"
-gcc = "*"
+dash           = "*"
+coreutils      = "*"
+findutils      = "*"
+grep           = "*"
+sed            = "*"
+cargo          = "*"
+rustc          = "*"
+gcc            = "*"
+binutils       = "*"
+debugedit      = "*"
 "libclang-dev" = "*"
-binutils = "*"
-debugedit = "*"
+pkgconf        = "*"
 
 [clean]
 command = "cargo clean"

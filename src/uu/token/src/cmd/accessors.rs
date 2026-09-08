@@ -81,12 +81,7 @@ pub fn integrity(
     emit_sid("integrity", &sid, style, mode)
 }
 
-fn emit_sid(
-    key: &str,
-    sid: &Sid,
-    style: SidStyle,
-    mode: OutputMode,
-) -> Result<()> {
+fn emit_sid(key: &str, sid: &Sid, style: SidStyle, mode: OutputMode) -> Result<()> {
     let mut lines = Lines::new();
     lines.kv(key, sid_render::render(sid, style));
     let json = json!({ key: sid_render::render_json(sid) });
@@ -214,7 +209,9 @@ pub fn source(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode)
     let s = payload::parse_source(&buf).map_err(Error::Decode)?;
     let mut lines = Lines::new();
     lines.section("source");
-    let name_str = String::from_utf8_lossy(&s.name).trim_end_matches('\0').to_string();
+    let name_str = String::from_utf8_lossy(&s.name)
+        .trim_end_matches('\0')
+        .to_string();
     lines.kv("name", name_str.clone());
     lines.kv("source_id", format!("0x{:x}", s.source_id));
     let json = json!({
