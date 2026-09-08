@@ -63,7 +63,7 @@ test -f "$PEKIT_OUT/pkm-uapi/pkm/pkm.h"
 # same signed 1.98.1 compiler release used by Peios's native package so the
 # reference rung is both current and reproducible; build.main installs it only
 # inside that disposable Debian build output.
-for tool in curl gpg tar sha256sum; do
+for tool in curl gpg gpgv tar sha256sum; do
   command -v "$tool" >/dev/null || { echo "missing Rust toolchain acquisition tool: $tool" >&2; exit 1; }
 done
 RUST_BASE=rust-$RUST_VERSION-x86_64-unknown-linux-gnu
@@ -74,16 +74,15 @@ curl --fail --location --retry 3 --output "$RUST_ARCHIVE" \
 curl --fail --location --retry 3 --output "$RUST_SIGNATURE" \
   "https://static.rust-lang.org/dist/$RUST_BASE.tar.xz.asc"
 printf '%s  %s\n' "$RUST_SHA256" "$RUST_ARCHIVE" | sha256sum --check --status
-GNUPGHOME=$PEKIT_OUT/rust-gnupg
-export GNUPGHOME
-mkdir -m 0700 "$GNUPGHOME"
-gpg --batch --quiet --import keys/rust-release.asc
-STATUS=$(gpg --batch --status-fd 1 --verify "$RUST_SIGNATURE" "$RUST_ARCHIVE" 2>/dev/null)
+RUST_KEYRING=$PEKIT_OUT/rust-release.gpg
+gpg --batch --yes --dearmor --output "$RUST_KEYRING" keys/rust-release.asc
+STATUS=$(gpgv --status-fd 1 --keyring "$RUST_KEYRING" \
+  "$RUST_SIGNATURE" "$RUST_ARCHIVE" 2>/dev/null)
 printf '%s\n' "$STATUS" | grep -F "[GNUPG:] VALIDSIG $RUST_SIGNER " >/dev/null
 mkdir -p "$PEKIT_OUT/rust-dist"
 tar -xf "$RUST_ARCHIVE" -C "$PEKIT_OUT/rust-dist"
 test -x "$PEKIT_OUT/rust-dist/$RUST_BASE/install.sh"
-rm -rf "$GNUPGHOME"
+rm -f "$RUST_KEYRING"
 rm -f "$RUST_ARCHIVE" "$RUST_SIGNATURE"
 '''
 
@@ -105,7 +104,8 @@ cargo           = "*"
 rustc           = "*"
 ca-certificates = "*"
 curl            = "*"
-gnupg           = "*"
+gpg             = "*"
+gpgv            = "*"
 xz-utils        = "*"
 
 [build.main]
