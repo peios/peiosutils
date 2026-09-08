@@ -93,7 +93,7 @@ rm -f "$RUST_ARCHIVE" "$RUST_SIGNATURE"
 "org.gnu.findutils"   = "*"
 "org.gnu.grep"        = "*"
 "org.rust-lang.rust"  = ">= 1.98.1"
-"org.tukaani.xz-utils" = "*"
+"org.tukaani.xz"       = "*"
 
 [build.vendor.dependencies.apt]
 dash            = "*"
