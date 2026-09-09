@@ -1,0 +1,1511 @@
+# Security-advisory triage record for peiosutils. See UPSTREAM.md, "Advisory triage".
+#
+# One entry per advisory: upstream (uutils/coreutils GitHub security advisories) or
+# dependency (RustSec, matched against Cargo.lock). An advisory that is not in this
+# file is untriaged. Statuses: fixed | not-affected | accepted | todo.
+
+[[advisory]]
+id           = "GHSA-9rv8-9hvg-92mq"
+applet       = "chcon"
+severity     = "high"
+published    = "2026-08-07"
+summary      = "chcon: recursive relabel not anchored to traversal dirfd (TOCTOU)"
+upstream_fix = ""
+status       = "not-affected"
+note         = "chcon is deleted by design (README); Peios has no SELinux. No src/uu/chcon in the tree."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-2745-m2g5-p3mw"
+applet       = "chmod"
+severity     = "high"
+published    = "2026-08-07"
+summary      = "chmod -R -L --preserve-root: a descendant symlink to / bypasses the root-preservation check"
+upstream_fix = ""
+status       = "not-affected"
+note         = "chmod is deleted by design (README: POSIX mode bits do not translate to KACS). No src/uu/chmod in the tree."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-4c7q-4928-8445"
+applet       = "chmod"
+severity     = "critical"
+published    = "2026-05-30"
+summary      = "chmod: --preserve-root bypassed by any path that resolves to root (e.g. /../)"
+upstream_fix = ""
+status       = "not-affected"
+note         = "chmod is deleted by design (README). No src/uu/chmod in the tree."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-4x34-chg5-mwjj"
+applet       = "chmod"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "chmod: recursive mode returns exit code 0 even when some files fail (last-file-wins)"
+upstream_fix = ""
+status       = "not-affected"
+note         = "chmod is deleted by design (README). No src/uu/chmod in the tree."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-jvc6-vj8m-5q6h"
+applet       = "chmod"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "chmod -R: recursive descent follows a swapped-in symlink (TOCTOU), changing modes outside the tree"
+upstream_fix = ""
+status       = "not-affected"
+note         = "chmod is deleted by design (README). No src/uu/chmod in the tree."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-pqxf-vf75-qfxj"
+applet       = "chmod"
+severity     = "high"
+published    = "2026-09-05"
+summary      = "chmod: --reference combined with -R dereferences symlinks encountered during traversal"
+upstream_fix = ""
+status       = "not-affected"
+note         = "chmod is deleted by design (README). No src/uu/chmod in the tree."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-26g5-58c8-6f52"
+applet       = "chown/chgrp"
+severity     = "low"
+published    = "2026-08-07"
+summary      = "chown/chgrp -R (Linux): a bare command-line symlink-to-directory is followed under -P"
+upstream_fix = ""
+status       = "not-affected"
+note         = "Neither applet is shipped: chgrp is deleted by design and chown awaits its KACS rewrite (README). No src/uu/chown or src/uu/chgrp in the tree. Re-triage the chown entries when the rewrite lands."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-2x2h-fw32-rq7v"
+applet       = "chown/chgrp"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "chown/chgrp: recursive mode returns exit code 0 even when some files fail (last-file-wins)"
+upstream_fix = ""
+status       = "not-affected"
+note         = "Neither applet is shipped (see GHSA-26g5-58c8-6f52). Re-triage when chown's KACS rewrite lands."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-wf57-9jfx-969p"
+applet       = "chown/chgrp"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "chown/chgrp -R: recursive descent follows a swapped-in symlink (TOCTOU), changing ownership outside the tree"
+upstream_fix = ""
+status       = "not-affected"
+note         = "Neither applet is shipped (see GHSA-26g5-58c8-6f52). Re-triage when chown's KACS rewrite lands: the swapped-symlink race is exactly the class a rewrite must not reintroduce."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-rp9r-9vpg-388g"
+applet       = "chroot"
+severity     = "high"
+published    = "2026-07-29"
+summary      = "chroot --userspec: NSS module injection before privilege drop allows root code execution / chroot escape (glibc)"
+upstream_fix = "f33bfb9321e5ebef0ef703aa6bfc8ee95bd21e1f"
+status       = "fixed"
+note         = """
+Not exploitable as shipped, but the flawed ordering was still in our tree, so it was
+fixed rather than waved through.
+Exposure: our chroot is peiosified -- uumain refuses --userspec and --groups outright
+(ChrootError::FlagNotSupported, exit 125) *before* set_context is ever called, because
+Peios has no setuid-style identity transition yet. So the reachable path is always
+UserSpec::None + groups None, which performs no name lookup at all; the NSS-injection
+premise (getpwnam/getgrnam after chroot() dlopen'ing libnss_*.so.2 out of NEWROOT) had
+no live call site, and nss-peios/authd never entered the picture.
+Latent defect: set_context still called enter_chroot() first and only then
+name_to_uid/name_to_gid/usr2gid/supplemental_gids -- the exact vulnerable ordering. The
+file comment says the identity code is "kept below so the surface is ready when authd
+lands", so leaving it would have re-armed the CVE the moment those flags are enabled.
+Ported upstream f33bfb932 exactly: enter_chroot() moved to after all id resolution in
+each of the four UserSpec arms, plus a comment recording why the order matters. No
+behaviour change on the reachable path (the None arm resolves nothing either way).
+Upstream added no regression test for this commit.
+Verified: cargo check -p pu_chroot;
+cargo test --no-default-features --features chroot -- test_chroot (18 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-3wfc-mgpm-9rq6"
+applet       = "comm"
+severity     = "low"
+published    = "2026-05-30"
+summary      = "comm: FIFO/pipe inputs are drained before comparison (data loss / hang)"
+upstream_fix = "75f45e87e52ed95840494963ab9a28651165d56e"
+status       = "not-affected"
+note         = "Fix predates the fork. 75f45e87e ('comm: fix comparison when reading from pipes', PR #9545, 2026-01-17) is an ancestor of the fork point. are_files_identical (src/uu/comm/src/comm.rs:131) now stats both paths first, returns early on a size mismatch, and bails out with `if !metadata1.is_file() || !metadata2.is_file() { return Ok(false); }` *before* any File::open, so a FIFO/pipe/character device is never opened or pre-read. Verified with a locally built comm: `comm p1 p2` over two live FIFOs produced the correct 3-column diff with no lost lines and exit 0, and comm against /dev/null returned immediately. Upstream regression test test_comm_anonymous_pipes is present in tests/by-util/test_comm.rs. comm integration suite: 40 passed, 0 failed, 4 ignored. Note: upstream later moved this helper to uucore::fs::are_files_identical (18f88742a, post-fork) — that is a refactor, not part of the fix, and is deliberately not ported."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-6gcw-w7cp-94g9"
+applet       = "comm"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "comm: lossy UTF-8 conversion silently corrupts non-UTF-8 output"
+upstream_fix = "b9372e509ea9b278fe13763237067a261bb8c946"
+status       = "not-affected"
+note         = "Fix predates the fork. b9372e509 ('fix(comm): improve stdout handling and add test for lossy UTF-8 output', PR #10206, 2026-01-20) is an ancestor of the fork point 873a7c752. src/uu/comm/src/comm.rs is byte-oriented end to end: LineReader::read_line fills a Vec<u8> via read_until, comparison is ra.as_slice().cmp(rb.as_slice()), and output goes through write_line_with_delimiter -> write_all(&[u8]). No String::from_utf8_lossy anywhere in the crate. Verified with a locally built ./target/debug/comm on files containing a bare 0xff byte: output was `09 09 61 ff 62 0a 7a 0a`, byte-identical to GNU comm (no U+FFFD). Upstream regression test test_output_lossy_utf8 is present in tests/by-util/test_comm.rs. comm integration suite: 40 passed, 0 failed, 4 ignored."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-72j7-93r5-ffww"
+applet       = "cp"
+severity     = "low"
+published    = "2026-07-29"
+summary      = "cp: -p retains setuid/setgid bits when chown fails"
+upstream_fix = "bd170a5d4b19ed985417d322dffb8cade2cbbad5"
+status       = "not-affected"
+note         = """
+NOT AFFECTED twice over.
+
+(1) The upstream fix bd170a5d4 ("cp: strip setuid/setgid when chown fails during
+-p", #9750, 2026-04-21) is an ancestor of our fork point 873a7c752.
+
+(2) More fundamentally, peiosification deleted the vulnerable machinery. Peios cp
+has no chown(2) and no full-mode chmod: uucore::preserve::Attributes carries
+owner / dacl / sacl / daclni / saclni / timestamps / links / security / xattrs /
+exec and nothing else. Ownership is a KACS security-descriptor owner SID copied by
+kacs_get_sd / kacs_set_sd, not a uid/gid chown, so there is no "chown failed"
+branch that could leave stale mode bits behind. The only mode write in the whole
+preserve path is apply_exec (preserve.rs:594-605), which reads the *destination's*
+current mode and rewrites only bits 0o111
+(`perms.set_mode((mode & !0o111) | if any_exec { 0o111 } else { 0 })`). The
+source's setuid/setgid bits are never copied to the destination in the first
+place, so they cannot be "retained". copydir.rs build_dir likewise creates
+directories with default attributes and copies no mode.
+
+VERIFIED: grep confirms no chown/setuid/setgid/S_ISUID/S_ISGID/0o7777 handling in
+src/uu/cp/ or in uucore's preserve module; cargo check -p pu_cp clean. The
+upstream test test_cp_preserve_setuid_when_chown_succeeds is one of the 38
+pre-existing test_cp failures caused by mode preservation being removed - a known
+peiosification divergence, not this advisory.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-8r5f-98ww-c4c5"
+applet       = "cp"
+severity     = "high"
+published    = "2026-09-05"
+summary      = "cp -a chmods through an attacker-swapped destination symlink in copy_extended_attrs (TOCTOU) — an unprivileged user makes an arbitrary root-owned file world-writable"
+upstream_fix = "6372fd3b239add19bf863f9d3f1d3c4c91276711"
+status       = "fixed"
+note         = """
+AFFECTED and now fixed, in uucore. Supersedes the `todo` entry in cp.toml, whose
+analysis was right: peiosification moved the whole --preserve machinery into
+src/uucore/src/lib/features/preserve.rs, so nothing in src/uu/cp/ had to change.
+
+WHAT WAS WRONG. copy_attributes() re-resolved BOTH names for every step, all of
+them after the data copy had already finished — an lstat, a chmod, a listxattr,
+a getxattr, a setxattr and a kacs_get_sd/kacs_set_sd pair, each its own
+path->inode lookup:
+  - copy_xattrs_filtered: fs::symlink_metadata(dest) then
+    perms.set_readonly(false) + fs::set_permissions(dest) to widen a read-only
+    destination, and the same lstat/set_permissions pair again to restore it.
+    chmod(2) follows symlinks, so a destination swapped for a symlink in that
+    window took the destination's whole mode onto the link's target.
+  - apply_exec: the SAME lstat-then-set_permissions pair, and this one is far
+    more reachable than the advisory's — Attributes::IMPLICIT preserves exec
+    best-effort, so it ran on EVERY plain `cp`, not just --preserve=xattr with a
+    pre-existing read-only destination. The advisory understates the exposure.
+  - copy_attributes' SD copy: peios::file::get_sd/set_sd with dirfd=None
+    (AT_FDCWD) and at_flags keyed off dest.is_symlink(), i.e. 0 for a regular
+    destination — the same race in Peios-native form, writing owner/DACL/SACL
+    rather than mode bits.
+  - filetime::set_file_times(dest) — utimes by path, follows.
+  (The xattr calls were the least of it: the `xattr` crate's non-`_deref`
+  functions are already l*xattr, so a swapped-in symlink got the setxattr on the
+  link, not its target. A swapped-in hard link to another inode still worked.)
+
+WHAT WAS DONE. New internal `FileHandle` in preserve.rs: each end of the copy is
+resolved exactly once, with O_NOFOLLOW, and every later step runs off that
+descriptor — fstat, fchmod (File::set_permissions), f{list,get,set}xattr (the
+xattr crate's FileExt), peios::file::fd_{get,set}_sd, and
+filetime::set_file_handle_times. copy_extended_attrs / copy_security_xattrs /
+copy_xattrs_filtered / apply_exec / copy_attributes all take handles now; the
+public signature `copy_attributes(&Path, &Path, &Attributes)` is unchanged, so
+cp and mv are untouched by this half.
+  - Only regular files and directories are opened. A symlink cannot be opened
+    for I/O, a socket cannot be opened at all (ENXIO), and opening a FIFO blocks
+    or a device node is visible to its driver. Those keep the PATH forms, but
+    only the unredirectable ones: AT_SYMLINK_NOFOLLOW for the SD, l*xattr for
+    xattrs, utimensat(AT_SYMLINK_NOFOLLOW) for timestamps — and NO chmod at all
+    (FileHandle::set_mode is a documented no-op without a descriptor). There is
+    now no path-based chmod anywhere in the module.
+  - If the O_NOFOLLOW open returns ELOOP on something the lstat just saw as a
+    regular file or directory, the name was swapped in between: copy_attributes
+    fails closed with "<path>: replaced by a symbolic link while copying;
+    refusing to preserve attributes through it".
+  - Directories are opened O_RDONLY|O_DIRECTORY (a directory cannot be opened
+    for writing, and fsetxattr checks write permission on the inode rather than
+    the open mode — upstream 6372fd3b2 makes the same point). A regular file
+    that refuses O_RDONLY with EACCES is retried O_WRONLY.
+  - The SD at_flags used to be keyed off dest.is_symlink() for BOTH sides; each
+    end now answers for itself, which is the same answer without the coupling.
+
+UPSTREAM. 6372fd3b2 (#10545) is the only related commit and it is a PARTIAL fix:
+it moved the xattr list/get/set onto fds in cp and mv and left the chmod by path
+(uutils-upstream/main HEAD bebeb9b4d still has the lstat/set_permissions pair at
+cp.rs:1802-1813 and 1834-1836). It also does not apply to our tree — our xattr
+loop is in uucore, not cp. Its regression test WAS ported, as
+test_mv_cross_device_dir_xattr_preserved (it pins the read-only directory open,
+which is exactly what our fd change could have broken). The chmod half has no
+upstream fix; the design above is ours.
+
+TESTS ADDED
+  src/uucore/src/lib/features/preserve.rs (unit, deterministic — they pin the
+  inode, then swap the name for a symlink to a victim, then act through the
+  handle):
+    chmod_through_a_handle_cannot_be_redirected_by_a_swap
+    xattrs_through_a_handle_cannot_be_redirected_by_a_swap
+    a_symlink_end_is_not_opened_and_is_never_chmodded
+    a_read_only_regular_file_is_still_pinned
+    a_directory_end_is_pinned_read_only
+  tests/by-util/test_cp.rs:
+    test_cp_preserve_exec_through_dest_fd (the chmod still lands, both ways)
+    test_cp_attribute_phase_does_not_chmod_through_swapped_dest (the
+      chmod-by-path case the brief asked for: a racer thread swaps the
+      destination for a symlink to a 0444 victim across 40 `cp -f` runs and the
+      victim's mode must never move. Racy by construction, but the assertion is
+      only ever "the victim was not touched", so a lost race is a quiet pass and
+      it can fail only if the bug returns.)
+  tests/by-util/test_mv.rs:
+    test_mv_cross_device_dir_xattr_preserved (ported from 6372fd3b2)
+
+VERIFIED
+  cargo check -p uucore -p pu_cp -p pu_mv -p pu_ln          -> clean, no warnings
+  cargo clippy on the same                                  -> 1 warning, pre-existing
+  cargo test -p uucore --features preserve,backup-control,fs
+      -> 143 lib tests + 30 doctests, 0 failed
+  cargo test --no-default-features --features cp,install,mv,ln -- test_cp test_mv test_ln
+      -> 490 passed, 40 failed, 1 ignored. The 40 are exactly the recorded
+         baseline: the 38 pre-existing test_cp failures from peiosification
+         (mode/ownership preservation removed — `--preserve=mode` is not even a
+         valid value any more, so test_cp_fifo/test_cp_socket fail at argument
+         parsing) plus the 2 test_mv ownership failures of GHSA-p29p-xpv8-mh7g.
+         Every new test passes and nothing regressed.
+  Manually against target/debug/peiosutils on real files: xattrs preserved onto a
+  fresh file, onto a directory, and onto a pre-existing destination; exec
+  preserved (`cp --preserve=exec` and plain `cp` set the bits, a non-executable
+  source clears them); a symlinked destination leaves its target's mode alone.
+
+NOT FIXED, DELIBERATELY, ALL PRE-EXISTING AND SHARED WITH UPSTREAM — for the
+coordinator to route:
+  1. src/uu/cp/src/cp.rs: on a preserve failure cp truncates the destination with
+     `fs::File::create(dest)`. That is a path open with O_WRONLY|O_CREAT|O_TRUNC:
+     it FOLLOWS a symlink at the destination (same shape as this advisory) and it
+     BLOCKS FOREVER on a FIFO destination. Reproduced: `cp --preserve=owner -r
+     fifo fifo2` on a host without KACS hangs; strace shows the SD syscall
+     returning ENOSYS and then openat(O_WRONLY|O_CREAT|O_TRUNC) on the fifo
+     never returning. Upstream has the identical code and no fix.
+  2. src/uu/cp/src/cp.rs CopyMode::AttrOnly does
+     `OpenOptions::new().write(true).create(true).open(dest).unwrap()` —
+     `cp --attributes-only` onto a 0444 destination PANICS (exit 101). Also
+     umask-derived rather than restrictive; noted in cp.toml's GHSA-x5mh entry.
+  3. uucore::preserve::dacl_is_protected still reads the SD by path with
+     at_flags 0 (follows). It is a read-only probe feeding an mv warning, so
+     nothing is written through the link; left alone to avoid changing which
+     warnings mv emits for a symlink source.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-8vrf-r662-2w2v"
+applet       = "cp"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "cp: -R reads device nodes as streams, destroying device semantics"
+upstream_fix = "e6a3bb596f149628ba973eec3d099f3bb69f2464"
+status       = "not-affected"
+note         = """
+NOT AFFECTED: the fix predates our fork point and survived peiosification intact.
+Upstream e6a3bb596 ("cp: handle special files", #11163, 2026-03-05) is an
+ancestor of 873a7c752, so the fork already had it.
+
+Our src/uu/cp/src/cp.rs copy_helper still special-cases special files before any
+stream read: under `options.recursive && !options.copy_contents` a socket goes to
+copy_socket, a fifo to copy_fifo, and a char/block device to copy_node, which
+recreates the node with nix mknod(2) using the source's rdev and mode. Only
+--copy-contents (GNU's documented "read them as streams" opt-in) reaches
+copy_stream. The upstream regression tests are present unmodified in
+tests/by-util/test_cp.rs (test_cp_recursive_char_device,
+test_cp_recursive_block_device, test_cp_recursive_char_device_copy_contents,
+test_cp_recursive_char_device_no_permission); they self-skip without CAP_MKNOD.
+
+VERIFIED behaviourally with the built target/debug/cp as an unprivileged user:
+  cp -R /dev/null out                 -> "cannot create special file 'out':
+                                          Operation not permitted" (mknod EPERM,
+                                          no regular file produced)
+  cp -R --copy-contents /dev/null out2 -> exit 0, regular file (opt-in stream path)
+  mkfifo f1; cp -R f1 f2              -> f2 is a fifo (prw-rw-r--)
+cargo check -p pu_cp clean; the 12 test_cp::test_cp_recursive* tests pass.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-fqf6-gxhh-2xhw"
+applet       = "cp"
+severity     = "low"
+published    = "2026-05-31"
+summary      = "cp/install/mv/ln: --suffix alone does not enable backup mode (silent data loss vs GNU)"
+upstream_fix = "939ab037a2eb24dc3263f1e9b82c838a30996fb2"
+status       = "not-affected"
+note         = """
+THIS ENTRY COVERS cp ONLY. install, mv and ln are another worker's; nothing here
+was changed on their behalf and no shared code was touched.
+
+NOT AFFECTED: the fix predates our fork point. Upstream 939ab037a ("uucore: use
+--suffix to enable backup mode", #9741, 2025-12-21) is an ancestor of 873a7c752,
+and uucore::backup_control::determine_backup_mode in our tree still carries the
+`--suffix`-alone branch (backup_control.rs:368-375): when OPT_SUFFIX is present
+without --backup/-b it resolves the mode from $VERSION_CONTROL, defaulting to
+BackupMode::Existing. The upstream regression tests
+test_backup_mode_suffix_without_backup_option and
+..._with_env_var are present at backup_control.rs:667 and :678.
+
+On the cp side there is no second gate to remove: Options::from_matches
+(cp.rs:838) calls determine_backup_mode(matches) unconditionally and uses whatever
+it returns, so cp cannot suppress the suffix-derived mode. (Upstream's later
+125712fc9 "backup_control: own the mode gate instead of leaving it to each caller"
+is a refactor of the unrelated "backup would destroy source" guard, not of this;
+our cp does not even have that guard, so it is out of scope.) The OPT_SUFFIX arg
+has no clap default_value, so contains_id() is true only when the user actually
+passed -S/--suffix and a bare `cp src dest` still makes no backup.
+
+VERIFIED behaviourally with target/debug/cp:
+  cp --suffix=.bak src dest   -> dest.bak created, contains the old dest  (GNU parity)
+  cp -S .bak2 src dest2       -> dest2.bak2 created
+  cp src dest3                -> no backup file created (no false positives)
+  VERSION_CONTROL=numbered cp --suffix=.bak src dest4 -> dest4.~1~  ($VERSION_CONTROL honoured)
+cargo check -p pu_cp clean.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-g9rr-phfh-gvwv"
+applet       = "cp"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "cp: TOCTOU symlink swap bypasses no-dereference intent (arbitrary file exfiltration)"
+upstream_fix = "ef5d75228262d62f3ff2ad21d35323b1f6665820"
+status       = "not-affected"
+note         = """
+NOT AFFECTED: the fix predates our fork point and peiosification kept it.
+Upstream ef5d75228 ("cp: open source and dest with O_NOFOLLOW in no-dereference
+mode", #10017, 2026-04-21) is an ancestor of 873a7c752.
+
+The advisory's `File::open(&source)` in src/uu/cp/src/platform/linux.rs no longer
+exists. Every source open in that file goes through
+uucore::safe_copy::open_source(path, nofollow), and `nofollow` is threaded
+through copy_on_write into clone / fs_copy / sparse_copy /
+sparse_copy_without_hole / copy_stream / check_for_data /
+check_sparse_detection - all eight call sites. copy_helper computes it as
+`let nofollow = !options.dereference(source_in_command_line);`, i.e. exactly when
+source_metadata came from lstat, so a swap to a symlink between the lstat and the
+open yields ELOOP instead of a redirected read. open_source sets OFlags::NOFOLLOW
+via rustix and is covered by uucore unit tests
+(open_source_rejects_symlink_with_nofollow, safe_copy_file_nofollow_rejects_symlink_source).
+
+Note the deliberate divergence on the *destination* side: our fs_copy passes
+`nofollow = false` to create_dest_restrictive, with a comment saying GNU cp -d/-P
+only forbid dereferencing on the source side. That matches current upstream HEAD
+and the retraction published in GHSA-h85f-wcqc-8jf9; it is not part of this
+advisory, which is source-side only.
+
+VERIFIED: cargo check -p pu_cp clean; full test_cp run shows no regression
+(see the GHSA-h85f entry for the pass/fail accounting).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-h85f-wcqc-8jf9"
+applet       = "cp"
+severity     = "medium"
+published    = "2026-08-08"
+summary      = "cp: a symlinked destination is followed (no O_NOFOLLOW), writing outside the destination tree"
+upstream_fix = "c1cddcc6c948e7b8a60b500fd068c2ffd13f25e8 e05072e26ff7ddc2c68ddf06447e2fc0a73da63d"
+status       = "fixed"
+note         = """
+AFFECTED and now fixed. Peiosification did not touch copy_direntry's destination
+test: src/uu/cp/src/copydir.rs still gated the "create the destination directory"
+branch on `!entry.local_to_target.exists()`, and `exists()` resolves symlinks, so
+a destination entry that was itself a symlink to a directory looked like an
+already-existing directory, the branch was skipped, and the traversal wrote the
+source subtree through the link and out of the destination tree.
+
+PORTED c1cddcc6c (PR #13624) verbatim into copy_direntry: added
+`let dest_is_symlink = entry.local_to_target.is_symlink();` and changed the guard
+to `if source_is_dir && (dest_is_symlink || !entry.local_to_target.exists())` /
+`if entry.target_is_file || dest_is_symlink`, so a symlink at the destination is
+treated as the non-directory it is and errors with
+`cp-error-cannot-overwrite-non-directory-with-directory` (our en-US.ftl renders
+"cannot overwrite non-directory with directory", which still satisfies the
+upstream assertion). A symlinked directory named as the *target* itself stays
+allowed. Also ported both upstream regression tests into tests/by-util/test_cp.rs
+(test_cp_recursive_dest_subdir_symlink_not_followed,
+test_cp_recursive_target_dir_symlink_still_allowed) plus the e05072e26
+spell-checker "dstlink" addition.
+
+NOT ported, deliberately: the advisory's second paragraph about
+create_dest_restrictive(dest, false) lacking O_NOFOLLOW on the single-file data
+open. The advisory's own "Correction affecting the related draft
+GHSA-vwj2-hp86-chj8" retracts that half - following a symlinked file destination
+is GNU's documented behaviour, and our src/uu/cp/src/platform/linux.rs fs_copy
+already carries a comment saying exactly that. Flipping it would be a GNU
+regression, not a fix.
+
+VERIFIED: cargo check -p pu_cp clean.
+`cargo test --no-default-features --features cp,install -- test_cp`:
+344 tests, 306 pass / 38 fail. Baseline (same run with the new guard neutralised)
+is 39 failures; the only delta is test_cp_recursive_dest_subdir_symlink_not_followed
+flipping FAILED -> ok. The 38 remaining failures are pre-existing peiosification
+fallout (mode/ownership preservation was removed from cp - e.g. test_preserve_mode,
+test_cp_gnu_preserve_mode, test_cp_preserve_setuid_when_chown_succeeds,
+test_dir_perm_race_with_preserve_mode_and_ownership), unrelated to this advisory.
+Build env needed: PEIOS_LIB_DIR/PEIOS_INCLUDE/PKM_UAPI + BINDGEN_EXTRA_CLANG_ARGS
+for clang builtin headers + LD_LIBRARY_PATH for libpeios.so.0.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-x5mh-6m7p-gjcf"
+applet       = "cp"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "cp: private file contents exposed via TOCTOU race in permission handling"
+upstream_fix = "681030bca3d5fc8fa4886b75eaefc2ca04471668"
+status       = "not-affected"
+note         = """
+NOT AFFECTED: the fix predates our fork point and peiosification kept it.
+Upstream 681030bca ("cp: create destination with restrictive 0o600 initial mode",
+#10011, 2026-04-21) is an ancestor of 873a7c752.
+
+The advisory's `File::create()` (0o666 & ~umask, typically 0644) is gone from
+src/uu/cp/src/platform/linux.rs. Every destination create there is
+uucore::safe_copy::create_dest_restrictive, which opens with
+O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC and mode RUSR|WUSR = DEST_INITIAL_MODE 0o600,
+so there is no window in which a shared-directory attacker can open the
+destination while it is world-readable. This covers fs_copy, clone,
+sparse_copy, sparse_copy_without_hole and copy_stream; the copy_stream comment
+explicitly records that the old `0o622 & !umask` form was replaced for this
+reason ("See #10011"). uucore unit test
+create_dest_uses_restrictive_initial_mode pins the 0o600.
+
+Peios strengthens this further: the --preserve machinery has no `mode` attribute
+at all, so cp never widens the destination back to a umask-derived mode - the
+only mode write is uucore::preserve::apply_exec, which touches the 0o111 bits of
+the *destination's current* mode and nothing else.
+
+Residual, out of scope for this advisory: an existing destination inode keeps its
+own mode across O_TRUNC (documented on create_dest_restrictive, and matching GNU),
+and --attributes-only in handle_copy_mode still uses a plain
+OpenOptions::create().open(dest), which is umask-derived - but that path writes no
+content, so it cannot leak file contents.
+
+VERIFIED: cargo check -p pu_cp clean. Behaviourally, target/debug/cp copying into
+a fresh destination leaves it mode 0600 (`-rw-------`) as expected.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-jmwj-5qc8-4m9q"
+applet       = "cut"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "cut: literal '' delimiter mis-mapped to NUL"
+upstream_fix = "593f5b191e8b9c87e4292955999c2d0b5cbcce69"
+status       = "not-affected"
+note         = "Fix predates the fork. 593f5b191 ('cut: reject literal '' delimiter special-casing', 2026-03-18) is an ancestor of the fork point 873a7c752, and its regression tests are in our tree (tests/by-util/test_cut.rs::test_single_quote_pair_as_delimiter_is_invalid and ::test_single_quote_pair_as_output_delimiter_is_literal). Verified against the advisory PoC with a locally built ./target/debug/cut: `printf 'a\\x27\\x27b\\n' | cut -d \"''\" -f1` errors 'the delimiter must be a single character' exit 1, byte-identical to GNU cut 9.x; `--output-delimiter=\"''\"` emits a literal '' while `--output-delimiter=''` emits NUL, both matching GNU. Ran the full cut suite: 54 passed, 0 failed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-pmfc-4wjj-gmhx"
+applet       = "cut"
+severity     = "low"
+published    = "2026-05-30"
+summary      = "cut: -s ignored in -z -d '' newline-delimiter mode"
+upstream_fix = "9bbb58b746c41802278b0cba738eebbf21517cf7"
+status       = "not-affected"
+note         = "Same code path and same pre-fork fix as GHSA-wv33-5pxh-r7j7; with -z the record terminator is NUL and `-d ''` maps to NUL, so the input routes through the already-fixed cut_fields_newline_char_delim. Advisory PoC `printf 'abc' | cut -z -d '' -s -f 1` produces no output, matching GNU (uutils at the audited commit emitted 61 62 63 00). Also checked 'abc\\0' and 'a\\0b\\0c': identical to GNU. Upstream regression test test_suppresses_unterminated_segment is in tests/by-util/test_cut.rs. Full cut suite: 54 passed, 0 failed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-wv33-5pxh-r7j7"
+applet       = "cut"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "cut: -s (only-delimited) ignored when delimiter is a newline"
+upstream_fix = "20dfb270577eb77ddd7fac6b9f1342c207d99458 9bbb58b746c41802278b0cba738eebbf21517cf7"
+status       = "not-affected"
+note         = "Fix predates the fork. 20dfb2705 ('cut: fix handling of newline as delimiter') and 9bbb58b74 ('cut: fix -s flag for newline delimiter and improve performance', 2026-02-27) are both ancestors of the fork point. cut_fields_newline_char_delim in src/uu/cut/src/cut.rs takes only_delimited and sets `suppressed` for an unterminated single-field record (cut.rs:334-346), so nothing is emitted. Differential-tested our build against GNU cut over -d $'\\n' with and without -s, -f1/-f2, and inputs 'abc', 'abc\\n', 'a\\nb\\nc\\n', 'a\\nb\\nc': all 12 combinations byte-identical. Upstream regression tests present (test_newline_as_delimiter_s_flag_no_newline_at_all and 15 sibling test_newline_as_delimiter_* cases). Full cut suite: 54 passed, 0 failed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-j978-x793-ffjf"
+applet       = "dd"
+severity     = "low"
+published    = "2026-08-07"
+summary      = "dd: truncate errors on regular files are silently suppressed, hiding data corruption"
+upstream_fix = "0f538b942a5cdaba6e0960f6952429a1baaedf93"
+status       = "fixed"
+note         = "Our tree was vulnerable and byte-identical to the pre-fix upstream: BlockWriter::truncate in src/uu/dd/src/dd.rs discarded both arms with `.ok()` unconditionally, and finalize() called `output.truncate();` ignoring the result, so an ENOSPC/EROFS truncate failure on a regular output file was invisible. Ported upstream 0f538b942 (issue #9745) verbatim: Dest::truncate now matches on f.set_len(pos) and only swallows the error when the output is not a regular file (Err(e) if f.metadata().is_ok_and(|m| m.file_type().is_file()) => Err(e)), BlockWriter::truncate returns io::Result<()> instead of dropping it, and the finalize() call site propagates with `?`. Ported both upstream unit tests: dd::tests::truncate_propagates_error_on_regular_file and ::truncate_suppresses_error_on_special_file (tempfile is already a dev-dependency of pu_dd). Verified: cargo check -p pu_dd --all-targets clean; cargo test -p pu_dd 88 passed, 0 failed, including the two new tests; dd integration suite 119 passed, 0 failed, 2 ignored. Manually confirmed `dd of=/dev/null` still exits 0 (the EINVAL suppression path is intact), a normal regular-file copy still works, and conv=notrunc is unaffected."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "RUSTSEC-2026-0190"
+applet       = "dependency: anyhow"
+severity     = "unrated"
+published    = "2026"
+summary      = "Unsoundness in Error::downcast_mut()"
+upstream_fix = "anyhow 1.0.103"
+status       = "fixed"
+note         = "cargo update -p anyhow --precise 1.0.103 (was 1.0.102)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "RUSTSEC-2026-0204"
+applet       = "dependency: crossbeam-epoch"
+severity     = "unrated"
+published    = "2026"
+summary      = "Invalid pointer dereference in fmt::Pointer impl for Atomic and Shared"
+upstream_fix = "crossbeam-epoch 0.9.20"
+status       = "fixed"
+note         = "cargo update -p crossbeam-epoch --precise 0.9.20 (was 0.9.18)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "RUSTSEC-2026-0253"
+applet       = "dependency: lru"
+severity     = "unrated"
+published    = "2026"
+summary      = "Potential use-after-free due to lack of panic safety in LruCache::pop()"
+upstream_fix = "lru 0.18.2"
+status       = "not-affected"
+note         = "lru 0.16.3 reaches us only through num-prime 0.5.0 (pu_factor), which pins ^0.16; the fixed 0.18.2 cannot be selected without patching num-prime, and upstream uutils is likewise on 0.16.4. The flaw needs a panic inside pop() (a panicking Drop or Hash on the cached key/value); num-prime caches plain integers, so the panic path does not exist. Revisit when num-prime moves off 0.16."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "RUSTSEC-2026-0186"
+applet       = "dependency: memmap2"
+severity     = "unrated"
+published    = "2026"
+summary      = "Unchecked pointer offset in crate memmap2"
+upstream_fix = "memmap2 0.9.11"
+status       = "fixed"
+note         = "cargo update -p memmap2 --precise 0.9.11 (was 0.9.10)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-xhrc-7f76-vh96"
+applet       = "env"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "env: -S rejects backslashes inside single quotes that GNU treats literally"
+upstream_fix = "9d7a0e849109c82262ac2d65324739aac690200f"
+status       = "fixed"
+note         = """
+Affected. src/uu/env/src/split_iterator.rs::split_single_quoted_backslash had the pre-fix
+form: only a backslash followed by a character in REPLACEMENTS was kept literal, anything
+else (\\a, \\x, \\`, \\q, \\|, \\9) raised EnvInvalidSequenceBackslashXInMinusS and exit 125,
+where GNU prints the two characters. env is not peiosified (fork diff is the crate rename
+only).
+Ported upstream 9d7a0e849: the REPLACEMENTS guard and the error arm collapse into a single
+`Some(_)` arm that pushes the backslash and leaves the character for the enclosing
+state_single_quoted loop to take. `\\\\`, `\\'` and a line continuation keep their existing
+arms above, and double-quoted / unquoted contexts still error -- which is what GNU does.
+Deliberately did NOT take the unrelated
+EnvParsingOfMissingVariable -> EnvParsingOfVariableOnlyBracedName assertion change that
+rides along in upstream's test diff; it belongs to a different commit.
+Ported upstream's two regression tests
+(test_split_string_single_quotes_keep_unknown_backslash_sequences_literal,
+test_split_string_backslash_a_behavior_matches_gnu_quoting_context), removed the three
+now-wrong single-quote cases from test_env_parsing_errors, and updated the
+split_error_fail_with_unknown_escape_sequences unit assertions.
+Verified: cargo check -p pu_env;
+cargo test --no-default-features --features env -- test_env: 89 passed, 1 failed.
+The failure is test_gnu_e20 and is environmental, not a regression: it runs
+`env -i <peiosutils> env`, and `-i` clears LD_LIBRARY_PATH, so the nested binary cannot
+find libpeios.so.0 on this non-Peios host (the binary carries no rpath by design). Nothing
+to do with -S parsing.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-r75p-7cjg-whxv"
+applet       = "expr"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "expr: eager evaluation of parenthesized dead branches breaks short-circuit"
+upstream_fix = "76b2f7877"
+status       = "not-affected"
+note         = "Fix predates the fork. 76b2f7877 ('expr: fix eager evaluation of parenthesized dead branches', PR #11395, 2026-04-03) is an ancestor of the fork point 873a7c752, as are the older short-circuit commits 2c2e01205 (|) and ae1c4ccfd (&). src/uu/expr/src/syntax_tree.rs no longer evaluates parenthesised subexpressions during parsing. Advisory PoC on a locally built ./target/debug/expr: `expr 1 '|' '(' 1 / 0 ')'` prints 1 and exits 0, matching GNU (uutils at the audited commit exited 2 with 'division by zero'). Also checked `0 & ( 1 / 0 )` -> 0/exit 1, the unparenthesised forms, and that genuine syntax errors inside a dead branch (`1 | ( 1 + )`, `0 & ( a b )`) still surface with GNU's exact message and exit 2. Upstream regression tests test_parenthesized_short_circuit_dead_branches and test_missing_closing_parenthesis_reports_syntax_error are present in tests/by-util/test_expr.rs. expr integration suite: 159 passed, 0 failed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-g68m-fmg3-7f8c"
+applet       = "head"
+severity     = "low"
+published    = "2026-08-07"
+summary      = "head: TOCTOU between metadata check and open of the same path"
+upstream_fix = "43536897e4efc90d4792b4122ff393f312482006 7d27b3baa19fa67a213cc135d2f11746ca7462c6"
+status       = "fixed"
+note         = "Our tree was vulnerable and byte-identical to the pre-fix upstream: uu_head in src/uu/head/src/head.rs called Path::new(file).metadata() to decide on the '==> name <==' header and the is-a-directory case, then opened the same path separately with File::open(). Ported upstream 43536897e (PR #12439, issue #11972) plus the follow-up 7d27b3baa (PR #12637): the header emission moved into a print_header() closure, File::open() now happens first, metadata comes from file_handle.metadata() (fstat on the descriptor), and the header is printed only after a successful open. Dropped the #[cfg(windows)] PermissionDenied-on-directory fallback (Peios is Linux-only, where File::open on a directory succeeds), and removed the now-unused std::path::Path import. Behaviour change matching GNU and upstream: a file that exists but cannot be opened now yields only the error, no header. Ported the upstream regression test tests/by-util/test_head.rs::test_unreadable_file_prints_no_header. Verified: cargo check -p pu_head clean; head integration suite 58 passed, 0 failed (was 57 before the new test), including the pre-existing directory-header cases test_directory_header_with_multiple_files and ..._zero_output. Reproduced the upstream check-safe-traversal.sh assertion by hand with strace: the only syscall naming the path is openat(AT_FDCWD, \"test_head_file.txt\", O_RDONLY|O_CLOEXEC)=3 and the metadata read is statx(3, \"\", AT_EMPTY_PATH), i.e. no path stat before the open."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-47c7-qrm7-mqw7"
+applet       = "id"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "id: groups= computed from real GID instead of effective GID (and -G inverted)"
+upstream_fix = "ff382f527994b8a021ec0a086dec4c5cafa34f2a"
+status       = "fixed"
+note         = """
+Affected. The advisory's own correction is right: this was never fixed in any release, and
+our tree had the defect verbatim -- `entries::get_groups_gnu(Some(gid))` with `gid` being
+getgid() in default mode, one list shared by both `groups=` and `-G`, so the two
+divergences ran in opposite directions (groups= led with the real gid where GNU leads with
+the effective one; -G led with the effective gid where GNU leads with the real one).
+Peiosification does not affect this: identity still resolves through libc/NSS (nss-peios ->
+authd) via entries::get_groups_gnu, so the ordering logic is the same code.
+Ported upstream ff382f527 exactly: `groups=` now uses
+get_groups_gnu(Some(getegid())), `-G` uses the new group_list_real_gid_first() /
+sort_real_gid_first() helpers (real gid, then effective gid if different, then the rest of
+getgroups()), and `-r` still does not affect `-G`. Included upstream's regression test
+test_id_groups_ordering.
+Verified: cargo check -p pu_id;
+cargo test --no-default-features --features id -- test_id (18 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-xv5w-cw7x-72gj"
+applet       = "id"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "id: pretty-print uses effective GID instead of effective UID for name lookup"
+upstream_fix = "18a50ff513444da99dd8e09451ebecd2ebbe5758"
+status       = "not-affected"
+note         = """
+Fix predates our fork point: `git merge-base --is-ancestor 18a50ff51 873a7c752` is true.
+Our pretty() (src/uu/id/src/id.rs) already has the corrected shape --
+`let euid = geteuid().as_raw(); if euid != uid { Passwd::locate(euid) }` for the euid
+line, and a separate rgid/egid comparison using Group::locate(rgid) for the rgid line.
+The buggy `let eid = getegid(); if eid == rid { Passwd::locate(eid) }` is gone.
+Peiosification of id (`git diff 873a7c752 HEAD -- src/uu/id`) touches only the
+token/context printing and the login-name source (token instead of getlogin()); it does
+not touch the uid/gid selection this advisory is about.
+Verified: cargo test --no-default-features --features id -- test_id (18 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-239g-2685-54x3"
+applet       = "install"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "install: TOCTOU symlink race (unlink-then-create without O_EXCL) allows arbitrary file overwrite"
+upstream_fix = "b5bbabc18"
+status       = "not-affected"
+note         = """
+Not-affected twice over.
+(1) install is deferred on Peios. src/uu/install/src/install.rs uumain() ignores its
+    args entirely and returns uucore::error::deferred_on_peios(...) — it never even
+    parses the command line, so no code below it is reachable. The rest of the file
+    is kept compiled (`#![allow(unused)]`) purely so it does not bitrot. Verified by
+    running the built binary: `install --backup=simple a~ a` and `install -D a~ x/y/z`
+    both print "install: deferred on Peios — awaiting a Peios-native install attribute
+    model ..." and exit 1 with no filesystem effect.
+(2) Even in that dead code the upstream fix is present: it is pre-fork (b5bbabc1,
+    2026-01-17, vs fork point 873a7c752 of 2026-05-15) and survived peiosification
+    unchanged — install.rs still has copy_file_safe() using DirFd::open_file_at()
+    (openat) and copy_file() using OpenOptions::new().create_new(true).open() with
+    the comment "create_new provides TOCTOU protection". The peios diff to install.rs
+    is 28 lines and touches only uumain() and the crate rename.
+Re-check this when install is un-deferred.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-gwm6-q8ch-hcfr"
+applet       = "install"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "install -D: symlink race in directory creation allows arbitrary file overwrite"
+upstream_fix = "0c4129997"
+status       = "not-affected"
+note         = """
+Same two reasons as GHSA-239g-2685-54x3.
+(1) install's uumain() returns deferred_on_peios() before parsing args; `install -D
+    src dst/y/z` errors and exits 1 with no filesystem effect (verified against the
+    built binary).
+(2) The upstream fix 0c412999 (2026-02-14) is pre-fork and intact in our dead code:
+    install.rs imports uucore::safe_traversal::{DirFd, SymlinkBehavior,
+    create_dir_all_safe} and the -D path calls create_dir_all_safe(to_create,
+    DEFAULT_MODE) followed by the fd-anchored copy_file_safe().
+    (install.rs also retains two plain fs::create_dir_all() calls at lines 484 and
+    713; both are on the -d / "create the target dir for a directory operand" paths
+    that upstream also left path-based, so this is not a divergence from upstream.)
+Re-check this when install is un-deferred.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-x2p7-fq8x-g67j"
+applet       = "install"
+severity     = "low"
+published    = "2026-08-07"
+summary      = "install --backup has no source-is-backup guard and silently destroys the source"
+upstream_fix = "0246a57ed490a758ec07589a2dff2465b39c7fc4"
+status       = "not-affected"
+note         = """
+Not reachable: install is deferred on Peios. uumain() in src/uu/install/src/install.rs
+returns uucore::error::deferred_on_peios(...) without parsing its arguments, so the
+backup path is dead code. Verified against the built binary -- the advisory's exact
+PoC, `install --backup=simple a~ a` with a~ holding the only copy of the data, prints
+"install: deferred on Peios — awaiting a Peios-native install attribute model ...",
+exits 1, and leaves BOTH files untouched (a~ still contains "payload").
+UNDERLYING DEFECT IS STILL PRESENT in that dead code, unlike the two high-severity
+install advisories whose fixes were pre-fork. The guard the advisory asks for does not
+exist: install.rs:885 computes backup_control::get_backup_path(b.backup_mode, to,
+&b.suffix) and takes the backup with no source-is-backup check, and
+`grep -n source_is_target_backup src/uu/install/src/install.rs` is still empty. The
+fix, upstream 0246a57ed "install: refuse a backup that would destroy the source"
+(install.rs + install/locales/en-US.ftl + 94 lines of tests), is post-fork and
+unported. It calls uucore::backup_control::source_is_target_backup, so it also depends
+on the uucore rewrite tracked under GHSA-mcrj-cqrc-m6rh (c56aeb862 + e89f93c6b) --
+against today's byte-comparing uucore version it would only catch the literal
+spelling.
+MUST BE PORTED BEFORE install IS UN-DEFERRED. Recorded here rather than left to
+rediscovery.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-fqf6-gxhh-2xhw"
+applet       = "install, mv"
+severity     = "low"
+published    = "2026-05-31"
+summary      = "cp/install/mv/ln: --suffix alone does not enable backup mode (silent data loss vs GNU)"
+upstream_fix = "939ab037a"
+status       = "not-affected"
+note         = """
+This entry covers the install and mv halves only; cp and ln are other groups'.
+Upstream fix 939ab037a (PR #9741, merged 2025-12-21) is pre-fork and present intact in
+our uucore: determine_backup_mode() at
+src/uucore/src/lib/features/backup_control.rs:343 has the third branch
+`else if matches.contains_id(arguments::OPT_SUFFIX)`, resolving the mode from
+$VERSION_CONTROL and defaulting to BackupMode::Existing, with the comment "Suffix
+option is enough to determine mode even if --backup is not set." backup_control.rs is
+shared, so this holds for all four utilities.
+VERIFIED end-to-end on the built mv binary:
+  echo SRC > src ; echo DEST > dest
+  mv --suffix=.bak src dest        -> exit 0, dest.bak created holding "DEST"
+  VERSION_CONTROL=numbered mv --suffix=.bak src dest -> dest.~1~ created
+install: additionally not reachable at all -- uumain() returns deferred_on_peios()
+before parsing arguments (see GHSA-239g-2685-54x3) -- but the shared uucore fix means
+it will be correct on revival too.
+Upstream's two regression tests for this (test_backup_mode_suffix_without_backup_option
+and ..._with_env_var, in backup_control.rs's own test module) are also present and
+pre-fork; they live in uucore, so this group did not run them.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-3jmh-xh36-pj6v"
+applet       = "kill"
+severity     = "low"
+published    = "2026-08-07"
+summary      = "kill: -<N> kills the target process (out-of-range obsolete signal falls through as a negative PID)"
+upstream_fix = "560f75bb2825c0c7a577a9ae5f1952620d606adb"
+status       = "fixed"
+note         = """
+Affected. Our handle_obsolete returned None for an unrecognised `-N` (e.g. -65, or a
+real PID like -62342); clap's allow_negative_numbers(true) then kept it as a positional
+PID and the default SIGTERM was sent to that pid/process group.
+Ported upstream 560f75bb2 by hand (our kill still uses nix, upstream has moved to
+rustix, so `git show | patch` was not usable): handle_obsolete now returns
+UResult<Option<usize>> and errors with "invalid signal" when the argument still looks
+like an obsolete signal spec (leading ASCII digit, or multi-char leading uppercase).
+Also ported the upstream `mod tests` unit test and dropped `test = false` from
+src/uu/kill/Cargo.toml [lib] so it runs, plus the integration regression test
+test_kill_out_of_range_signal_is_rejected_not_sent.
+Verified: cargo check -p pu_kill; cargo test -p pu_kill (1 passed);
+cargo test --no-default-features --features kill -- test_kill (40 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-p6rv-2qpm-fwvg"
+applet       = "kill"
+severity     = "critical"
+published    = "2026-05-30"
+summary      = "kill: 'kill -1' parsed as PID -1, sending SIGTERM to all processes (system crash / DoS)"
+upstream_fix = "cae94028afcfa19b78dfc1072d1a22d8b2c6ca38"
+status       = "not-affected"
+note         = """
+Fix predates our fork point: `git merge-base --is-ancestor cae94028 873a7c752` is true.
+Our src/uu/kill/src/kill.rs already has the fixed `handle_obsolete` guard
+(`if args.len() >= 2`, not `> 2`), so `kill -1` consumes -1 as SIGHUP and then fails
+with "no process ID specified" instead of calling kill(-1, SIGTERM). The upstream
+regression test is also already present as
+tests/by-util/test_kill.rs::test_kill_signal_only_no_pid.
+Verified: cargo test --no-default-features --features kill -- test_kill (40 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-fqf6-gxhh-2xhw"
+applet       = "ln"
+severity     = "low"
+published    = "2026-05-31"
+summary      = "cp/install/mv/ln: --suffix alone does not enable backup mode (silent data loss vs GNU)"
+upstream_fix = "939ab037a"
+status       = "not-affected"
+note         = "ln half only (the cp/install/mv halves belong to their owners). Already fixed before our fork point (#9741, 939ab037a, released in uucore 0.6.0; our uucore is 0.8.2). determine_backup_mode() in src/uucore/src/lib/features/backup_control.rs has the third branch — `else if matches.contains_id(arguments::OPT_SUFFIX)` resolving from $VERSION_CONTROL and defaulting to BackupMode::Existing — and both upstream unit tests (test_backup_mode_suffix_without_backup_option, test_backup_mode_suffix_without_backup_option_with_env_var) are present. The ln-side integration test test_symlink_suffix_without_backup_option passed in the run of 51 ln tests. No uucore change needed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-jcjr-rh8q-7xqf"
+applet       = "ln"
+severity     = "low"
+published    = "2026-05-30"
+summary      = "ln: rejects non-UTF-8 source filenames in target-directory mode"
+upstream_fix = "48d030dfb"
+status       = "fixed"
+note         = "Affected — the fix (#11403) is dated 2026-06-06, three weeks after our fork point, and ln is otherwise untouched fork-point code (our only diff vs 873a7c752 is the crate rename and stripped Windows symlink code). link_files_in_dir() in src/uu/ln/src/ln.rs still went through `srcpath.as_os_str().to_str()` and, on None, printed \"cannot stat\" and counted the operand as failed, so `ln $'bad_\\377' dst` exited 1 with an empty dst where GNU links it. Ported 48d030dfb: the basename now comes from srcpath.file_name() on the OsStr directly (falling back to target_dir.join(srcpath) for the \".\"/\"..\" case), and the now-unused ln-error-cannot-stat key was removed from locales/en-US.ftl and locales/fr-FR.ftl. Included the upstream regression test test_symlink_target_dir_non_utf8_source_name. Tests: cargo check -p pu_ln; `cargo test --no-default-features --features ln -- test_ln` = 51 passed, 0 failed (new test and the pre-existing test_ln_non_utf8_paths both pass)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-rfg5-2j48-mvp7"
+applet       = "ln"
+severity     = "low"
+published    = "2026-07-29"
+summary      = "ln: --no-dereference (-n) bypass"
+upstream_fix = "394c4b17f"
+status       = "not-affected"
+note         = "Already fixed before our fork point (394c4b17f, 2026-03-02, Zellic's own patch, an ancestor of 873a7c752). The vulnerable condition was `settings.no_dereference && matches!(settings.overwrite, OverwriteMode::Force) && target_dir.is_symlink()`; our link_files_in_dir() has the post-fix form — `settings.no_dereference && target_dir.is_symlink()`, with the removal folded into a remove_target closure dispatched on the overwrite mode (NoClobber does nothing, Interactive prompts, Force removes) and target_dir itself used as the link path in all three cases, so -n is honoured without -f. Upstream regression test test_ln_no_dereference_symbolic is present and passed in the run of 51 ln tests."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-mj6p-44ch-cq69"
+applet       = "mkdir"
+severity     = "low"
+published    = "2026-05-30"
+summary      = "mkdir: -m exposes directory with umask perms before chmod (race window)"
+upstream_fix = "037b9583b"
+status       = "accepted"
+note         = "The upstream mkdir(0o777)-then-chmod sequence does not exist here on two counts: the upstream fix (#10036, 037b9583b, create atomically via DirBuilder::mode) is an ancestor of our fork point, and peiosified mkdir has no -m, no umask and no chmod at all — src/uu/mkdir/src/mkdir.rs calls fs::create_dir and lets KACS compute the SD from the parent's inheritable ACEs. Marked `accepted` rather than `not-affected` because the *window* the advisory is about does survive in a Peios-specific form: with --sddl/--owner/--group/--no-inherit/--label the directory exists with its inherited SD for the interval between fs::create_dir and CreatorSd::apply_to*, so a directory meant to be private is briefly reachable by whoever the parent's inheritance lets in. That is a deliberate design choice, not an oversight — the applet doc comments cite peios/sd-creation-design.md §11.2: the atomic kacs_open creator-SD path rolls back a create whose new SD does not self-grant the creator a data right, which is exactly the --no-inherit case, so creation must be create-then-set. Closing it properly needs a design decision (create under a private name and rename, or a kacs_open path that tolerates a non-self-granting creator SD) and belongs to whoever owns that doc — NOTE, the doc it cites does not exist anywhere in the tree, the reference is dangling in all four applets. What I did fix here is the second half of the window: create_one() now stamps with CreatorSd::apply_to_created (AT_SYMLINK_NOFOLLOW) instead of apply_to, so the just-created directory cannot be swapped for a symlink that redirects the descriptor write (see GHSA-p5v9-q37h-pj8c). Tests: cargo check -p pu_mkdir; `cargo test --no-default-features --features mkdir,ls -- test_mkdir` = 29 passed, 9 failed. Two notes on that run: (a) `--features mkdir` alone does not COMPILE the test file (uucore::fsxattr is not in the dev-dependency feature set; adding another applet that enables it, e.g. ls, fixes it) — pre-existing; (b) eight of the nine failures are stale -m/umask/symbolic-mode tests (\"unexpected argument '-m'\"), and the ninth, test_mkdir_dup_file, is a real pre-existing peiosification bug unrelated to this advisory: create_dir() returns Ok for `mkdir -p FILE` because it tests path.exists() rather than path.is_dir(), where GNU errors. Left alone, flagged to the coordinator."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-p5v9-q37h-pj8c"
+applet       = "mkfifo"
+severity     = "high"
+published    = "2026-08-07"
+summary      = "mkfifo: TOCTOU symlink swap redirects chmod to an arbitrary file"
+upstream_fix = "c004672c5"
+status       = "fixed"
+note         = "The upstream code is gone: peiosified mkfifo has no -m and no umask, so there is no fs::set_permissions after mkfifo() to redirect — nothing to port from c004672c5. But the *race* is not gone, it moved. make_fifo() in src/uu/mkfifo/src/mkfifo.rs creates the FIFO with nix mkfifo() and then, for --sddl/--owner/--group/--no-inherit/--label, names the path a second time to stamp the descriptor: CreatorSd::apply_to -> peios::file::set_sd(.., at_flags: 0), which FOLLOWS symlinks. Same window, same preconditions, worse payload — a swapped-in symlink redirects an owner/DACL/integrity-label write instead of a chmod. Fixed: added CreatorSd::apply_to_created() in src/uucore/src/lib/features/sd_control.rs, identical to apply_to but passing AT_SYMLINK_NOFOLLOW (libpeios documents set_sd's at_flags as accepting it), and mkfifo now uses it. A just-created FIFO can never legitimately be a symlink, so NoFollow costs nothing. UUCORE CHANGE — additive only, apply_to is untouched, so no other applet's behaviour moves; mkdir and mknod were switched over too (their entries). Cleanup on apply failure is fs::remove_file, which never follows a symlink, so it is not a second window. Tests: cargo check -p uucore, -p pu_mkfifo; `cargo test --no-default-features --features mkfifo -- test_mkfifo` = 6 passed, 6 failed — ALL SIX failures are pre-existing \"unexpected argument '-m'\" (stale upstream -m/umask tests left behind by peiosification: test_create_one_fifo_with_mode, test_create_fifo_with_mode_and_umask, test_create_one_fifo_with_invalid_mode, test_create_one_fifo_with_non_file_permission_mode, test_create_fifo_permission_denied, test_mkfifo_permission_unchanged_when_failed). Not caused by this change and not fixed here — see the GHSA-pmf6 entry."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-pmf6-rcx4-v53v"
+applet       = "mkfifo"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "mkfifo: permissions of an existing file are changed after FIFO creation fails"
+upstream_fix = "00f77cc70"
+status       = "not-affected"
+note         = "Not affected twice over. (1) The upstream fix (#10376, 00f77cc70) is an ancestor of our fork point. (2) Peiosified mkfifo has no permission surface at all: make_fifo() propagates the mkfifo() failure with `?` (uumain's show_if_err then prints it and moves to the next operand), and there is no fs::set_permissions anywhere in src/uu/mkfifo/src/mkfifo.rs, so an existing file's access can never be relaxed by a failed create. The --sd* descriptor is applied only after a successful create. NOTE for the coordinator: the upstream regression test tests/by-util/test_mkfifo.rs::test_mkfifo_permission_unchanged_when_failed still exists and FAILS with \"unexpected argument '-m'\", along with five other stale -m/umask tests — peiosification dropped -m but left the tests. Pre-existing, not touched here; someone should decide whether to delete or re-express them against --sd*."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-r9hw-mj3w-phcq"
+applet       = "mknod"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "mknod: device nodes created mislabeled on SELinux, with broken cleanup (remove_dir on a node)"
+upstream_fix = "a247c079e"
+status       = "not-affected"
+note         = "Both halves are clear. SELinux half: Peios has no SELinux — there is no -Z/ --context flag and no set_selinux_security_context call anywhere in src/uu/mknod/src/mknod.rs (the KACS equivalent, --sd*, is not SELinux), so upstream a247c079e (setfscreatecon-style label-at-creation) has nothing to apply to. Broken-cleanup half: our failure path is `let _ = fs::remove_file(name)`, already remove_file and not remove_dir, so a FIFO or device node left by a failed descriptor apply IS removed. unlink(2) never follows a symlink, so the cleanup is not itself a TOCTOU window. Hardened anyway while here: make_node's descriptor step now uses CreatorSd::apply_to_created (AT_SYMLINK_NOFOLLOW) instead of apply_to — see the GHSA-p5v9-q37h-pj8c entry for the uucore change. Tests: cargo check -p pu_mknod; `cargo test --no-default-features --features mknod -- test_mknod` = 9 passed, 3 failed, all three pre-existing stale -m tests (test_mknod_invalid_mode, test_mknod_mode_comma_separated, test_mknod_fifo_read_only) failing with \"unexpected argument '-m'\"."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-2w8r-9xj7-69j5"
+applet       = "mktemp"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "mktemp: empty TMPDIR creates temp files in CWD instead of /tmp"
+upstream_fix = "3e38c2ceb698c22f4fff335f62ee5a3e9190b833"
+status       = "not-affected"
+note         = """
+Fix predates our fork point: `git merge-base --is-ancestor 3e38c2ceb 873a7c752` is true.
+Our mktemp.rs has FALLBACK_TMPDIR = "/tmp" and get_tmpdir_env_or_default(), which maps a
+set-but-empty TMPDIR to /tmp, and both call sites in Options::from use it. The Options::from
+block is byte-identical to upstream main apart from upstream's later wasi cfg. mktemp is not
+peiosified.
+Behaviourally re-checked with our binary: `TMPDIR= mktemp` -> /tmp/tmp.mlfabLdUje,
+`TMPDIR= mktemp -d` -> /tmp/tmp.RGLe5AVVFW, nothing left in the cwd.
+(Aside, not this advisory and not a fork divergence: with `-t`/`--tmpdir` plus an empty
+TMPDIR the relative-name behaviour is retained, and GNU coreutils 9.x does the same thing
+in that case, so there is nothing to diverge from.)
+The upstream regression tests are present: test_empty_tmpdir_env_var, test_mktemp_empty_tmpdir.
+Verified: cargo test --no-default-features --features mktemp -- test_mktemp (43 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-h444-6j9x-p8vh"
+applet       = "mv"
+severity     = "high"
+published    = "2026-05-30"
+summary      = "mv: symlinks expanded during cross-device move (resource exhaustion / data duplication)"
+upstream_fix = "9654e4abaf24449ef2279e9a16963edb5c8b8fef"
+status       = "not-affected"
+note         = """
+Fix 9654e4ab (2026-01-28) predates the fork point 873a7c752 (2026-05-15), and the
+peiosification of mv preserved it. In src/uu/mv/src/mv.rs,
+copy_dir_contents_recursive() still tests `from_path.is_symlink()` BEFORE
+`from_path.is_dir()`, and routes symlinks to copy_file_with_hardlinks_helper() ->
+rename_symlink_fallback(), which does read_link() + unix::fs::symlink() — it
+recreates the link and never opens the target. The top-level dispatch in
+rename_with_fallback() likewise uses symlink_metadata() (no-follow) to pick the
+symlink branch. The peiosified rewrite only swapped the per-file attribute
+application (preserve_ownership/copy_xattrs -> uucore::preserve::copy_attributes);
+the symlink no-follow logic is untouched.
+Verified: upstream's three regression tests from 9654e4ab are present unmodified in
+tests/by-util/test_mv.rs (tests/by-util/test_mv.rs is byte-identical to the fork
+point) and pass:
+  cargo test --no-default-features --features mv,install -- test_mv::test_mv_cross_device
+  -> test_mv_cross_device_symlink_preserved, _broken_symlink_preserved,
+     _file_symlink_preserved all pass.
+(The two other tests matched by that filter, _preserves_ownership{,_recursive},
+fail — that is GHSA-p29p-xpv8-mh7g, tracked separately below.)
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-mcrj-cqrc-m6rh"
+applet       = "mv"
+severity     = "low"
+published    = "2026-08-07"
+summary      = "`mv --backup=simple` safety guard fails open when operands are spelled differently, silently destroying the source"
+upstream_fix = "c56aeb862d655e60d3c5975609b3bfafad86ded7 e89f93c6b6d25035e53b68a3e54de98205633c0f 125712fc9537637bef591ab5790dd11401589563 26e73cc624aa511f94bec2424a997eddeaf8f911"
+status       = "fixed"
+note         = """
+AFFECTED and now fixed. Supersedes the `todo` entry in mv-install.toml, which
+had the diagnosis and the commit list right.
+
+PORTED, in upstream order, all three commits squashed into the final state:
+  - c56aeb862: uucore::backup_control::source_is_target_backup stopped comparing
+    spellings ("a~" != "./a" + "~") and started comparing file identity via
+    crate::fs::FileInformation.
+  - e89f93c6b: added GNU's basename gate in front of the identity compare (so a
+    hard link under another name, and a symlink source, are not over-refused)
+    and a `dereference: bool` parameter.
+  - 125712fc9: renamed it to `backup_would_destroy_source`, folded the
+    BackupMode gate into uucore (None and Numbered can never destroy anything)
+    and updated the call sites. This is what fixes the COMPANION HOLE the
+    mv-install entry found: our mv gated on `opts.backup == BackupMode::Simple`,
+    so `mv --backup=existing a~ a` destroyed the source with no diagnostic.
+    Upstream's fc78eeb3d was deliberately skipped, as that entry recommended —
+    125712fc9 supersedes it.
+  Also `src/uucore/Cargo.toml`: `backup-control` now depends on `fs`, since the
+  identity compare needs FileInformation. (Upstream leaves it `[]` and only
+  compiles because nobody builds that feature alone.)
+
+CALL SITES. Two, not three: mv and cp.
+  - src/uu/mv/src/mv.rs handle_two_paths: one line, `dereference = false`
+    (mv never follows a symlink source).
+  - src/uu/cp/src/cp.rs handle_existing_dest: our cp did not have upstream's
+    `source_is_target_backup` call at all — it had its own guard,
+    `paths_refer_to_same_file(source, &backup_path, true)`. That was already
+    identity-based, but it had no basename gate, so it over-refused a hard link
+    that merely shares the backup's inode (GNU copies it happily). Converted to
+    `backup_would_destroy_source(source, dest, &options.backup_suffix,
+    options.backup, true)`, matching 125712fc9.
+  - install is upstream's third call site. Not touched: it is the mv-install
+    group's file, and install is deferred on Peios anyway
+    (GHSA-x2p7-fq8x-g67j). It has NO guard at all today; when it is un-deferred,
+    porting upstream 0246a57ed against this new signature closes that.
+  - ln has NO call site to update, here or upstream — `grep` for
+    backup_would_destroy_source in uutils-upstream/main:src/uu/ln/src/ln.rs is
+    empty. See COMPANION HOLE below rather than looking for a missed port.
+
+ONE EXTRA COMMIT, and why it was necessary. Dropping cp's inode-only guard for
+the basename-gated one re-permits `cp --backup=simple b a` where `b` is a hard
+link to `a~` — which GNU allows because GNU renames the destination onto the
+backup name. Our cp's backup_dest() *copies* (fs::copy(dest, backup_path)) with
+no unlink first, so it writes THROUGH the shared inode and destroys `b`.
+Verified on the built binary before the fix: a=D, a~=D, source content gone.
+Ported upstream 26e73cc62 verbatim (a `fs::remove_file(backup_path)`, ignoring
+NotFound, before the copy) plus its regression test. Without it this port would
+have been a net regression for that case; with it, cp matches GNU. 26e73cc62 was
+written for a different bug — cp hanging forever when the backup name is a FIFO
+— and that is fixed here too.
+
+TESTS
+  src/uucore/src/lib/features/backup_control.rs: upstream's unit tests, renamed
+  with the function — test_backup_would_destroy_source{,_with_tilde_suffix,
+  _ignores_spelling,_absent_backup,_mode_gate,_hard_link_under_other_name} and
+  test_source_is_not_target_backup — plus the rewritten doctest.
+  tests/by-util/test_mv.rs: upstream's four
+  (test_mv_backup_simple_guard_{ignores_spelling,allows_unrelated_source,
+  allows_symlink_source,allows_hardlink_source}) and two of mine for the mode
+  gate (test_mv_backup_existing_guard_also_fires,
+  test_mv_backup_numbered_guard_does_not_fire).
+  tests/by-util/test_cp.rs: test_cp_backup_existing_target_is_fifo (upstream
+  26e73cc62) and test_cp_backup_does_not_write_through_hard_link_to_backup.
+
+VERIFIED
+  cargo check -p uucore -p pu_cp -p pu_mv -p pu_ln           -> clean
+  cargo test -p uucore --features preserve,backup-control,fs -> 143 + 30, 0 failed
+  cargo test --no-default-features --features cp,install,mv,ln -- test_cp test_mv test_ln
+      -> 490 passed / 40 failed / 1 ignored; the 40 are the recorded pre-existing
+         baseline (38 cp mode-preservation + 2 mv ownership), unchanged.
+  PoCs on target/debug/peiosutils:
+    mv --backup=simple   a~ ./a  -> exit 1, "backing up './a' might destroy
+                                    source", a~ still holds "payload"   (was exit 0)
+    mv --backup=existing a~ a    -> exit 1, a~ intact                    (was exit 0)
+    mv --backup=numbered a~ a    -> exit 0, a.~1~ created                (unchanged)
+    mv --backup=simple   s  d    -> exit 0, d=S, d~=D  (no false positive)
+    cp --backup=simple   a~ ./a  -> exit 1, a~ intact
+    cp --backup=simple   b  a    (b hard-linked to a~) -> exit 0, a=S, a~=D, b=S
+
+COMPANION HOLE, NOT FIXED — needs a decision, flagging rather than inventing one.
+`ln --backup=simple a~ a` destroys the source and exits 0: src/uu/ln/src/ln.rs
+link() takes the backup with fs::rename(dst, backup_path) and has no guard of
+any kind. Verified on the built binary — a~ went from "payload" to the old
+contents of `a`. Upstream ln has no guard either, so there is nothing to port;
+adding one means a new ln-error key in locales/en-US.ftl and fr-FR.ftl and a
+deliberate change to ln's exit behaviour. Now that uucore exposes
+backup_would_destroy_source it is a four-line change if Jack wants it.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-p29p-xpv8-mh7g"
+applet       = "mv"
+severity     = "low"
+published    = "2026-07-29"
+summary      = "mv: file ownership lost on cross-device moves"
+upstream_fix = ""
+status       = "todo"
+note         = """
+AFFECTED, and this one is a peiosification REGRESSION rather than an unported
+upstream fix. Upstream fixed it before the fork: the fork-point mv.rs had
+preserve_ownership() (lchown via uucore::perms::wrap_chown, best-effort) called from
+rename_file_fallback, rename_symlink_fallback, copy_dir_contents and
+copy_dir_contents_recursive. Peiosification deleted that helper and routed everything
+through uucore::preserve::copy_attributes(), whose Attributes struct has no POSIX
+uid/gid component at all -- `owner` there means the KACS security-descriptor owner
+SID, and preserve.rs contains no chown of any kind (grep 'chown|uid|gid'
+src/uucore/src/lib/features/preserve.rs -> no hits). mv's MV_DEFAULT is
+{timestamps, xattrs} over Attributes::NONE, so a plain cross-device `mv` now
+preserves neither uid/gid nor the SD; the SD is deliberately left to re-inherit from
+the destination directory (documented on MV_DEFAULT, with a show_warning! when
+preserve::dacl_is_protected(from) and `--sd` to carry it), but uid/gid is simply
+gone, and not even --preserve-all can bring it back.
+EVIDENCE: upstream's own regression tests are still in the tree (tests/by-util/
+test_mv.rs is byte-identical to the fork point) and are RED at HEAD, before any
+change of mine:
+  cargo test --no-default-features --features mv,install -- test_mv
+  -> test_mv_cross_device_preserves_ownership          FAILED (gid 1000, expected 4)
+     test_mv_cross_device_preserves_ownership_recursive FAILED (gid 1000, expected 4)
+  (121 passed / 2 failed / 1 ignored; these two are the only failures.)
+There is no known-failing-test allowlist in the repo (.config/nextest.toml has none),
+so these are simply open red tests.
+BLOCKER (why todo, not fixed). This needs a decision I should not make unilaterally,
+plus a uucore change this group does not own:
+  1. DESIGN, for Jack: does Peios's mv preserve POSIX uid/gid across a cross-device
+     move, or is uid/gid formally out of the model? The peios attribute design says
+     KACS is the access gate and DAC read/write bits are waived under
+     CAP_DAC_OVERRIDE, which argues uid/gid carries no authority and the two upstream
+     tests should be rewritten to assert the SD instead. But that is a documented
+     product decision, not something to infer from the code.
+  2. IF the answer is "preserve": the clean fix is a uid/gid component in
+     uucore::preserve::Attributes + copy_attributes()
+     (src/uucore/src/lib/features/preserve.rs), not a private lchown bolted back into
+     mv.rs -- a private one would sit outside the --preserve/--no-preserve model and
+     could not be switched off. uucore is not ours to edit.
+     (A mv-local restoration IS mechanically possible -- re-add preserve_ownership()
+     using uucore::perms::wrap_chown and add "perms" to src/uu/mv/Cargo.toml's uucore
+     features -- so if the design answer is "preserve, and keep it outside the
+     Attributes model", this group can do it without touching uucore. Say the word.)
+  3. IF the answer is "do not preserve": tests/by-util/test_mv.rs
+     test_mv_cross_device_preserves_ownership{,_recursive} must be updated or
+     removed, otherwise mv's suite stays red.
+KNOCK-ON, worth flagging even though it is a different advisory
+(GHSA-6c4j-6pgg-xgg8, upstream fix 37b1d11d0, not in this group's list): fs::copy()
+carries the source's mode bits including setuid/setgid, while ownership is not
+carried. Upstream 37b1d11d0 masks 0o6000 out of the single-file cross-device fallback
+whenever preserve_ownership did not actually land, matching GNU. Our tree has neither
+half -- no ownership preservation and no setuid strip -- so an unprivileged
+cross-device `mv` of a root-owned setuid file yields a setuid file owned by the
+mover. Whoever resolves (1) above should resolve that at the same time.
+"""
+resolved     = ""
+
+[[advisory]]
+id           = "GHSA-p9fh-vm43-9xxc"
+applet       = "mv"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "mv: xattr-preservation TOCTOU on cross-device moves (inconsistent SELinux labels/caps)"
+upstream_fix = "6372fd3b239add19bf863f9d3f1d3c4c91276711"
+status       = "fixed"
+note         = """
+Same root cause and same fix as GHSA-8r5f-98ww-c4c5 — read that entry for the
+full design; this one records the mv-specific half. Supersedes the `todo` entry
+in mv-install.toml, whose analysis was right.
+
+mv reaches the identical code: src/uu/mv/src/mv.rs apply_attributes() ->
+uucore::preserve::copy_attributes(), from both cross-device fallbacks
+(rename_file_fallback and copy_file_with_hardlinks_helper via
+copy_dir_contents_recursive). Peiosification had replaced mv's own
+uucore::fsxattr calls with copy_attributes, so upstream 6372fd3b2's mv hunk does
+not apply; the race had moved into uucore rather than gone away. Not
+SELinux-only — the same window carries security.capability and, on Peios, the
+whole security.peios.* namespace under --preserve=security.
+
+The Peios-native half the advisory does not mention is also closed: the KACS SD
+copy passed dirfd=None (AT_FDCWD) to peios::file::get_sd/set_sd, so the
+owner/DACL/SACL copy was a path lookup too. It now goes through
+peios::file::fd_get_sd / fd_set_sd on the pinned descriptor, or, for the object
+types that cannot be opened, the path form with AT_SYMLINK_NOFOLLOW.
+
+mv itself needed no change: copy_attributes' signature is unchanged. The two
+uucore commits the mv-install entry flagged for whoever picked this up
+(54877ac47, aa30c1030) are the fsxattr helpers behind 6372fd3b2; our tree has no
+fsxattr call left in this path, so there was nothing to add there.
+
+TESTS: upstream's regression test from 6372fd3b2 ported as
+tests/by-util/test_mv.rs::test_mv_cross_device_dir_xattr_preserved (it moves a
+directory carrying user.dirattr onto /dev/shm and checks the xattr survived —
+which is precisely the case a write-mode destination open would have broken).
+Plus the five deterministic uucore unit tests listed in the GHSA-8r5f entry.
+
+VERIFIED: cargo check -p uucore -p pu_cp -p pu_mv -p pu_ln clean;
+`cargo test --no-default-features --features cp,install,mv,ln -- test_mv`
+regressed nothing — the only mv failures are the two pre-existing
+GHSA-p29p-xpv8-mh7g ownership tests. Manually: a cross-device
+`mv --preserve=xattrs` of a file and of a directory both carry their xattrs.
+
+KNOWN LIMIT (documented in the code): a socket, FIFO or device-node destination
+is never opened, so it gets the no-follow path forms and no chmod at all. The
+writes cannot be redirected onto a swapped-in symlink's target, but they can
+still land on a swapped-in object of the same name. Closing that needs either
+the *at() xattr syscalls (Linux 6.13+) or an O_PATH + /proc/self/fd idiom;
+neither is worth it for object types that carry no mode bits --preserve is
+about.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-pp2g-c3j7-j725"
+applet       = "mv"
+severity     = "medium"
+published    = "2026-09-09"
+summary      = "mv: cross-device (EXDEV) directory fallback removes then path-recreates the destination (symlink race)"
+upstream_fix = "9684011207d58aa51718ca1ce88475a51992bbf0"
+status       = "fixed"
+note         = """
+AFFECTED. Fix 968401120 is post-fork (2026-07-29 vs fork point 2026-05-15) and the
+peiosified rewrite kept the vulnerable shape verbatim: rename_dir_fallback() does
+`if to.exists() { fs::remove_dir_all(to)? }`, then dir_get_size(from), then
+copy_dir_contents() -> `fs::create_dir_all(to)`. create_dir_all() treats a
+symlink-to-directory already at the path as success, so anything planted in the gap
+redirects the whole moved tree off-tree. copy_dir_contents_recursive() had the same
+fs::create_dir_all(&to_path) per subdirectory. Confirmed with strace: rmdir("dest")
+and mkdir("dest") are separate path-based calls ~330us apart (under strace) on a
+cross-device `mv -T`.
+PORTED (mv-only, no uucore change needed):
+  - src/uu/mv/src/mv.rs: new create_dir_fail_closed() helper (verbatim from
+    968401120), used at both call sites in copy_dir_contents() and
+    copy_dir_contents_recursive() in place of fs::create_dir_all().
+  - src/uu/mv/locales/en-US.ftl + fr-FR.ftl: mv-error-dest-appeared (upstream's
+    strings, en and fr).
+  - tests/by-util/test_mv.rs: upstream's regression test
+    test_mv_cross_device_dir_refuses_symlink_at_recreated_dest, adapted (dropped the
+    upstream `use std::os::unix::fs::symlink` / `use uutests::util::TestScenario`
+    imports, already in scope here).
+Not ported: nothing. The fix is self-contained.
+VERIFIED:
+  cargo check -p pu_mv                                                   -> clean
+  cargo test --no-default-features --features mv,install -- test_mv
+      -> 121 passed, 2 failed, 1 ignored. The 2 failures are the pre-existing
+         GHSA-p29p-xpv8-mh7g ownership failures (red before this change too);
+         the new test passes and nothing regressed (120 -> 121 passing).
+  Race PoC (tight python os.symlink loop against `mv -T <tmpfs dir> dest`, 30 rounds,
+  pinned to separate cores): the racer won the gap in 1/30 rounds, and in that round
+  mv refused with "destination 'dest' was replaced while moving; refusing to follow
+  it" instead of following the link; 0/30 rounds wrote off-tree.
+KNOWN LIMITS (same as upstream, out of scope for this fix):
+  - The recursive copy is still path-derived (to_dir.join(name)), not anchored to a
+    directory fd. uucore::safe_traversal::create_dir_all_safe / DirFd is the
+    primitive for that follow-up.
+  - A *pre-planted* symlink destination still diverges from GNU: `mv -T srcdir dest`
+    where dest is already a symlink-to-dir exits 0 and replaces the symlink with a
+    real directory (GNU refuses). Reproduced on our binary; no off-tree write occurs,
+    so it is a compatibility divergence, and upstream's fix does not change it either.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-5gmx-24pj-xhwv"
+applet       = "nohup"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "nohup: nohup.out created world-readable (0644) instead of owner-only (0600)"
+upstream_fix = "acd51ef18d90e5c26f694df721f896fa1c4a9edc"
+status       = "fixed"
+note         = """
+Affected. Our nohup is peiosified: try_open_nohup_file uses create_new(true) and then
+stamps a KACS security descriptor (NOHUP_OUT_SDDL = "D:P(A;;FA;;;S-1-3-4)") on a file it
+created, which the source comment calls "the security-descriptor form of GNU nohup's mode
+0600". But uucore::sd_control::CreatorSd::apply_to only calls peios::file::set_sd -- it
+never touches the POSIX mode -- so the file was still created at 0666 & ~umask (0644 under
+the usual umask 022), and there was a create-then-secure window in which it existed at that
+mode with the parent's inherited descriptor. The SD does not make the mode bits go away.
+Ported upstream acd51ef18 adapted to our shape: `.mode(0o600)` on the create_new
+OpenOptions (so the mode is set by open(2) itself, no chmod window), leaving the
+pre-existing-file branch alone as GNU does.
+Verified: strace of `peiosutils nohup echo hi` under a pty now shows
+`openat(AT_FDCWD, "nohup.out", O_WRONLY|O_CREAT|O_EXCL|O_APPEND|O_CLOEXEC, 0600)`.
+Added tests test_nohup_output_is_owner_only and test_nohup_existing_output_keeps_its_mode
+(upstream shipped no test).
+cargo test --no-default-features --features nohup -- test_nohup: 6 passed, 4 failed.
+The 4 failures are all environmental, not regressions: this host is not Peios, so
+peios::file::set_sd returns ENOSYS and nohup refuses to create nohup.out at all
+("could not secure 'nohup.out': setting security descriptor: Function not implemented").
+Three of the four (test_nohup_creates_output_in_cwd, test_nohup_stderr_to_stdout,
+test_nohup_with_pseudo_terminal_emulation_...) are untouched pre-existing tests failing the
+same way; the fourth is my new test_nohup_output_is_owner_only, which needs the same
+syscall. test_nohup_existing_output_keeps_its_mode passes (it exercises the branch that
+does not call set_sd). These need re-running on a Peios target to be meaningful.
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-p7h3-7q52-72w8"
+applet       = "printenv"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "printenv: environment variables with invalid UTF-8 are silently skipped (evades inspection)"
+upstream_fix = "0bfbbc00c7895c0fb6ea94987b4aab99e3d7ee52 6a3b559fa"
+status       = "not-affected"
+note         = """
+Fix predates our fork point: both 0bfbbc00c ("Fix printenv non-UTF8", #9728) and the
+later dedup 6a3b559fa are ancestors of 873a7c752.
+Our printenv never goes through String for the environment: the no-argument path calls
+uucore::display::print_all_env_vars, which iterates env::vars_os() and writes name and
+value with write_all_os (raw bytes); the named-variable path uses env::var_os plus
+write_all_os. Nothing filters on UTF-8 validity, so an LD_PRELOAD with invalid bytes is
+printed rather than skipped. Our printenv is otherwise unpeiosified (the fork diff is
+just the crate rename).
+The upstream regression tests are already in tests/by-util/test_printenv.rs
+(test_non_utf8_value, test_non_utf8_env_vars).
+Verified: cargo test --no-default-features --features printenv -- test_printenv
+(9 passed, including both non-UTF-8 tests).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-32xv-mj27-3qgj"
+applet       = "rm"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "rm -rf: recursive descent follows a swapped-in symlink (TOCTOU), deleting files off-tree"
+upstream_fix = "b28655842"
+status       = "fixed"
+note         = "Affected — the fix (PR #12541, 2026-05-31) landed two weeks after our fork point, so safe_remove_dir_recursive_impl still descended with a hardcoded dir_fd.open_subdir(&entry_name, SymlinkBehavior::Follow) right after a NoFollow stat_at, the verified-exploitable window. Ported the rm hunk of b28655842: descend with SymlinkBehavior::NoFollow (openat then fails ELOOP on a swapped-in symlink). Also ported the commit's uucore unit test test_dirfd_open_subdir_nofollow_refuses_symlink into src/uucore/src/lib/features/safe_traversal.rs (no uucore code change — DirFd already honoured NoFollow; the applet was passing the wrong flag). NOT ported: the same commit's uucore perms.rs hunk (ChownExecutor::safe_traverse_dir also descends with a hardcoded Follow, `dir_fd.open_subdir(&entry_name, follow.into())` upstream) and the chmod hunk — those belong to the chown/chgrp/chmod owner; coordinator should pass this on, uucore perms.rs is still vulnerable there. Tests: cargo check -p uucore, -p pu_rm; `cargo test --no-default-features --features rm -- test_rm` = 58 passed; `cargo test -p uucore` = 89 + 26 passed, including the new test_dirfd_open_subdir_nofollow_refuses_symlink."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-7cr3-h577-g38j"
+applet       = "rm"
+severity     = "critical"
+published    = "2026-05-30"
+summary      = "rm: --preserve-root bypassed via a symlink to / (string check instead of dev/inode)"
+upstream_fix = "5e5968cdb 7d844a76b"
+status       = "fixed"
+note         = "Two halves. The symlink-to-/ half (upstream 5e5968cdb, pre-fork) was already in our tree: remove() checks path_ends_with_terminator() + is_root_path() before symlink_metadata, so `rm -rf --preserve-root rootlink/` is refused and `rm --preserve-root rootlink` (no slash) correctly removes just the link. The dev/inode half the advisory actually asks for was NOT: is_root_path() in src/uu/rm/src/rm.rs still compared path strings (literal \"/\" or canonicalize() == \"/\"), which a bind mount of / (mount --bind / /mnt) walks straight past, since its canonical path is the mountpoint. Ported upstream 7d844a76b (rm half only): added uucore::fs::path_is_root_dir(path, dereference) — stats \"/\" once per process in a OnceLock, compares (st_dev, st_ino) via FileInformation — and is_root_path now uses it instead of canonicalize(). UUCORE CHANGE, see the GHSA-w6xc-g9qj-vp32 entry; the same commit also rewrites uucore perms::is_root for chmod/chown/chgrp (their syntactic \"looks like a dir\" pre-filter has the identical bind-mount hole) — NOT ported, that is the chmod/chown/chgrp owner's call. Tests: cargo check -p uucore, -p pu_rm; ported upstream regression test test_preserve_root_bind_mount_of_root plus the two uucore unit tests (test_path_is_root_dir, test_path_is_root_dir_symlink). `cargo test --no-default-features --features rm -- test_rm::test_preserve_root` = 5 passed; `cargo test -p uucore --features fs,sd-control` = 117 + 26 passed, both new fs unit tests green."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-89p7-7cq3-hhr2"
+applet       = "rm"
+severity     = "medium"
+published    = "2026-05-30"
+summary      = "rm: 'rm -rf ./' (and ./// variants) silently deletes current directory contents"
+upstream_fix = "ddd037952 6b16cc968"
+status       = "not-affected"
+note         = "Already fixed before our fork point (both upstream commits are ancestors of 873a7c752). handle_dir() calls clean_trailing_slashes() then path_is_current_or_parent_directory(), which in our tree matches \".\", \"./\", \".//\", \"..\", \"../\", \"d/.\", \"d/./\", \"a/b/..\" etc. — the unit tests for all of those are in src/uu/rm/src/rm.rs and the integration tests (test_dot_protection_multiple_slashes, test_dot_protection_nested_paths, test_symlink_to_dot_protection, test_normal_files_with_dots_not_protected) are in tests/by-util/test_rm.rs. No peiosification touched this path. Verified by running `cargo test --no-default-features --features rm -- test_rm` (58 passed)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-9gw8-m5cj-3cr6"
+applet       = "rm"
+severity     = "high"
+published    = "2026-09-05"
+summary      = "rm -r: top-level operand can be raced before fd-based traversal (TOCTOU)"
+upstream_fix = "c53f75a15 45446f9bc"
+status       = "fixed"
+note         = "Affected. safe_remove_dir_recursive in src/uu/rm/src/platform/unix.rs did exactly what the advisory describes: fs::symlink_metadata(path), then DirFd::open(path, SymlinkBehavior::Follow) with no re-verification, so a directory operand swapped for a symlink-to-directory in that window was followed off-tree. Ported both upstream commits by hand (our function has no --one-file-system root_dev plumbing, so the hunks did not apply cleanly): the lstat now also captures dev+ino, the operand is opened NoFollow, and dir_fd.metadata() must match (dev, ino) or rm aborts with the new rm-error-cannot-remove-changed message (\"cannot remove X: File changed while removing\") — not ELOOP, since a dir-for-dir swap or an automount lands there too. Added the ftl key to both en-US and fr-FR. Needed `use std::os::unix::fs::MetadataExt` in platform/unix.rs. Upstream shipped no regression test for either commit. Tests: cargo check -p pu_rm; `cargo test --no-default-features --features rm -- test_rm` = 58 passed, 0 failed, 1 ignored."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-jqr3-q5m4-j7wx"
+applet       = "rm"
+severity     = "medium"
+published    = "2026-07-31"
+summary      = "rm: dangerous abbreviation of --no-preserve-root is accepted (e.g. --no)"
+upstream_fix = "364a23539"
+status       = "not-affected"
+note         = "Already fixed before our fork point (#10205, 364a23539, an ancestor of 873a7c752). uumain() in src/uu/rm/src/rm.rs re-scans the raw argv after clap: if preserve_root was turned off but no argument equals the exact string \"--no-preserve-root\", it errors with RmError::MayNotAbbreviateNoPreserveRoot. Covered by tests/by-util/test_rm.rs::no_preserve_root_may_not_be_abbreviated, which passed in the full run (58 passed)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-3g43-hjqw-w47c"
+applet       = "sort"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "sort: --files0-from panics on non-UTF-8 filenames"
+upstream_fix = "bb8f7095fd63206ff54a4fb4256375e9e1ad88c9 6e28633263ea84aad9ef7a30750232b73fb9133f"
+status       = "fixed"
+note         = "Our tree was vulnerable: the --files0-from loop in src/uu/sort/src/sort.rs decoded each NUL-separated name with std::str::from_utf8(&line).expect(\"Could not parse string from zero terminated input.\") -- twice -- so any non-UTF-8 byte aborted the process. Ported the final upstream state (bb8f7095f, PR #11593, then superseded by 6e2863326): the '-' check is now done on the raw bytes (line.as_slice() == STDIN_FILE.as_bytes()), the zero-length check on line.is_empty(), and the name is carried as an OsString via uucore::os_string_from_vec(line)?. No uucore change needed -- os_string_from_vec already exists at our fork point (src/uucore/src/lib/lib.rs:514). Kept the intermediate bb8f7095f cfg(unix)/cfg(not(unix)) shim out, since 6e2863326 replaced it and Peios is Linux-only. Ported both upstream regression tests into tests/by-util/test_sort.rs: test_files0_from_non_utf8 (a real a\\xffb file sorts correctly) and test_files0_from_non_utf8_name (a lone 0xff name fails with code 2 and 'sort: cannot read' instead of panicking); dropped the upstream `not(target_os = \"macos\")` cfg as irrelevant here. Verified: cargo check -p pu_sort clean; sort integration suite 179 passed, 0 failed, including all 15 test_files0_* cases and the two new ones."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-fjjq-8hw5-cf9f"
+applet       = "split"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "split: TOCTOU output-open allows truncating a swapped file"
+upstream_fix = "58040feb5c66fce588a7ffac299b3a23bd55cd81"
+status       = "fixed"
+note         = "Our tree was vulnerable: Settings::instantiate_current_writer did a path-based paths_refer_to_same_file() check and then platform::instantiate_current_writer opened the output with .create(true).truncate(true), i.e. path-based O_TRUNC, leaving the classic swap window. Ported the unix half of upstream 58040feb5 (PR #12565) by hand into src/uu/split/src/platform/unix.rs: instantiate_current_writer now takes the input OsStr; new create_or_truncate_output_file() opens with create_new(true) (O_CREAT|O_EXCL), and on AlreadyExists re-opens write-only, runs an fd-based input_and_output_refer_to_same_file() check, and only then truncates via set_len(0); the append/re-open branch got the same fd-based check. Added helper open_file_error() for the shared IsADirectory/other mapping, and updated the src/uu/split/src/split.rs call site to pass &self.input. Skipped the upstream windows.rs/wasi hunks (not shipped: our platform/ has unix.rs only), the CICD.yml hunk, and the util/check-safe-traversal.sh hunk (outside my edit scope). No new locale key needed: split-error-would-overwrite-input already exists in src/uu/split/locales/{en-US,fr-FR}.ftl. Ported the upstream unit test as platform::unix::tests::reopened_writer_rejects_symlink_swapped_to_input. Verified: cargo check -p pu_split --all-targets clean; cargo test -p pu_split 22 passed (incl. the new test); split integration suite 119 passed, 0 failed. Reproduced the upstream check-safe-traversal.sh assertions manually with strace: outputs now open O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC with no path-based O_TRUNC, and `split -b 4 victim swap_` with swap_aa a symlink to victim exits 1 with \"'swap_aa' would overwrite input; aborting\" leaving victim intact."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-g2fc-grr3-r5qg"
+applet       = "split"
+severity     = "low"
+published    = "2026-07-29"
+summary      = "split: non-UTF-8 bytes rewritten in generated chunk filenames"
+upstream_fix = "d2b9550fe"
+status       = "not-affected"
+note         = "Fix predates the fork. d2b9550fe ('split: preserve non-UTF-8 bytes in output filename generation', PR #11397, 2026-04-03) is an ancestor of the fork point 873a7c752. FilenameIterator in src/uu/split/src/filenames.rs is OsString-based end to end (Item = OsString; prefix.to_os_string() then push(number) then push(additional_suffix)), with no to_string_lossy in the name-building path. The one remaining to_string_lossy (filenames.rs:226) only tests the --additional-suffix for a path separator and cannot corrupt a name (U+FFFD is not a separator). Advisory PoC verified with a locally built ./target/debug/split: `printf AB | split -b1 - \"$d/p\\xff\"` created p\\xffaa and p\\xffab (70 ff 61 61 / 70 ff 61 62), byte-identical to GNU split; no ef bf bd. Upstream regression test filenames::tests::test_filename_iterator_preserves_non_utf8_bytes is present and passes (cargo test -p pu_split: 22 passed)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-939x-8rj3-7p25"
+applet       = "stdbuf"
+severity     = "high"
+published    = "2026-09-05"
+summary      = "stdbuf: world-writable LD_PRELOAD temporary directory allows local code execution; temp directories are also leaked"
+upstream_fix = "ad2c741680315201a75d6292439457a581671977 3fb38a38203cd92b37a0f54abf80befe76e99531 b96a00f5c6dc417670d55b58a65d42c8404c7596 f2634b4c269316cefe4f0375806c4873731cb3c8"
+status       = "fixed"
+note         = """
+Affected, same reason as GHSA-f68w: the shipped build embeds libstdbuf. Our tree used
+`tempfile::tempdir()` (umask-masked 0755) plus `File::create` for libstdbuf.so
+(umask-masked 0644), then `CommandExt::exec()`, so under a permissive umask the
+LD_PRELOADed library was world-writable, and the TempDir destructor never ran so every
+invocation leaked a .tmp* directory.
+Ported by hand (our copy is the non-Linux-stripped variant, so upstream's patch does not
+apply): create the tempdir via `tempfile::Builder::permissions(0o700).tempdir()` (mode at
+mkdir time, no chmod TOCTOU window -- 3fb38a382, not the earlier set_permissions form);
+create libstdbuf.so with `OpenOptions::create_new(true).mode(0o600)` (b96a00f5c);
+replace `exec()` with `spawn()` + `wait()` and drop the TempDir once the child is gone
+(ad2c74168). Also took f2634b4c2's `exit_status_code()` helper so a signalled child is
+still reported as 128+signal rather than the 0 that `ExitStatus::code()` would give --
+without it the exec->spawn change would silently swallow signal deaths.
+`get_preload_env` for the external-libstdbuf build now takes no argument (that build no
+longer creates a throwaway tempdir); both feature configurations compile.
+Ported upstream tests: test_stdbuf_no_tmpdir_leak, test_stdbuf_tmpdir_is_private (also
+asserts the .so is 0600), and replaced test_stdbuf_no_fork_regression with upstream's
+test_stdbuf_child_execs_command (the old test asserted exec() semantics, which the fix
+deliberately changes).
+Verified: cargo check -p pu_stdbuf with and without feat_external_libstdbuf;
+cargo test --no-default-features --features stdbuf -- test_stdbuf (16 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-f68w-hxxw-phq8"
+applet       = "stdbuf"
+severity     = "high"
+published    = "2026-08-07"
+summary      = "stdbuf: attacker-controlled TMPDIR splits LD_PRELOAD, loading arbitrary code before main()"
+upstream_fix = "8e51f7573096abce577c286efd99cd342c2a2a50"
+status       = "fixed"
+note         = """
+Affected. The task hint that "stdbuf here builds with LIBSTDBUF_DIR from
+.cargo/config.toml" does not hold: LIBSTDBUF_DIR is only read under
+`#[cfg(feature = "feat_external_libstdbuf")]`, and that feature is NOT enabled by the
+shipped build. peiosutils/pekit.toml builds `--no-default-features --features
+feat_os_unix`; feat_os_unix -> feat_require_unix -> "stdbuf" with no
+feat_external_libstdbuf (only GNUmakefile adds it, and pekit.toml does not use the
+makefile). So the embedded/extract-to-$TMPDIR path is what ships, and the LD_PRELOAD
+value was built from $TMPDIR with no separator check.
+Ported upstream 8e51f7573 by hand: reject a libstdbuf path whose bytes contain ':'
+with exit 125, plus the en-US/fr-FR ftl strings
+(stdbuf-error-preload-path-separator) and the regression test
+test_tmpdir_with_colon_is_rejected.
+Verified: cargo check -p pu_stdbuf (and again with --features feat_external_libstdbuf);
+cargo test --no-default-features --features stdbuf -- test_stdbuf (16 passed).
+"""
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-jrrj-v55h-3j8j"
+applet       = "tail"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "tail --follow=name follows a symlink that replaces the watched file (sensitive file exfiltration)"
+upstream_fix = "2c2f1b0c1f11f120fc8cbf8d518194f6532c0607"
+status       = "fixed"
+note         = "Our tree was vulnerable and byte-identical to the pre-fix upstream: Observer::handle_event in src/uu/tail/src/follow/watch.rs computed `let is_tailable = new_md.is_tailable();` from event_path.metadata(), which follows symlinks, so under -F/--follow=name a watched file swapped for a symlink was followed to its target. Ported upstream 2c2f1b0c1 (PR #12661, tracking issue #10328) verbatim: added the `replaced_by_symlink` guard (self.follow_name() && event_path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink())), folded it into is_tailable, and added the new untailable-symlink branch that reports the replacement and resets the reader. Added the locale key tail-status-replaced-with-untailable-symlink to both src/uu/tail/locales/en-US.ftl and fr-FR.ftl (upstream added the same two). Ported the upstream regression test as tests/by-util/test_tail.rs::test_follow_name_replaced_by_symlink_is_untailable, dropping the redundant not(target_os = \"android\") cfg (Peios is Linux/x86-64 only). Verified: cargo check -p pu_tail clean; the new test passes and its stderr_contains assertion confirms the new 'has been replaced with an untailable symbolic link' path actually fires while the secret payload never reaches stdout; full tail integration suite 152 passed, 0 failed, 12 ignored (same ignore set as before the change)."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-h73r-2j9w-ch42"
+applet       = "touch"
+severity     = "medium"
+published    = "2026-08-07"
+summary      = "touch: TOCTOU between existence check and create can truncate arbitrary files"
+upstream_fix = "ca0c842e7"
+status       = "fixed"
+note         = "Affected — the fix landed 2026-06-01, after our fork point, and src/uu/touch/src/touch.rs still called File::create(path) (O_WRONLY|O_CREAT| O_TRUNC) after the metadata NotFound check, so a symlink planted in that window was followed and its target truncated. Peiosification did not touch this path. Ported ca0c842e7 in full: new create_without_truncate() using OpenOptions::new().write(true).create(true).truncate(false), called instead of File::create; dropped the now-unused File import and added CREAT to the spell-checker line. Ported all four upstream tests — unit tests create_without_truncate_does_not_truncate_existing_file and create_without_truncate_creates_missing_file, integration tests test_touch_does_not_truncate_symlink_target and test_touch_through_dangling_symlink_creates_target. NOT ported: the commit's util/check-safe-traversal.sh stanza (strace-checks that touch's openat carries O_CREAT and not O_TRUNC) — that file is outside the paths this worker may edit; coordinator should hand it to whoever owns util/. Left deliberately alone: the Peios --sd* step right after the create still uses CreatorSd::apply_to (follows symlinks), unlike mkdir/mkfifo/mknod which I moved to apply_to_created. That is correct here — touch through a dangling symlink creates the *target*, so the descriptor has to land on the target too; NoFollow would stamp the link. Tests: cargo check -p pu_touch; `cargo test --no-default-features --features touch -- test_touch` = 58 passed, 0 failed; `cargo test -p pu_touch` = 5 passed, 0 failed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-g7j6-92cc-7hpv"
+applet       = "tr"
+severity     = "medium"
+published    = "2026-07-29"
+summary      = "tr: [:graph:] and [:print:] misclassify ASCII space"
+upstream_fix = "358063f3367cb23a1e5db314cfdbfeb607749b3d"
+status       = "not-affected"
+note         = "Fix predates the fork. 358063f33 ('tr: fix graph/print character class mapping', PR #11405, 2026-03-26) is an ancestor of the fork point 873a7c752. In src/uu/tr/src/operation.rs the Class::Graph arm expands to 33..=126 only and Class::Print chains std::iter::once(32) for the space, which is the POSIX/GNU ordering. Advisory PoC on a locally built ./target/debug/tr: `printf 'a b\\n' | tr -d '[:graph:]'` gives `20 0a`, matching GNU. Differential-tested all 12 named classes (graph, print, punct, blank, space, alnum, alpha, cntrl, digit, lower, upper, xdigit) with -d over the input 'a b~\\t\\n': every one byte-identical to GNU tr. Upstream regression tests test_delete_graph_and_print_match_gnu and test_delete_complement_graph_and_print_match_gnu are present in tests/by-util/test_tr.rs. tr integration suite: 160 passed, 0 failed."
+resolved     = "2026-09-09"
+
+[[advisory]]
+id           = "GHSA-w6xc-g9qj-vp32"
+applet       = "uucore"
+severity     = "low"
+published    = "2026-05-30"
+summary      = "uucore: safe_traversal TOCTOU protection only enabled on Linux"
+upstream_fix = ""
+status       = "not-affected"
+note         = "Two independent reasons. (1) Peios is Linux-only, x86-64 — there is no macOS or FreeBSD target to lose the protection on, which is the entire impact of the advisory. (2) The narrow gate is not there anyway: our src/uucore/src/lib/features.rs declares `#[cfg(all(unix, not(target_os = \"redox\")))] pub mod safe_traversal;` (same cfg on the re-export in lib.rs), not `cfg(target_os = \"linux\")`, and rm's src/uu/rm/src/platform/mod.rs is unconditional. The only target_os = \"linux\" cfgs left inside safe_traversal.rs are statx/timestamp field details, not the fd-relative syscall path. NOTE — this worker DID change uucore for other advisories, all additive: fs::path_is_root_dir + root_file_information (GHSA-7cr3-h577-g38j), sd_control::CreatorSd::apply_to_created (GHSA-p5v9-q37h-pj8c; apply_to itself is unchanged, so no existing caller moves), and one new safe_traversal unit test (GHSA-32xv-mj27-3qgj). `cargo check -p uucore` and `cargo check -p pu_rm` pass. Still-vulnerable uucore code that is NOT mine to fix: perms.rs ChownExecutor::safe_traverse_dir descends with a hardcoded SymlinkBehavior::Follow (upstream b28655842 changes it to follow.into()) and perms::is_root uses the syntactic name check that upstream 7d844a76b replaces with path_is_root_dir — both belong to the chmod/chown/chgrp owner, who can now just call the helper I added."
+resolved     = "2026-09-09"

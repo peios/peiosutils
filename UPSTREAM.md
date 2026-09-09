@@ -2,23 +2,25 @@
 
 peiosutils is a **hard fork** of [uutils/coreutils][uutils]. We do not
 automatically track upstream and we do not contribute back. This document
-records the fork point and the rules for selective syncs.
+records the fork point, the rules for selective syncs, and how upstream
+security advisories are triaged.
 
 [uutils]: https://github.com/uutils/coreutils
 
 ## Fork point
 
 - **Upstream**: <https://github.com/uutils/coreutils>
-- **Commit**: `873a7c752` ("README.md: update compatibility (#12302)")
+- **Commit**: `873a7c75207e866ff9d67f16e0d204085f6412c6` ("README.md: update compatibility (#12302)")
 - **Date**: 2026-05-15
 
 The full upstream history is preserved on this branch. The upstream remote
-is configured locally as `uutils-upstream` for fetch only; push is disabled.
+is `uutils-upstream`, fetch only; push is disabled. It is per-clone state,
+so a fresh clone has to add it:
 
 ```sh
-git remote -v
-# uutils-upstream   https://github.com/uutils/coreutils.git (fetch)
-# uutils-upstream   DO_NOT_PUSH (push)
+git remote add uutils-upstream https://github.com/uutils/coreutils.git
+git remote set-url --push uutils-upstream DO_NOT_PUSH
+git fetch uutils-upstream main
 ```
 
 ## Why a hard fork
@@ -32,30 +34,75 @@ Two reasons:
 
 2. **The commands likely to grow real security holes are the ones we are
    rewriting.** Pure text/data utilities (`cat`, `sort`, `wc`, etc.) are
-   stable and unlikely to need security patches in practice. The risky
-   commands (FS traversal, perm handling, identity) are the ones we are
-   replacing wholesale — so the security-fix argument for tracking
-   upstream is weaker than it first appears.
+   stable. The risky commands (FS traversal, perm handling, identity) are
+   the ones we are replacing wholesale.
+
+The second reason cuts both ways, and the first advisory pass (September
+2026, 61 upstream advisories in under four months) showed how. Until a
+risky command *has* been rewritten it carries upstream's bugs verbatim,
+and a rewrite that keeps upstream's shape keeps upstream's races. The
+security argument is therefore not "we don't need upstream's fixes"; it is
+"we need to know about every one of them and decide each on its merits".
+That is what the triage record below is for.
+
+## What the `pu_` prefix means
+
+Every applet crate in this tree is `pu_<name>`. The prefix means the crate
+has been **reviewed for Peios** and either kept as-is (platform code
+stripped) or rewritten; it does not mean the code no longer resembles
+upstream. Many `pu_` crates are still the fork-point code minus non-Linux
+paths. `git diff 873a7c752 HEAD -- src/uu/<name>` shows exactly how far a
+crate has moved. The only `uu_` crates left are shared helpers
+(`uu_base_common`, `uu_checksum_common`).
 
 ## Selective sync
 
-We *may* cherry-pick from `uutils-upstream` in three cases:
+We *may* take changes from `uutils-upstream` in three cases:
 
-1. **Critical security fix in a still-pristine `uu_*` command.** Cherry-pick
-   the minimal patch, link upstream issue/CVE in the commit message.
-2. **Substantial improvement in a still-pristine `uu_*` command** (perf,
-   correctness, missing feature) that we have not yet peiosified. Same
-   rule: cherry-pick the minimal patch.
+1. **A security fix in any applet we ship.** Whether the crate is
+   kept-as-is or rewritten, read the advisory against *our* code and
+   decide. If our code still has the flaw, port the fix: cherry-pick where
+   the code is close to upstream, port by hand where it has diverged.
+   Record the decision in `ADVISORIES.toml` either way.
+2. **A substantial improvement in a kept-as-is applet** (perf,
+   correctness, missing feature) that we have not rewritten. Cherry-pick
+   the minimal patch.
 3. **Tooling improvements** (build, test harness, locale plumbing) that
    apply to our fork unchanged.
 
-We do **not** cherry-pick:
+We do **not** take:
 
-- Anything touching a `pu_*` command. Once peiosified, a command is on
-  our trunk; upstream changes there are by definition wrong for us.
+- Non-security changes to a rewritten applet. Once rewritten, a command is
+  on our trunk; upstream's direction there is by definition not ours.
 - GNU-conformance test additions. We are diverging from GNU, not toward it.
 - Multi-platform support (Android, BSDs, Windows, WSL). Peios is the
   only target.
+
+## Advisory triage
+
+`ADVISORIES.toml` at the repository root is the record. One entry per
+advisory, from two sources:
+
+- **Upstream advisories**: the GitHub security advisories published by
+  uutils/coreutils
+  (`https://api.github.com/repos/uutils/coreutils/security-advisories`).
+- **Dependency advisories**: RustSec, matched against `Cargo.lock` (query
+  OSV, ecosystem `crates.io`, or run `cargo deny check advisories`, whose
+  configuration is in `deny.toml`).
+
+Each entry carries the advisory id, the applet, severity, the upstream fix
+commit when one exists, and a decision:
+
+| status | meaning |
+|---|---|
+| `fixed` | our tree had the flaw and now carries a fix; `note` says what was ported and what tests ran |
+| `not-affected` | our tree never had the flaw, or the applet is not shipped; `note` says why |
+| `accepted` | the flaw is present and we are deliberately living with it; `note` says why and until when |
+| `todo` | not yet decided |
+
+An advisory that is not in the file is untriaged. Refreshing the list
+against the sources and diffing it against the file is a mechanical step
+(a pekit feature is proposed for it); the decisions are not.
 
 ## Procedure for a cherry-pick
 
@@ -66,4 +113,5 @@ git commit --amend        # rewrite the commit message in Peios style
                           # (conventional commits, no Co-Authored-By)
 ```
 
-Always note the upstream SHA and rationale in the commit body.
+Always note the upstream SHA and rationale in the commit body, and for a
+security fix, the advisory id.
