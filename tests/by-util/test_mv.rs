@@ -1669,6 +1669,7 @@ fn test_mv_verbose() {
 #[test]
 #[cfg(any(target_os = "linux", target_os = "android"))] // mkdir does not support -m on windows. Freebsd doesn't return a permission error either.
 #[cfg(feature = "mkdir")]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mv_permission_error() {
     let scene = TestScenario::new("mkdir");
     let folder1 = "bar";

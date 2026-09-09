@@ -189,8 +189,8 @@ fn test_debug_1() {
         .succeeds();
     result.stderr_matches(
         &Regex::new(concat!(
-            r"executing: [^\n]+(\/|\\)coreutils(\.exe)?\n",
-            r"   arg\[0\]= '[^\n]+(\/|\\)coreutils(\.exe)?'\n",
+            r"executing: [^\n]+(\/|\\)peiosutils(\.exe)?\n",
+            r"   arg\[0\]= '[^\n]+(\/|\\)peiosutils(\.exe)?'\n",
             r"   arg\[1\]= 'echo'\n",
             r"   arg\[2\]= 'hello'"
         ))
@@ -213,11 +213,11 @@ fn test_debug_2() {
             r"input args:\n",
             r"arg\[0\]: 'env'\n",
             r"arg\[1\]: '-vv'\n",
-            r"arg\[2\]: '[^\n]+(\/|\\)coreutils(.exe)?'\n",
+            r"arg\[2\]: '[^\n]+(\/|\\)peiosutils(.exe)?'\n",
             r"arg\[3\]: 'echo'\n",
             r"arg\[4\]: 'hello2'\n",
-            r"executing: [^\n]+(\/|\\)coreutils(.exe)?\n",
-            r"   arg\[0\]= '[^\n]+(\/|\\)coreutils(.exe)?'\n",
+            r"executing: [^\n]+(\/|\\)peiosutils(.exe)?\n",
+            r"   arg\[0\]= '[^\n]+(\/|\\)peiosutils(.exe)?'\n",
             r"   arg\[1\]= 'echo'\n",
             r"   arg\[2\]= 'hello2'"
         ))
@@ -238,8 +238,8 @@ fn test_debug1_part_of_string_arg() {
         .succeeds();
     result.stderr_matches(
         &Regex::new(concat!(
-            r"executing: [^\n]+(\/|\\)coreutils(\.exe)?\n",
-            r"   arg\[0\]= '[^\n]+(\/|\\)coreutils(\.exe)?'\n",
+            r"executing: [^\n]+(\/|\\)peiosutils(\.exe)?\n",
+            r"   arg\[0\]= '[^\n]+(\/|\\)peiosutils(\.exe)?'\n",
             r"   arg\[1\]= 'echo'\n",
             r"   arg\[2\]= 'hello1'"
         ))
@@ -262,11 +262,11 @@ fn test_debug2_part_of_string_arg() {
             r"input args:\n",
             r"arg\[0\]: 'env'\n",
             r"arg\[1\]: '-vvS FOO=BAR'\n",
-            r"arg\[2\]: '[^\n]+(\/|\\)coreutils(.exe)?'\n",
+            r"arg\[2\]: '[^\n]+(\/|\\)peiosutils(.exe)?'\n",
             r"arg\[3\]: 'echo'\n",
             r"arg\[4\]: 'hello2'\n",
-            r"executing: [^\n]+(\/|\\)coreutils(.exe)?\n",
-            r"   arg\[0\]= '[^\n]+(\/|\\)coreutils(.exe)?'\n",
+            r"executing: [^\n]+(\/|\\)peiosutils(.exe)?\n",
+            r"   arg\[0\]= '[^\n]+(\/|\\)peiosutils(.exe)?'\n",
             r"   arg\[1\]= 'echo'\n",
             r"   arg\[2\]= 'hello2'"
         ))
