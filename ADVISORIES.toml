@@ -1100,61 +1100,24 @@ severity     = "low"
 published    = "2026-07-29"
 summary      = "mv: file ownership lost on cross-device moves"
 upstream_fix = ""
-status       = "todo"
+status       = "accepted"
 note         = """
-AFFECTED, and this one is a peiosification REGRESSION rather than an unported
-upstream fix. Upstream fixed it before the fork: the fork-point mv.rs had
-preserve_ownership() (lchown via uucore::perms::wrap_chown, best-effort) called from
-rename_file_fallback, rename_symlink_fallback, copy_dir_contents and
-copy_dir_contents_recursive. Peiosification deleted that helper and routed everything
-through uucore::preserve::copy_attributes(), whose Attributes struct has no POSIX
-uid/gid component at all -- `owner` there means the KACS security-descriptor owner
-SID, and preserve.rs contains no chown of any kind (grep 'chown|uid|gid'
-src/uucore/src/lib/features/preserve.rs -> no hits). mv's MV_DEFAULT is
-{timestamps, xattrs} over Attributes::NONE, so a plain cross-device `mv` now
-preserves neither uid/gid nor the SD; the SD is deliberately left to re-inherit from
-the destination directory (documented on MV_DEFAULT, with a show_warning! when
-preserve::dacl_is_protected(from) and `--sd` to carry it), but uid/gid is simply
-gone, and not even --preserve-all can bring it back.
-EVIDENCE: upstream's own regression tests are still in the tree (tests/by-util/
-test_mv.rs is byte-identical to the fork point) and are RED at HEAD, before any
-change of mine:
-  cargo test --no-default-features --features mv,install -- test_mv
-  -> test_mv_cross_device_preserves_ownership          FAILED (gid 1000, expected 4)
-     test_mv_cross_device_preserves_ownership_recursive FAILED (gid 1000, expected 4)
-  (121 passed / 2 failed / 1 ignored; these two are the only failures.)
-There is no known-failing-test allowlist in the repo (.config/nextest.toml has none),
-so these are simply open red tests.
-BLOCKER (why todo, not fixed). This needs a decision I should not make unilaterally,
-plus a uucore change this group does not own:
-  1. DESIGN, for Jack: does Peios's mv preserve POSIX uid/gid across a cross-device
-     move, or is uid/gid formally out of the model? The peios attribute design says
-     KACS is the access gate and DAC read/write bits are waived under
-     CAP_DAC_OVERRIDE, which argues uid/gid carries no authority and the two upstream
-     tests should be rewritten to assert the SD instead. But that is a documented
-     product decision, not something to infer from the code.
-  2. IF the answer is "preserve": the clean fix is a uid/gid component in
-     uucore::preserve::Attributes + copy_attributes()
-     (src/uucore/src/lib/features/preserve.rs), not a private lchown bolted back into
-     mv.rs -- a private one would sit outside the --preserve/--no-preserve model and
-     could not be switched off. uucore is not ours to edit.
-     (A mv-local restoration IS mechanically possible -- re-add preserve_ownership()
-     using uucore::perms::wrap_chown and add "perms" to src/uu/mv/Cargo.toml's uucore
-     features -- so if the design answer is "preserve, and keep it outside the
-     Attributes model", this group can do it without touching uucore. Say the word.)
-  3. IF the answer is "do not preserve": tests/by-util/test_mv.rs
-     test_mv_cross_device_preserves_ownership{,_recursive} must be updated or
-     removed, otherwise mv's suite stays red.
-KNOCK-ON, worth flagging even though it is a different advisory
-(GHSA-6c4j-6pgg-xgg8, upstream fix 37b1d11d0, not in this group's list): fs::copy()
-carries the source's mode bits including setuid/setgid, while ownership is not
-carried. Upstream 37b1d11d0 masks 0o6000 out of the single-file cross-device fallback
-whenever preserve_ownership did not actually land, matching GNU. Our tree has neither
-half -- no ownership preservation and no setuid strip -- so an unprivileged
-cross-device `mv` of a root-owned setuid file yields a setuid file owned by the
-mover. Whoever resolves (1) above should resolve that at the same time.
+By design, decided by jack 2026-09-09. A cross-device mv creates a new inode, and
+on Peios a new inode takes its identity from where it is created: the security
+descriptor re-inherits from the destination directory (the --preserve family
+carries the source's), and the POSIX uid/gid are the creator's. KACS is the access
+gate; uid/gid carry no authority, so there is nothing to preserve. What a plain
+mv promises to carry is data, timestamps and ordinary xattrs (MV_DEFAULT).
+Upstream's tests asserted that a chgrp'd group survived the move; they were red
+at HEAD since peiosification removed the lchown. Rewritten as
+test_mv_cross_device_carries_data_and_timestamps{,_recursive}, which assert the
+Peios contract (data, mtime, and that the new inode is the caller's).
+Knock-on closed at the same time: with ownership not carried, the copy must not
+carry setuid/setgid either (upstream 37b1d11d0, GHSA-6c4j-6pgg-xgg8), or an
+unprivileged cross-device mv of someone else's setuid file yields a setuid file
+owned by the mover. mv now masks 0o6000 from the copied mode.
 """
-resolved     = ""
+resolved     = "2026-09-09"
 
 [[advisory]]
 id           = "GHSA-p9fh-vm43-9xxc"

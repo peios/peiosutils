@@ -840,6 +840,30 @@ fn apply_attributes(from: &Path, to: &Path, attributes: Attributes) -> io::Resul
     copy_attributes(from, to, &attributes).map_err(|e| io::Error::other(e.to_string()))
 }
 
+/// Copy a regular file across devices, dropping any setuid or setgid bit the
+/// source carried.
+///
+/// The copy is a new inode owned by the caller, and ownership is never carried
+/// (see [`MV_DEFAULT`]). `fs::copy` re-applies the source's mode bits, so
+/// without this a set-id file that belonged to someone else would come out as
+/// a set-id file owned by the mover. GNU `mv` strips the bits in the same
+/// situation. The chmod goes through a descriptor opened without following
+/// symlinks, never through the path.
+fn copy_file_without_set_id(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    fs::copy(from, to)?;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .open(to)?;
+    let mode = file.metadata()?.permissions().mode();
+    if mode & 0o6000 != 0 {
+        file.set_permissions(fs::Permissions::from_mode(mode & !0o6000))?;
+    }
+    Ok(())
+}
+
 /// A wrapper around `fs::rename` that falls back to copy-and-remove.
 ///
 /// A plain `fs::rename` is attempted first: it keeps the inode, so the object
@@ -1151,7 +1175,7 @@ fn copy_file_with_hardlinks_helper(
         })?;
     } else {
         // Copy a regular file.
-        fs::copy(from, to)?;
+        copy_file_without_set_id(from, to)?;
         apply_attributes(from, to, attributes).inspect_err(|_| {
             let _ = fs::remove_file(to);
         })?;
@@ -1191,7 +1215,7 @@ fn rename_file_fallback(
     }
 
     // Regular file copy
-    fs::copy(from, to)
+    copy_file_without_set_id(from, to)
         .map_err(|err| io::Error::new(err.kind(), translate!("mv-error-permission-denied")))?;
 
     apply_attributes(from, to, attributes).inspect_err(|_| {
