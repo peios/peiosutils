@@ -113,7 +113,30 @@ impl CreatorSd {
     /// `path` must already exist — this is the create-then-set step. On
     /// failure the caller is expected to unlink the half-secured object.
     pub fn apply_to(&self, path: &Path) -> UResult<()> {
-        file::set_sd(None, path, self.info, &self.sd, 0)
+        self.set(path, 0)
+    }
+
+    /// Apply the descriptor to an object this process just created at
+    /// `path`, without following a symlink at the final component.
+    ///
+    /// The create-then-set step is a TOCTOU window: `mkdir`/`mkfifo`/
+    /// `mknod` create the object, then name it a second time to stamp the
+    /// descriptor on it. In an attacker-writable directory the object can
+    /// be replaced by a symlink in between, and a following `set_sd` would
+    /// write the caller's owner/DACL/label onto whatever the link points
+    /// at — the same shape as CVE-2026-35352 (`mkfifo`'s path-based chmod),
+    /// but writing access control rather than mode bits. `AT_SYMLINK_NOFOLLOW`
+    /// keeps the write on the object at that name.
+    ///
+    /// This is for a *just-created* object, which can never legitimately be
+    /// a symlink. Use [`CreatorSd::apply_to`] where the caller means to
+    /// follow (e.g. stamping a file the user named).
+    pub fn apply_to_created(&self, path: &Path) -> UResult<()> {
+        self.set(path, AT_SYMLINK_NOFOLLOW)
+    }
+
+    fn set(&self, path: &Path, at_flags: i32) -> UResult<()> {
+        file::set_sd(None, path, self.info, &self.sd, at_flags)
             .map_err(|e| USimpleError::new(1, format!("setting security descriptor: {e}")))
     }
 }
@@ -293,7 +316,11 @@ pub struct SdDisplay {
 /// without the KACS SD syscalls, a malformed descriptor — yields
 /// `SdDisplay::default()`, which a caller renders as `?`.
 pub fn read_sd_display(path: &Path, follow_symlinks: bool) -> SdDisplay {
-    let at_flags = if follow_symlinks { 0 } else { AT_SYMLINK_NOFOLLOW };
+    let at_flags = if follow_symlinks {
+        0
+    } else {
+        AT_SYMLINK_NOFOLLOW
+    };
     let Ok(blob) = file::get_sd(None, path, SecInfo::OWNER | SecInfo::DACL, at_flags) else {
         return SdDisplay::default();
     };

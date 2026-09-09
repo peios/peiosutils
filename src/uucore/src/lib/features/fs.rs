@@ -27,6 +27,8 @@ use std::os::fd::AsFd;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Component, MAIN_SEPARATOR, Path, PathBuf};
+#[cfg(unix)]
+use std::sync::OnceLock;
 #[cfg(target_os = "windows")]
 use winapi_util::AsHandleRef;
 
@@ -645,6 +647,36 @@ pub fn infos_refer_to_same_file(
     false
 }
 
+/// The identity of `/`, stat'd once per process (like GNU's `get_root_dev_ino`).
+#[cfg(unix)]
+fn root_file_information() -> Option<&'static FileInformation> {
+    static ROOT: OnceLock<Option<FileInformation>> = OnceLock::new();
+    ROOT.get_or_init(|| FileInformation::from_path(Path::new("/"), true).ok())
+        .as_ref()
+}
+
+/// Whether `path` *is* `/`, by `(st_dev, st_ino)` rather than by name.
+///
+/// A bind mount of `/` (`mount --bind / /mnt`) is a real directory whose path
+/// never resolves to `/`, so a name-based `--preserve-root` check misses it;
+/// GNU compares dev/ino for the same reason. `dereference` says whether a
+/// symlink at `path` is about to be followed (only then does a link to `/`
+/// count). Returns `false` if `path` or `/` cannot be stat'd, or off unix.
+pub fn path_is_root_dir<P: AsRef<Path>>(path: P, dereference: bool) -> bool {
+    #[cfg(unix)]
+    {
+        let Some(root) = root_file_information() else {
+            return false;
+        };
+        FileInformation::from_path(path, dereference).is_ok_and(|info| &info == root)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, dereference);
+        false
+    }
+}
+
 /// Converts absolute `path` to be relative to absolute `to` path.
 pub fn make_path_relative_to<P1: AsRef<Path>, P2: AsRef<Path>>(path: P1, to: P2) -> PathBuf {
     let path = path.as_ref();
@@ -1236,5 +1268,32 @@ mod tests {
         let path2 = path.clone();
         std::thread::spawn(move || assert!(fs::write(&path2, b"foo").is_ok()));
         assert_eq!(fs::read(&path).unwrap(), b"foo");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_path_is_root_dir() {
+        assert!(path_is_root_dir("/", true));
+        assert!(path_is_root_dir("/", false));
+        // Reached by a different name, still the same directory.
+        assert!(path_is_root_dir("/..", true));
+        assert!(path_is_root_dir("/tmp/..", true));
+
+        let dir = tempdir().unwrap();
+        assert!(!path_is_root_dir(dir.path(), true));
+        assert!(!path_is_root_dir(dir.path().join("nonexistent"), true));
+        assert!(!path_is_root_dir("", true));
+    }
+
+    /// A symlink to `/` counts only when the caller would follow it.
+    #[cfg(unix)]
+    #[test]
+    fn test_path_is_root_dir_symlink() {
+        let dir = tempdir().unwrap();
+        let link = dir.path().join("root-link");
+        unix::fs::symlink("/", &link).unwrap();
+
+        assert!(path_is_root_dir(&link, true));
+        assert!(!path_is_root_dir(&link, false));
     }
 }
