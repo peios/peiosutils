@@ -26,7 +26,7 @@ use crate::hardlink::{
     HardlinkGroupScanner, HardlinkOptions, HardlinkTracker, create_hardlink_context,
     with_optional_hardlink_context,
 };
-use uucore::backup_control::{self, source_is_target_backup};
+use uucore::backup_control::{self, backup_would_destroy_source};
 use uucore::display::Quotable;
 use uucore::error::{FromIo, UResult, USimpleError, UUsageError, set_exit_code};
 use uucore::fs::make_fifo;
@@ -419,7 +419,8 @@ fn parse_paths(files: &[OsString], opts: &Options) -> Vec<PathBuf> {
 }
 
 fn handle_two_paths(source: &Path, target: &Path, opts: &Options) -> UResult<()> {
-    if opts.backup == BackupMode::Simple && source_is_target_backup(source, target, &opts.suffix) {
+    // `mv` never follows a symlink source, so the guard must not either.
+    if backup_would_destroy_source(source, target, &opts.suffix, opts.backup, false) {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
             translate!("mv-error-backup-might-destroy-source", "target" => target.quote(), "source" => source.quote()),
@@ -985,6 +986,23 @@ fn rename_dir_fallback(
     Ok(())
 }
 
+/// Create `path`, refusing to reuse anything already there.
+///
+/// `create_dir_all` would accept a symlink planted at `path` after the caller
+/// removed the destination, redirecting the move out of the destination tree.
+fn create_dir_fail_closed(path: &Path) -> io::Result<()> {
+    fs::create_dir(path).map_err(|e| {
+        if e.kind() == io::ErrorKind::AlreadyExists {
+            io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                translate!("mv-error-dest-appeared", "path" => path.quote()),
+            )
+        } else {
+            e
+        }
+    })
+}
+
 /// Copy directory recursively, optionally preserving hardlinks.
 #[allow(clippy::too_many_arguments)]
 fn copy_dir_contents(
@@ -998,7 +1016,7 @@ fn copy_dir_contents(
     display_manager: Option<&MultiProgress>,
 ) -> io::Result<()> {
     // Create the destination directory and apply the top-level attributes.
-    fs::create_dir_all(to)?;
+    create_dir_fail_closed(to)?;
     apply_attributes(from, to, attributes)?;
 
     if let (Some(tracker), Some(scanner)) = (hardlink_tracker, hardlink_scanner) {
@@ -1068,7 +1086,7 @@ fn copy_dir_contents_recursive(
             print_verbose(&from_path, &to_path);
         } else if from_path.is_dir() {
             // Recursively copy subdirectory (only real directories, not symlinks)
-            fs::create_dir_all(&to_path)?;
+            create_dir_fail_closed(&to_path)?;
             apply_attributes(&from_path, &to_path, attributes)?;
 
             print_verbose(&from_path, &to_path);
@@ -1163,7 +1181,8 @@ fn rename_file_fallback(
     // Check if this file is part of a hardlink group and if so, create a hardlink instead of copying
     if let (Some(tracker), Some(scanner)) = (hardlink_tracker, hardlink_scanner) {
         let hardlink_options = HardlinkOptions::default();
-        if let Some(existing_target) = tracker.check_hardlink(from, to, scanner, &hardlink_options) {
+        if let Some(existing_target) = tracker.check_hardlink(from, to, scanner, &hardlink_options)
+        {
             // Create a hardlink to the first moved file instead of copying
             fs::hard_link(&existing_target, to)?;
             fs::remove_file(from)?;

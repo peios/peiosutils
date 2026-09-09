@@ -23,6 +23,7 @@ use nix::sys::stat::{Mode, SFlag, dev_t, mknod as nix_mknod, mode_t};
 use thiserror::Error;
 
 use platform::copy_on_write;
+use uucore::backup_control::backup_would_destroy_source;
 use uucore::display::Quotable;
 use uucore::error::{UError, UResult, UUsageError, set_exit_code};
 #[cfg(unix)]
@@ -1339,6 +1340,16 @@ fn backup_dest(dest: &Path, backup_path: &Path, is_dest_symlink: bool) -> CopyRe
     if is_dest_symlink {
         fs::rename(dest, backup_path)?;
     } else {
+        // Unlink whatever is already at the backup name before copying onto
+        // it. Copying in place would write *through* it: through a FIFO (which
+        // blocks forever), and through any other name of the same inode — so a
+        // hard link to the old backup, which GNU leaves alone, would lose its
+        // contents. Upstream 26e73cc62.
+        match fs::remove_file(backup_path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        }
         fs::copy(dest, backup_path)?;
     }
     Ok(backup_path.into())
@@ -1428,7 +1439,7 @@ fn handle_existing_dest(
     let mut is_dest_removed = false;
     let backup_path = backup_control::get_backup_path(options.backup, dest, &options.backup_suffix);
     if let Some(backup_path) = backup_path {
-        if paths_refer_to_same_file(source, &backup_path, true) {
+        if backup_would_destroy_source(source, dest, &options.backup_suffix, options.backup, true) {
             return Err(translate!("cp-error-backing-up-destroy-source", "dest" => dest.quote(), "source" => source.quote())
             .into());
         }
