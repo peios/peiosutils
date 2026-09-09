@@ -610,20 +610,17 @@ fn remove_dir_recursive(
     safe_remove_dir_recursive(path, options, progress_bar)
 }
 
-/// Check if a path resolves to the root directory.
+/// Check if a path is the root directory.
 /// Returns true if the path is root, false otherwise.
 fn is_root_path(path: &Path) -> bool {
-    // Check simple case: literal "/" path
+    // Check simple case: literal "/" path. Costs no syscall.
     if path.has_root() && path.parent().is_none() {
         return true;
     }
 
-    // Check if path resolves to "/" after following symlinks
-    if let Ok(canonical) = path.canonicalize() {
-        canonical.has_root() && canonical.parent().is_none()
-    } else {
-        false
-    }
+    // Otherwise settle by (st_dev, st_ino): a bind mount of "/" is a directory
+    // whose path never resolves to "/", so a name check misses it (symlinks too).
+    uucore::fs::path_is_root_dir(path, true)
 }
 
 /// Show error message for attempting to remove root.
