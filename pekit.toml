@@ -184,7 +184,7 @@ TARGET=$PEKIT_OUT/target
 # not allowed to obscure failures in Peios's intentionally divergent model.
 cargo test --release --locked --offline --target-dir "$TARGET" \
   -p pu_token -p pu_logonse -p pu_mount -p pu_lsblk \
-  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep
+  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep -p pu_mkuki
 
 CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=off \
   cargo build --release --locked --offline --target-dir "$TARGET" \
@@ -247,6 +247,7 @@ test -d "$(TMPDIR="$SMOKE" "$BIN" mktemp -d)"
 "$BIN" sleep 0
 "$BIN" lsblk --help >/dev/null
 "$BIN" mount --help >/dev/null
+"$BIN" mkuki --help | grep -F -- --kernel-dir >/dev/null
 "$BIN" token --help >/dev/null
 "$BIN" token adjust --help | grep -F interactivity-scope >/dev/null
 "$BIN" logonse --help >/dev/null

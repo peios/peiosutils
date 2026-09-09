@@ -2,7 +2,9 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use tempfile::tempdir;
 
@@ -10,6 +12,32 @@ const MKUKI: &str = env!("CARGO_BIN_EXE_mkuki");
 const PE_OFFSET_PTR: usize = 0x3c;
 const COFF_HEADER_SIZE: usize = 20;
 const SECTION_HEADER_SIZE: usize = 40;
+
+struct KillOnDrop(Child);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn wait_for_payload(path: &Path, payload: &[u8]) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if fs::read(path)
+            .is_ok_and(|bytes| bytes.windows(payload.len()).any(|window| window == payload))
+        {
+            return;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    panic!(
+        "{} did not contain {:?} before the timeout",
+        path.display(),
+        String::from_utf8_lossy(payload)
+    );
+}
 
 fn put_u16(buf: &mut [u8], off: usize, value: u16) {
     buf[off..off + 2].copy_from_slice(&value.to_le_bytes());
@@ -138,6 +166,128 @@ fn writes_a_uki_with_the_embedded_default_stub() {
         image.windows(b".linux".len()).any(|w| w == b".linux"),
         "missing embedded kernel section",
     );
+}
+
+#[test]
+fn resolves_a_unique_kernel_from_a_release_directory() {
+    let dir = tempdir().unwrap();
+    let modules = dir.path().join("usr/lib/modules");
+    let release = modules.join("7.0.9-peios-0.8.3");
+    let kernel = release.join("vmlinuz-7.0.9-peios-0.8.3");
+    let initramfs = dir.path().join("initramfs.cpio.zst");
+    let out = dir.path().join("BOOTX64.EFI");
+
+    fs::create_dir_all(&release).unwrap();
+    fs::write(&kernel, b"unique-directory-kernel").unwrap();
+    fs::write(&initramfs, b"initramfs").unwrap();
+
+    let output = Command::new(MKUKI)
+        .arg("--kernel-dir")
+        .arg(&modules)
+        .arg("--initramfs")
+        .arg(&initramfs)
+        .arg("--cmdline")
+        .arg("console=ttyS0")
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "mkuki failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        fs::read(out)
+            .unwrap()
+            .windows(b"unique-directory-kernel".len())
+            .any(|window| window == b"unique-directory-kernel")
+    );
+}
+
+#[test]
+fn refuses_to_guess_between_multiple_directory_kernels() {
+    let dir = tempdir().unwrap();
+    let modules = dir.path().join("usr/lib/modules");
+    let initramfs = dir.path().join("initramfs.cpio.zst");
+    let out = dir.path().join("BOOTX64.EFI");
+    for version in ["0.8.2", "0.8.3"] {
+        let release = modules.join(format!("7.0.9-peios-{version}"));
+        fs::create_dir_all(&release).unwrap();
+        fs::write(
+            release.join(format!("vmlinuz-7.0.9-peios-{version}")),
+            b"kernel",
+        )
+        .unwrap();
+    }
+    fs::write(&initramfs, b"initramfs").unwrap();
+
+    let output = Command::new(MKUKI)
+        .arg("--kernel-dir")
+        .arg(&modules)
+        .arg("--initramfs")
+        .arg(&initramfs)
+        .arg("--cmdline")
+        .arg("console=ttyS0")
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("2 kernels found"));
+    assert!(!out.exists());
+}
+
+#[test]
+fn watch_adopts_a_replaced_release_directory() {
+    let dir = tempdir().unwrap();
+    let modules = dir.path().join("usr/lib/modules");
+    let old_release = modules.join("7.0.9-peios-0.8.2");
+    let new_release = modules.join("7.0.9-peios-0.8.3");
+    let initramfs = dir.path().join("initramfs.cpio.zst");
+    let out = dir.path().join("boot/efi/EFI/BOOT/BOOTX64.EFI");
+
+    fs::create_dir_all(&old_release).unwrap();
+    fs::write(
+        old_release.join("vmlinuz-7.0.9-peios-0.8.2"),
+        b"old-directory-kernel",
+    )
+    .unwrap();
+    fs::write(&initramfs, b"initramfs").unwrap();
+
+    let child = Command::new(MKUKI)
+        .arg("--kernel-dir")
+        .arg(&modules)
+        .arg("--initramfs")
+        .arg(&initramfs)
+        .arg("--cmdline")
+        .arg("console=ttyS0")
+        .arg("--out")
+        .arg(&out)
+        .arg("--watch")
+        .arg("--debounce")
+        .arg("0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _watcher = KillOnDrop(child);
+
+    wait_for_payload(&out, b"old-directory-kernel");
+    // The initial image is written immediately before the watches are armed.
+    // Give the child enough time to enter its receive loop before changing the
+    // directory tree.
+    thread::sleep(Duration::from_millis(100));
+
+    fs::create_dir_all(&new_release).unwrap();
+    fs::write(
+        new_release.join("vmlinuz-7.0.9-peios-0.8.3"),
+        b"new-directory-kernel",
+    )
+    .unwrap();
+    fs::remove_dir_all(&old_release).unwrap();
+
+    wait_for_payload(&out, b"new-directory-kernel");
 }
 
 #[test]
