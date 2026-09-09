@@ -4,7 +4,7 @@
 // file that was distributed with this source code.
 
 // spell-checker:ignore (flags) reflink (fs) tmpfs (linux) rlimit Rlim NOFILE clob btrfs neve ROOTDIR USERDIR outfile uufs xattrs ELOOP
-// spell-checker:ignore bdfl hlsl IRWXO IRWXG nconfined matchpathcon libselinux-devel prwx doesnotexist reftests subdirs mksocket srwx
+// spell-checker:ignore bdfl hlsl IRWXO IRWXG nconfined matchpathcon libselinux-devel prwx doesnotexist reftests subdirs mksocket srwx dstlink
 #[cfg(unix)]
 use rstest::rstest;
 use uucore::display::Quotable;
@@ -1221,6 +1221,46 @@ fn test_cp_backup_existing() {
         at.read(&format!("{TEST_HOW_ARE_YOU_SOURCE}~")),
         "How are you?\n"
     );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_cp_backup_existing_target_is_fifo() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.mkfifo(&format!("{TEST_HOW_ARE_YOU_SOURCE}~"));
+
+    ucmd.arg("--backup=simple")
+        .arg(TEST_HELLO_WORLD_SOURCE)
+        .arg(TEST_HOW_ARE_YOU_SOURCE)
+        .timeout(Duration::from_secs(10))
+        .succeeds()
+        .no_stderr();
+
+    assert_eq!(at.read(TEST_HOW_ARE_YOU_SOURCE), "Hello, World!\n");
+    assert!(!at.is_fifo(&format!("{TEST_HOW_ARE_YOU_SOURCE}~")));
+    assert_eq!(
+        at.read(&format!("{TEST_HOW_ARE_YOU_SOURCE}~")),
+        "How are you?\n"
+    );
+}
+
+/// A hard link to the old backup must survive the backup: the backup name is
+/// unlinked first, so the copy does not write through the shared inode.
+/// GNU leaves such a source alone, and `backup_would_destroy_source`'s basename
+/// gate deliberately lets it through.
+#[test]
+#[cfg(unix)]
+fn test_cp_backup_does_not_write_through_hard_link_to_backup() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("a", "DSTDATA");
+    at.write("a~", "SRCDATA");
+    at.hard_link("a~", "b");
+
+    ucmd.arg("--backup=simple").arg("b").arg("a").succeeds();
+
+    assert_eq!(at.read("a"), "SRCDATA");
+    assert_eq!(at.read("a~"), "DSTDATA");
+    assert_eq!(at.read("b"), "SRCDATA");
 }
 
 #[test]
@@ -6399,6 +6439,50 @@ fn test_cp_parents_symlink_permissions_file() {
     );
 }
 
+/// A destination subdirectory that is really a symlink must not be descended
+/// into: doing so writes the source subtree through the link and out of the
+/// destination tree. GNU refuses with "cannot overwrite non-directory ... with
+/// directory".
+#[test]
+#[cfg(unix)]
+fn test_cp_recursive_dest_subdir_symlink_not_followed() {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    at.mkdir_all("src/hooks");
+    at.write("src/hooks/payload", "PAYLOAD");
+    at.mkdir("dst");
+    at.mkdir("outside");
+    at.symlink_dir("../outside", "dst/hooks");
+
+    scene
+        .ucmd()
+        .args(&["-a", "src/.", "dst"])
+        .fails()
+        .stderr_contains("cannot overwrite non-directory");
+
+    assert!(
+        !at.file_exists("outside/payload"),
+        "cp wrote through the destination symlink and escaped the target tree"
+    );
+}
+
+/// A symlinked directory named as the *target* is still a legitimate
+/// destination -- only entries discovered inside the tree are refused.
+#[test]
+#[cfg(unix)]
+fn test_cp_recursive_target_dir_symlink_still_allowed() {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    at.mkdir_all("srcdir");
+    at.write("srcdir/f", "X");
+    at.mkdir("real");
+    at.symlink_dir("real", "dstlink");
+
+    scene.ucmd().args(&["-r", "srcdir", "dstlink/"]).succeeds();
+
+    assert!(at.file_exists("real/srcdir/f"));
+}
+
 /// Test the behavior of preserving permissions of parents when copying through
 /// a symlink when source is a dir.
 #[test]
@@ -6609,6 +6693,108 @@ fn test_cp_preserve_xattr_readonly_source() {
         compare_xattrs(&at.plus(source_file), &at.plus(dest_file)),
         "Extended attributes were not preserved"
     );
+}
+
+/// `exec` preservation is a `chmod`, and it now goes through the destination's
+/// pinned descriptor rather than its path. Check it still lands, in both
+/// directions.
+#[test]
+#[cfg(unix)]
+fn test_cp_preserve_exec_through_dest_fd() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("prog", "#!/bin/sh\n");
+    at.set_mode("prog", 0o755);
+    at.write("data", "plain\n");
+    at.set_mode("data", 0o644);
+    at.mkdir("out");
+
+    ucmd.arg("--preserve=exec")
+        .arg("prog")
+        .arg("data")
+        .arg("out")
+        .succeeds();
+
+    assert_ne!(
+        at.metadata("out/prog").permissions().mode() & 0o111,
+        0,
+        "exec bits were not preserved onto the destination"
+    );
+    assert_eq!(
+        at.metadata("out/data").permissions().mode() & 0o111,
+        0,
+        "exec bits appeared on a non-executable destination"
+    );
+}
+
+/// GHSA-8r5f-98ww-c4c5: the `--preserve` attribute phase must never `chmod`
+/// through a destination that has been swapped for a symlink.
+///
+/// `apply_exec` used to `lstat` the destination and then `set_permissions` it
+/// *by path*, and `chmod(2)` follows symlinks, so a destination replaced in
+/// that window took the destination's whole mode onto the link's target — an
+/// arbitrary file, for a privileged `cp` running in an attacker-writable
+/// directory. It ran on every plain `cp`, because executable-ness is preserved
+/// best-effort by default.
+///
+/// Racy by construction: the assertion is only ever that the victim was *not*
+/// touched, so losing the race is a quiet pass and this can fail only if the
+/// bug comes back.
+#[test]
+#[cfg(unix)]
+fn test_cp_attribute_phase_does_not_chmod_through_swapped_dest() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+
+    at.write("src", "payload");
+    at.set_mode("src", 0o755);
+    at.write("victim", "victim");
+    at.set_mode("victim", 0o444);
+
+    let dest = at.plus("dst");
+    let victim = at.plus("victim");
+
+    for _ in 0..40 {
+        let _ = std::fs::remove_file(&dest);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let racer = {
+            let stop = Arc::clone(&stop);
+            let dest = dest.clone();
+            let victim = victim.clone();
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let _ = std::fs::remove_file(&dest);
+                    let _ = fs::symlink(&victim, &dest);
+                    let _ = std::fs::remove_file(&dest);
+                }
+            })
+        };
+
+        scene.ucmd().arg("-f").arg("src").arg("dst").run();
+
+        stop.store(true, Ordering::Relaxed);
+        racer.join().unwrap();
+
+        assert_eq!(
+            std::fs::symlink_metadata(&victim)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o444,
+            "the attribute phase chmodded through a destination swapped for a symlink"
+        );
+        assert_eq!(
+            at.read("victim"),
+            "victim",
+            "the copy wrote through a destination swapped for a symlink"
+        );
+    }
+
+    let _ = std::fs::remove_file(&dest);
 }
 
 #[test]

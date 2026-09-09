@@ -142,7 +142,9 @@ utmp-classic = { workspace = true, optional = true }
 [features]
 default = ["signals"]
 # * non-default features
-backup-control = []
+# `backup_would_destroy_source` compares the source and the backup by file
+# identity (`fs::FileInformation`) rather than by spelling, so this needs `fs`.
+backup-control = ["fs"]
 # Shared libblkid probe: `mount` (source-tag resolution, -t auto), `lsblk`
 # (filesystem/partition columns) and `part` (what table is already on a disk).
 blkid = ["dep:libloading", "libc"]

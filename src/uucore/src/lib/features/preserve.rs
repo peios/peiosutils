@@ -30,13 +30,16 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fmt;
+use std::fs::{self, File, Metadata, OpenOptions, Permissions};
 use std::io;
+use std::os::fd::AsFd;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use clap::ArgMatches;
 use filetime::FileTime;
 use peios::file::{self, OpenFlags, SecInfo};
-use peios::security::{Control, SdView, strip_inherited};
+use peios::security::{Control, SdView, SecurityDescriptor, strip_inherited};
 
 use crate::display::Quotable;
 use crate::error::UError;
@@ -366,7 +369,10 @@ pub enum PreserveOpt {
 /// flag overrides an earlier one (POSIX `cp` semantics); `-a` expanding to
 /// `-dR --preserve=all` and repeated flags are both handled by sorting on the
 /// clap value index.
-pub fn resolve(matches: &ArgMatches, options: &[(&str, PreserveOpt)]) -> PreserveResult<Attributes> {
+pub fn resolve(
+    matches: &ArgMatches,
+    options: &[(&str, PreserveOpt)],
+) -> PreserveResult<Attributes> {
     // (command-line index, kind, values) for each occurrence of each option.
     let mut overriding_order: Vec<(usize, PreserveOpt, Vec<&String>)> = vec![];
 
@@ -476,10 +482,211 @@ fn handle_preserve<F: Fn() -> PreserveResult<()>>(p: Preserve, f: F) -> Preserve
     Ok(())
 }
 
+/// `AT_SYMLINK_NOFOLLOW`, for the `at_flags` argument of the path forms of
+/// [`peios::file::get_sd`] / [`peios::file::set_sd`].
+fn at_nofollow() -> i32 {
+    OpenFlags::SYMLINK_NOFOLLOW.bits() as i32
+}
+
+/// One end of an attribute copy, pinned to a single inode.
+///
+/// [`copy_attributes`] used to re-resolve `source` and `dest` for every step —
+/// an `lstat`, a `chmod`, a `listxattr`, a `getxattr`, a `setxattr` and a
+/// `kacs_get_sd`/`kacs_set_sd` pair, each its own path→inode lookup, all of
+/// them made *after* the data copy had already finished. An attacker who can
+/// write the destination directory can swap the destination for a symlink in
+/// any one of those gaps and redirect the write. The `chmod` was the sharp
+/// end, because `chmod(2)` follows symlinks: a privileged `cp` running in an
+/// attacker-writable directory could be aimed at an arbitrary file
+/// (GHSA-8r5f-98ww-c4c5, GHSA-p9fh-vm43-9xxc).
+///
+/// A `FileHandle` resolves the name once, with `O_NOFOLLOW`, and drives every
+/// later step off that descriptor: `fstat`, `fchmod`, `f{list,get,set}xattr`
+/// and `peios::file::fd_{get,set}_sd`.
+///
+/// Only regular files and directories are opened. A symlink cannot be opened
+/// for I/O; a socket cannot be opened at all (`ENXIO`); opening a FIFO blocks
+/// or has side effects, and opening a device node is visible to its driver.
+/// Those keep the path forms — but only the ones that cannot be redirected
+/// through a symlink swapped in at that name: `AT_SYMLINK_NOFOLLOW` for the
+/// security descriptor, `l*xattr` for extended attributes (which is what the
+/// `xattr` crate's non-`_deref` functions are), `utimensat(AT_SYMLINK_NOFOLLOW)`
+/// for timestamps, and no `chmod` at all.
+struct FileHandle<'a> {
+    /// The name this handle came from. Used for diagnostics, and for the
+    /// no-follow path fallbacks when there is no descriptor.
+    path: &'a Path,
+    /// The pinned descriptor, for a regular file or a directory.
+    file: Option<File>,
+    /// `fstat` of `file`, or the `lstat` of `path` when there is no `file`.
+    metadata: Metadata,
+}
+
+impl<'a> FileHandle<'a> {
+    /// Pin `path`. Errors are labelled with the caller's `source -> dest`
+    /// `context`.
+    fn open(path: &'a Path, context: &str) -> PreserveResult<Self> {
+        let metadata = fs::symlink_metadata(path)
+            .map_err(|e| PreserveError::IoContext(e, context.to_string()))?;
+        let file_type = metadata.file_type();
+        if !(file_type.is_file() || file_type.is_dir()) {
+            return Ok(Self {
+                path,
+                file: None,
+                metadata,
+            });
+        }
+        match Self::open_nofollow(path, file_type.is_dir()) {
+            Ok(file) => {
+                let metadata = file
+                    .metadata()
+                    .map_err(|e| PreserveError::IoContext(e, context.to_string()))?;
+                Ok(Self {
+                    path,
+                    file: Some(file),
+                    metadata,
+                })
+            }
+            // `ELOOP` from an `O_NOFOLLOW` open of something the `lstat` above
+            // saw as a regular file or a directory means the name was swapped
+            // for a symlink in between. Fail closed: falling back to path
+            // operations here would follow exactly the link we just caught.
+            Err(e) if e.raw_os_error() == Some(libc::ELOOP) => Err(PreserveError::Other(format!(
+                "{}: replaced by a symbolic link while copying; refusing to preserve attributes through it",
+                path.quote()
+            ))),
+            // Nameable but not openable. Fall back to the no-follow path
+            // forms: still unredirectable, but the `chmod` that widens a
+            // read-only destination for `setxattr` is skipped, so preserving
+            // xattrs onto such an object can fail where it once succeeded.
+            Err(_) => Ok(Self {
+                path,
+                file: None,
+                metadata,
+            }),
+        }
+    }
+
+    fn open_nofollow(path: &Path, is_dir: bool) -> io::Result<File> {
+        let mut custom = libc::O_NOFOLLOW | libc::O_CLOEXEC;
+        if is_dir {
+            custom |= libc::O_DIRECTORY;
+        }
+        let open = |write: bool| {
+            OpenOptions::new()
+                .read(!write)
+                .write(write)
+                .custom_flags(custom)
+                .open(path)
+        };
+        match open(false) {
+            // A destination with no read bit for us is still ours to `fchmod`
+            // and to stamp; a write-only open pins the same inode just as
+            // well. `O_WRONLY` is invalid on a directory, hence the gate.
+            Err(e) if !is_dir && e.raw_os_error() == Some(libc::EACCES) => open(true),
+            res => res,
+        }
+    }
+
+    /// The metadata captured when the handle was opened.
+    fn metadata(&self) -> &Metadata {
+        &self.metadata
+    }
+
+    fn is_symlink(&self) -> bool {
+        self.metadata.file_type().is_symlink()
+    }
+
+    /// The pinned object's mode *now* — the security-descriptor copy can
+    /// synthesise mode bits, so the callers that care re-read it rather than
+    /// trusting the mode captured at open time.
+    fn current_mode(&self) -> io::Result<u32> {
+        match &self.file {
+            Some(file) => Ok(file.metadata()?.permissions().mode()),
+            None => Ok(self.metadata.permissions().mode()),
+        }
+    }
+
+    /// `fchmod` through the pinned descriptor.
+    ///
+    /// Deliberately a no-op when there is none: a `chmod` by path follows
+    /// symlinks, and that redirect is the whole of GHSA-8r5f-98ww-c4c5.
+    /// Everything without a descriptor is a symlink, a socket, a FIFO or a
+    /// device node, and none of those carries mode bits `--preserve` is
+    /// about (`exec` is a property of programs, and a symlink's mode is not
+    /// settable on Linux at all).
+    fn set_mode(&self, mode: u32) -> io::Result<()> {
+        match &self.file {
+            Some(file) => file.set_permissions(Permissions::from_mode(mode)),
+            None => Ok(()),
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    fn list_xattrs(&self) -> io::Result<Vec<OsString>> {
+        use xattr::FileExt;
+        match &self.file {
+            Some(file) => Ok(file.list_xattr()?.collect()),
+            None => Ok(xattr::list(self.path)?.collect()),
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    fn get_xattr(&self, name: &OsString) -> io::Result<Option<Vec<u8>>> {
+        use xattr::FileExt;
+        match &self.file {
+            Some(file) => file.get_xattr(name),
+            None => xattr::get(self.path, name),
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "android")))]
+    fn set_xattr(&self, name: &OsString, value: &[u8]) -> io::Result<()> {
+        use xattr::FileExt;
+        match &self.file {
+            Some(file) => file.set_xattr(name, value),
+            None => xattr::set(self.path, name, value),
+        }
+    }
+
+    /// Read the `info` components of the pinned object's security descriptor.
+    fn get_sd(&self, info: SecInfo) -> peios::Result<SecurityDescriptor> {
+        match &self.file {
+            Some(file) => file::fd_get_sd(file.as_fd(), info),
+            None => file::get_sd(None, self.path, info, at_nofollow()),
+        }
+    }
+
+    /// Write the `info` components of `sd` onto the pinned object.
+    ///
+    /// A symlink carries a descriptor of its own, and it is that descriptor
+    /// the caller is copying: following the link would read and write the
+    /// TARGET's instead, which is wrong twice over. It silently rewrites an
+    /// object nobody asked about, and during a tree copy the target usually
+    /// does not exist yet — `/init -> usr/bin/peinit2` is created long before
+    /// `/usr` is — so the write fails outright with `ENOENT` and takes the
+    /// whole copy down. Hence `AT_SYMLINK_NOFOLLOW` on the path form; it is
+    /// inert on anything that is not a symlink, and the fd form cannot follow
+    /// anything by construction.
+    fn set_sd(&self, info: SecInfo, sd: &SecurityDescriptor) -> peios::Result<()> {
+        match &self.file {
+            Some(file) => file::fd_set_sd(file.as_fd(), info, sd),
+            None => file::set_sd(None, self.path, info, sd, at_nofollow()),
+        }
+    }
+
+    fn set_times(&self, atime: FileTime, mtime: FileTime) -> io::Result<()> {
+        match &self.file {
+            Some(file) => filetime::set_file_handle_times(file, Some(atime), Some(mtime)),
+            None => filetime::set_symlink_file_times(self.path, atime, mtime),
+        }
+    }
+}
+
 /// Copy extended attributes (`user.*`, `trusted.*`, `system.*` — everything
 /// outside the `security.` namespace) from `source` to `dest`.
 #[cfg(all(unix, not(target_os = "android")))]
-fn copy_extended_attrs(source: &Path, dest: &Path) -> PreserveResult<()> {
+fn copy_extended_attrs(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
     // Security xattrs ride under `--preserve=security` (or under
     // owner/dacl/sacl for the SD itself), not here.
     copy_xattrs_filtered(source, dest, |name| {
@@ -490,7 +697,7 @@ fn copy_extended_attrs(source: &Path, dest: &Path) -> PreserveResult<()> {
 /// Copy `security.*` xattrs from `source` to `dest`, excluding
 /// `security.peios.sd` (which is preserved via the SD copy path).
 #[cfg(all(unix, not(target_os = "android")))]
-fn copy_security_xattrs(source: &Path, dest: &Path) -> PreserveResult<()> {
+fn copy_security_xattrs(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
     copy_xattrs_filtered(source, dest, |name| {
         let bytes = name.as_encoded_bytes();
         bytes.starts_with(b"security.") && bytes != b"security.peios.sd"
@@ -499,22 +706,23 @@ fn copy_security_xattrs(source: &Path, dest: &Path) -> PreserveResult<()> {
 
 /// Walk `source`'s xattrs, copy those matching `keep` to `dest`. Temporarily
 /// clears the readonly flag on `dest` if needed and restores it afterwards.
+///
+/// Every step runs through the pinned descriptors, so the destination cannot
+/// be swapped underneath the widen/copy/restore sequence.
 #[cfg(all(unix, not(target_os = "android")))]
 fn copy_xattrs_filtered(
-    source: &Path,
-    dest: &Path,
+    source: &FileHandle<'_>,
+    dest: &FileHandle<'_>,
     keep: impl Fn(&OsString) -> bool,
 ) -> PreserveResult<()> {
-    use std::fs;
-
-    let metadata = fs::symlink_metadata(dest)?;
-    let mut perms = metadata.permissions();
-    let was_readonly = perms.readonly();
+    // `Permissions::set_readonly(false)` is `mode |= 0o222` and
+    // `set_readonly(true)` is `mode &= !0o222`; spelled out here because the
+    // widen and the restore both go through `fchmod` now.
+    let mode = dest.current_mode()?;
+    let was_readonly = mode & 0o222 == 0;
 
     if was_readonly {
-        #[allow(clippy::permissions_set_readonly_false)]
-        perms.set_readonly(false);
-        fs::set_permissions(dest, perms)?;
+        dest.set_mode(mode | 0o222)?;
     }
 
     let result: PreserveResult<()> = (|| {
@@ -531,21 +739,23 @@ fn copy_xattrs_filtered(
         // Scoped deliberately to the *listing*. ENOTSUP from `set` means the
         // source did have attributes and the destination cannot hold them —
         // that is a real failure to preserve, and stays one.
-        let names = match xattr::list(source) {
+        let names = match source.list_xattrs() {
             Ok(names) => names,
             Err(e) if is_unsupported(&e) => return Ok(()),
-            Err(e) => return Err(source_error(e, source)),
+            Err(e) => return Err(source_error(e, source.path)),
         };
         for attr_name in names {
             if !keep(&attr_name) {
                 continue;
             }
-            let value = xattr::get(source, &attr_name).map_err(|e| source_error(e, source))?;
+            let value = source
+                .get_xattr(&attr_name)
+                .map_err(|e| source_error(e, source.path))?;
             if let Some(value) = value {
-                xattr::set(dest, &attr_name, &value).map_err(|e| {
+                dest.set_xattr(&attr_name, &value).map_err(|e| {
                     PreserveError::IoContext(
                         e,
-                        format!("failed to set extended attributes on {}", dest.quote()),
+                        format!("failed to set extended attributes on {}", dest.path.quote()),
                     )
                 })?;
             }
@@ -554,9 +764,7 @@ fn copy_xattrs_filtered(
     })();
 
     if was_readonly {
-        let mut revert_perms = fs::symlink_metadata(dest)?.permissions();
-        revert_perms.set_readonly(true);
-        fs::set_permissions(dest, revert_perms)?;
+        dest.set_mode(dest.current_mode()? & !0o222)?;
     }
 
     result
@@ -590,17 +798,20 @@ fn is_unsupported(e: &io::Error) -> bool {
 /// Read/write bits are left untouched (irrelevant under CAP_DAC_OVERRIDE).
 /// Symlinks are skipped — a symlink's exec-ness is its target's, and most
 /// platforms can't chmod the link itself.
+///
+/// The `chmod` goes through `dest`'s pinned descriptor. The path form used to
+/// live here, `lstat` then `set_permissions`, and it followed symlinks: a
+/// destination swapped for a symlink between the two took the destination's
+/// whole mode onto the link's target. This ran on *every* plain `cp`, since
+/// [`Attributes::IMPLICIT`] preserves exec best-effort.
 #[cfg(unix)]
-fn apply_exec(source_metadata: &std::fs::Metadata, dest: &Path) -> PreserveResult<()> {
-    use std::os::unix::fs::PermissionsExt;
+fn apply_exec(source_metadata: &Metadata, dest: &FileHandle<'_>) -> PreserveResult<()> {
     if dest.is_symlink() {
         return Ok(());
     }
     let any_exec = source_metadata.permissions().mode() & 0o111 != 0;
-    let mut perms = std::fs::symlink_metadata(dest)?.permissions();
-    let mode = perms.mode();
-    perms.set_mode((mode & !0o111) | if any_exec { 0o111 } else { 0 });
-    std::fs::set_permissions(dest, perms)?;
+    let mode = dest.current_mode()?;
+    dest.set_mode((mode & !0o111) | if any_exec { 0o111 } else { 0 })?;
     Ok(())
 }
 
@@ -612,16 +823,15 @@ fn apply_exec(source_metadata: &std::fs::Metadata, dest: &Path) -> PreserveResul
 /// fetched ACL through `strip_inherited_aces` so the destination's parent
 /// supplies its own inheritance. The full-ACL request wins if both a full and
 /// a no-inherited variant are set. SD copy failures are always fatal.
-pub fn copy_attributes(
-    source: &Path,
-    dest: &Path,
-    attributes: &Attributes,
-) -> PreserveResult<()> {
-    use std::fs;
-
+///
+/// Both names are resolved exactly once, up front, into [`FileHandle`]s; every
+/// step below then works through those handles, so nothing here can be
+/// redirected by a path swap after the data copy has finished.
+pub fn copy_attributes(source: &Path, dest: &Path, attributes: &Attributes) -> PreserveResult<()> {
     let context = format!("{} -> {}", source.quote(), dest.quote());
-    let source_metadata = fs::symlink_metadata(source)
-        .map_err(|e| PreserveError::IoContext(e, context.clone()))?;
+    let source = FileHandle::open(source, &context)?;
+    let dest = FileHandle::open(dest, &context)?;
+    let source_metadata = source.metadata();
 
     let want_owner = matches!(attributes.owner, Preserve::Yes { .. });
     let want_dacl = matches!(attributes.dacl, Preserve::Yes { .. });
@@ -640,25 +850,14 @@ pub fn copy_attributes(
         sd_info |= SecInfo::SACL;
     }
     if !sd_info.is_empty() {
-        // A symlink carries a descriptor of its own, and it is that descriptor
-        // we are copying. Following the link would read and write the TARGET's
-        // instead, which is wrong twice over: it silently rewrites an object
-        // nobody asked about, and during a tree copy the target usually does
-        // not exist yet — `/init -> usr/bin/peinit2` is created long before
-        // `/usr` is — so the write fails outright with ENOENT and takes the
-        // whole copy down.
-        //
-        // `dest.is_symlink()` is the right test for both sides: `cp -a` implies
-        // `-d`, so a symlink destination means the source was a symlink copied
-        // as a link. The flag is inert on anything that is not a symlink.
-        let at_flags = if dest.is_symlink() {
-            OpenFlags::SYMLINK_NOFOLLOW.bits() as i32
-        } else {
-            0
-        };
-
-        let sd = file::get_sd(None, source, sd_info, at_flags)
-            .map_err(|e| PreserveError::Other(format!("kacs_get_sd({}): {e}", source.quote())))?;
+        // Each side is read and written through its own handle, so neither
+        // follows a symlink (see `FileHandle::set_sd`). This used to key the
+        // `AT_SYMLINK_NOFOLLOW` flag for *both* sides off `dest.is_symlink()`,
+        // on the reasoning that `cp -a` implies `-d` and so the two ends match;
+        // asking each end about itself is the same answer without the coupling.
+        let sd = source.get_sd(sd_info).map_err(|e| {
+            PreserveError::Other(format!("kacs_get_sd({}): {e}", source.path.quote()))
+        })?;
 
         // Strip inherited ACEs from any ACL requested only in its
         // no-inherited form. The full-ACL request wins if both are set.
@@ -676,8 +875,9 @@ pub fn copy_attributes(
             sd
         };
 
-        file::set_sd(None, dest, sd_info, &sd, at_flags)
-            .map_err(|e| PreserveError::Other(format!("kacs_set_sd({}): {e}", dest.quote())))?;
+        dest.set_sd(sd_info, &sd).map_err(|e| {
+            PreserveError::Other(format!("kacs_set_sd({}): {e}", dest.path.quote()))
+        })?;
     }
 
     // Executable-ness. Done after the SD copy so the dest's SD (which grants
@@ -685,7 +885,7 @@ pub fn copy_attributes(
     handle_preserve(attributes.exec, || -> PreserveResult<()> {
         #[cfg(unix)]
         {
-            apply_exec(&source_metadata, dest)?;
+            apply_exec(source_metadata, &dest)?;
         }
         Ok(())
     })?;
@@ -694,24 +894,20 @@ pub fn copy_attributes(
     // EXCEPT `security.peios.sd` (preserved via owner/dacl/sacl above).
     if matches!(attributes.security, Preserve::Yes { .. }) {
         #[cfg(all(unix, not(target_os = "android")))]
-        copy_security_xattrs(source, dest)?;
+        copy_security_xattrs(&source, &dest)?;
     }
 
     handle_preserve(attributes.timestamps, || -> PreserveResult<()> {
-        let atime = FileTime::from_last_access_time(&source_metadata);
-        let mtime = FileTime::from_last_modification_time(&source_metadata);
-        if dest.is_symlink() {
-            filetime::set_symlink_file_times(dest, atime, mtime)?;
-        } else {
-            filetime::set_file_times(dest, atime, mtime)?;
-        }
+        let atime = FileTime::from_last_access_time(source_metadata);
+        let mtime = FileTime::from_last_modification_time(source_metadata);
+        dest.set_times(atime, mtime)?;
         Ok(())
     })?;
 
     handle_preserve(attributes.xattrs, || -> PreserveResult<()> {
         #[cfg(all(unix, not(target_os = "android")))]
         {
-            copy_extended_attrs(source, dest)?;
+            copy_extended_attrs(&source, &dest)?;
         }
         Ok(())
     })?;
@@ -739,6 +935,147 @@ pub fn dacl_is_protected(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::symlink;
+    use tempfile::tempdir;
+
+    /// GHSA-8r5f-98ww-c4c5 / GHSA-p9fh-vm43-9xxc. Once the destination name has
+    /// been resolved, replacing it with a symlink must not redirect the `chmod`
+    /// that the attribute phase performs: `chmod(2)` follows symlinks, so the
+    /// old path form handed an attacker the destination's mode on an arbitrary
+    /// file the copying process could chmod.
+    #[test]
+    fn chmod_through_a_handle_cannot_be_redirected_by_a_swap() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        let victim = dir.path().join("victim");
+        File::create(&dest).unwrap();
+        File::create(&victim).unwrap();
+        fs::set_permissions(&dest, Permissions::from_mode(0o444)).unwrap();
+        fs::set_permissions(&victim, Permissions::from_mode(0o444)).unwrap();
+
+        let handle = FileHandle::open(&dest, "src -> dest").unwrap();
+
+        // The attacker wins the window: `dest` now names a symlink to `victim`.
+        let moved = dir.path().join("moved");
+        fs::rename(&dest, &moved).unwrap();
+        symlink(&victim, &dest).unwrap();
+
+        handle.set_mode(0o666).unwrap();
+
+        assert_eq!(
+            fs::metadata(&victim).unwrap().permissions().mode() & 0o777,
+            0o444,
+            "the chmod followed the symlink swapped in at the destination"
+        );
+        assert_eq!(
+            fs::metadata(&moved).unwrap().permissions().mode() & 0o777,
+            0o666,
+            "the chmod did not reach the pinned inode"
+        );
+    }
+
+    /// The same for extended attributes, which carry `security.capability` and
+    /// the `security.peios.*` namespace.
+    #[test]
+    fn xattrs_through_a_handle_cannot_be_redirected_by_a_swap() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        let victim = dir.path().join("victim");
+        File::create(&dest).unwrap();
+        File::create(&victim).unwrap();
+
+        let handle = FileHandle::open(&dest, "src -> dest").unwrap();
+        let name = OsString::from("user.peios_preserve_pin_test");
+        if handle.set_xattr(&name, b"pinned").is_err() {
+            // Filesystem without user extended attributes; nothing to test.
+            return;
+        }
+
+        let moved = dir.path().join("moved");
+        fs::rename(&dest, &moved).unwrap();
+        symlink(&victim, &dest).unwrap();
+
+        handle.set_xattr(&name, b"still pinned").unwrap();
+
+        assert_eq!(
+            xattr::get(&victim, &name).unwrap(),
+            None,
+            "the setxattr landed on the swapped-in symlink's target"
+        );
+        assert_eq!(
+            handle.get_xattr(&name).unwrap().as_deref(),
+            Some(&b"still pinned"[..])
+        );
+        assert_eq!(
+            xattr::get(&moved, &name).unwrap().as_deref(),
+            Some(&b"still pinned"[..])
+        );
+    }
+
+    /// A symlink end is never opened, and gets no `chmod` at all — the path
+    /// form would follow it onto the target.
+    #[test]
+    fn a_symlink_end_is_not_opened_and_is_never_chmodded() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        File::create(&target).unwrap();
+        fs::set_permissions(&target, Permissions::from_mode(0o444)).unwrap();
+        symlink(&target, &link).unwrap();
+
+        let handle = FileHandle::open(&link, "src -> link").unwrap();
+        assert!(handle.file.is_none());
+        assert!(handle.is_symlink());
+
+        handle.set_mode(0o777).unwrap();
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o444
+        );
+    }
+
+    /// A read-only destination is still openable, so the widen/restore that
+    /// `setxattr` needs keeps working through the descriptor.
+    #[test]
+    fn a_read_only_regular_file_is_still_pinned() {
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        File::create(&dest).unwrap();
+        fs::set_permissions(&dest, Permissions::from_mode(0o444)).unwrap();
+
+        let handle = FileHandle::open(&dest, "src -> dest").unwrap();
+        assert!(handle.file.is_some());
+        assert_eq!(handle.current_mode().unwrap() & 0o777, 0o444);
+
+        handle.set_mode(0o444 | 0o222).unwrap();
+        assert_eq!(handle.current_mode().unwrap() & 0o777, 0o666);
+        handle
+            .set_mode(handle.current_mode().unwrap() & !0o222)
+            .unwrap();
+        assert_eq!(handle.current_mode().unwrap() & 0o777, 0o444);
+    }
+
+    /// A directory destination is opened read-only: it cannot be opened for
+    /// writing, and `fsetxattr` checks write permission on the inode rather
+    /// than the open mode. Upstream 6372fd3b2 makes the same point.
+    #[test]
+    fn a_directory_end_is_pinned_read_only() {
+        let dir = tempdir().unwrap();
+        let sub = dir.path().join("sub");
+        fs::create_dir(&sub).unwrap();
+
+        let handle = FileHandle::open(&sub, "src -> sub").unwrap();
+        assert!(handle.file.is_some());
+        assert!(handle.metadata().is_dir());
+
+        let name = OsString::from("user.peios_preserve_dir_test");
+        if handle.set_xattr(&name, b"dirvalue").is_ok() {
+            assert_eq!(
+                handle.get_xattr(&name).unwrap().as_deref(),
+                Some(&b"dirvalue"[..])
+            );
+        }
+    }
 
     #[test]
     fn parse_iter_unions_attributes() {
@@ -766,7 +1103,10 @@ mod tests {
         assert!(matches!(diffed.dacl, Preserve::No { explicit: true }));
         assert!(matches!(diffed.sacl, Preserve::No { explicit: true }));
         // Untouched fields keep their original value.
-        assert!(matches!(diffed.timestamps, Preserve::Yes { required: true }));
+        assert!(matches!(
+            diffed.timestamps,
+            Preserve::Yes { required: true }
+        ));
     }
 
     #[test]
@@ -789,14 +1129,26 @@ mod tests {
 
     #[test]
     fn all_and_default_include_exec_required() {
-        assert!(matches!(Attributes::ALL.exec, Preserve::Yes { required: true }));
-        assert!(matches!(Attributes::DEFAULT.exec, Preserve::Yes { required: true }));
+        assert!(matches!(
+            Attributes::ALL.exec,
+            Preserve::Yes { required: true }
+        ));
+        assert!(matches!(
+            Attributes::DEFAULT.exec,
+            Preserve::Yes { required: true }
+        ));
     }
 
     #[test]
     fn implicit_preserves_exec_best_effort_and_nothing_else() {
-        assert!(matches!(Attributes::IMPLICIT.exec, Preserve::Yes { required: false }));
-        assert!(matches!(Attributes::IMPLICIT.timestamps, Preserve::No { .. }));
+        assert!(matches!(
+            Attributes::IMPLICIT.exec,
+            Preserve::Yes { required: false }
+        ));
+        assert!(matches!(
+            Attributes::IMPLICIT.timestamps,
+            Preserve::No { .. }
+        ));
         assert!(matches!(Attributes::IMPLICIT.owner, Preserve::No { .. }));
         // NONE (the explicit-`--preserve` baseline) preserves exec too: nothing.
         assert!(matches!(Attributes::NONE.exec, Preserve::No { .. }));

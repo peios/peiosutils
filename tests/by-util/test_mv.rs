@@ -3,7 +3,8 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 //
-// spell-checker:ignore mydir hardlinked tmpfs notty unwriteable
+// spell-checker:ignore mydir hardlinked tmpfs notty unwriteable SRCDATA DSTDATA REALDATA
+// spell-checker:ignore dirattr dirvalue setfattr getfattr
 
 use filetime::FileTime;
 use rstest::rstest;
@@ -698,6 +699,120 @@ fn test_mv_same_hardlink_backup_simple_destroy() {
         .arg("--b=simple")
         .fails()
         .stderr_contains("backing up 'test_mv_same_file_a' might destroy source");
+}
+
+/// The guard must compare the files, not how the operands were spelled.
+/// Comparing strings let `'a~'` versus `'./a'` slip through, and mv then
+/// destroyed the source and exited 0 with no diagnostic.
+#[test]
+#[cfg(all(unix, not(target_os = "android")))]
+fn test_mv_backup_simple_guard_ignores_spelling() {
+    for target in ["./test_mv_spell_a", "test_mv_spell_a"] {
+        let (at, mut ucmd) = at_and_ucmd!();
+        let source = "test_mv_spell_a~";
+        at.write(source, "SRCDATA");
+        at.write("test_mv_spell_a", "DSTDATA");
+
+        ucmd.arg(source)
+            .arg(target)
+            .arg("--backup=simple")
+            .fails()
+            .stderr_contains("might destroy source");
+
+        assert_eq!(
+            at.read(source),
+            "SRCDATA",
+            "mv destroyed the source when the target was spelled {target}"
+        );
+    }
+}
+
+/// ...but it must not fire for unrelated operands that merely look similar.
+#[test]
+#[cfg(all(unix, not(target_os = "android")))]
+fn test_mv_backup_simple_guard_allows_unrelated_source() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("test_mv_spell_src", "SRCDATA");
+    at.write("test_mv_spell_dst", "DSTDATA");
+
+    ucmd.arg("test_mv_spell_src")
+        .arg("test_mv_spell_dst")
+        .arg("--backup=simple")
+        .succeeds();
+
+    assert_eq!(at.read("test_mv_spell_dst"), "SRCDATA");
+    assert_eq!(at.read("test_mv_spell_dst~"), "DSTDATA");
+}
+
+/// A symlink source is a distinct file from the backup it points at, so the
+/// backup rename cannot destroy it. GNU allows this.
+#[test]
+#[cfg(all(unix, not(target_os = "android")))]
+fn test_mv_backup_simple_guard_allows_symlink_source() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("test_mv_sym_a", "DSTDATA");
+    at.write("test_mv_sym_real", "REALDATA");
+    at.symlink_file("test_mv_sym_real", "test_mv_sym_a~");
+
+    ucmd.arg("test_mv_sym_a~")
+        .arg("test_mv_sym_a")
+        .arg("--backup=simple")
+        .succeeds();
+}
+
+/// A hard link under another name shares the backup's inode but keeps the data
+/// alive after the rename, so the guard must not fire. GNU allows this.
+#[test]
+#[cfg(all(unix, not(target_os = "android")))]
+fn test_mv_backup_simple_guard_allows_hardlink_source() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("test_mv_hl_a", "DSTDATA");
+    at.write("test_mv_hl_a~", "SRCDATA");
+    at.hard_link("test_mv_hl_a~", "test_mv_hl_b");
+
+    ucmd.arg("test_mv_hl_b")
+        .arg("test_mv_hl_a")
+        .arg("--backup=simple")
+        .succeeds();
+
+    assert_eq!(at.read("test_mv_hl_a"), "SRCDATA");
+    assert_eq!(at.read("test_mv_hl_a~"), "DSTDATA");
+}
+
+/// The gate is uucore's, not mv's: `--backup=existing` falls back to a simple
+/// backup when no numbered backup is present, so it destroys the source just
+/// the same. mv used to check only `--backup=simple`.
+#[test]
+#[cfg(all(unix, not(target_os = "android")))]
+fn test_mv_backup_existing_guard_also_fires() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("test_mv_exist_a~", "SRCDATA");
+    at.write("test_mv_exist_a", "DSTDATA");
+
+    ucmd.arg("test_mv_exist_a~")
+        .arg("test_mv_exist_a")
+        .arg("--backup=existing")
+        .fails()
+        .stderr_contains("might destroy source");
+
+    assert_eq!(at.read("test_mv_exist_a~"), "SRCDATA");
+}
+
+/// A numbered backup picks a fresh name, so it can never clobber the source.
+#[test]
+#[cfg(all(unix, not(target_os = "android")))]
+fn test_mv_backup_numbered_guard_does_not_fire() {
+    let (at, mut ucmd) = at_and_ucmd!();
+    at.write("test_mv_num_a~", "SRCDATA");
+    at.write("test_mv_num_a", "DSTDATA");
+
+    ucmd.arg("test_mv_num_a~")
+        .arg("test_mv_num_a")
+        .arg("--backup=numbered")
+        .succeeds();
+
+    assert_eq!(at.read("test_mv_num_a"), "SRCDATA");
+    assert_eq!(at.read("test_mv_num_a.~1~"), "DSTDATA");
 }
 
 #[test]
@@ -2842,6 +2957,65 @@ fn test_mv_xattr_enotsup_silent() {
     }
 }
 
+/// Cross-device mv of a directory must preserve the directory's own xattrs.
+/// The fd-based xattr path has to open the destination read-only: a directory
+/// cannot be opened for writing, so a write-mode open would silently drop them.
+#[test]
+#[cfg(target_os = "linux")]
+fn test_mv_cross_device_dir_xattr_preserved() {
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+
+    at.mkdir("src_dir");
+    at.write("src_dir/file.txt", "content");
+
+    if !Command::new("setfattr")
+        .args([
+            "-n",
+            "user.dirattr",
+            "-v",
+            "dirvalue",
+            &at.plus_as_string("src_dir"),
+        ])
+        .status()
+        .is_ok_and(|s| s.success())
+    {
+        println!("test skipped: setfattr failed");
+        return;
+    }
+
+    let other_fs_tempdir =
+        TempDir::new_in("/dev/shm/").expect("Unable to create temp directory in /dev/shm");
+    let dst_path = other_fs_tempdir.path().join("dst_dir");
+
+    scene
+        .ucmd()
+        .arg("--preserve=xattrs")
+        .arg(at.plus_as_string("src_dir"))
+        .arg(dst_path.to_str().unwrap())
+        .succeeds()
+        .no_stderr();
+
+    let out = Command::new("getfattr")
+        .args([
+            "-n",
+            "user.dirattr",
+            "--only-values",
+            dst_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run getfattr on the moved directory");
+    assert!(
+        out.status.success(),
+        "directory xattr was not preserved across devices: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.stdout, b"dirvalue");
+}
+
 /// Test that symlinks inside directories are preserved during cross-device moves
 /// (not expanded into full copies of their targets)
 #[test]
@@ -3136,4 +3310,43 @@ fn test_mv_cross_device_preserves_ownership_recursive() {
         other_gid,
         "nested file gid should be preserved after cross-device move"
     );
+}
+
+/// The cross-device directory fallback removes the destination and recreates it.
+/// Recreation must fail closed: `create_dir_all` would accept a symlink-to-directory
+/// left at the path and move the whole source tree through it, outside the destination.
+///
+/// Regression test for GHSA-pp2g-c3j7-j725 (upstream 968401120).
+#[test]
+#[cfg(target_os = "linux")]
+fn test_mv_cross_device_dir_refuses_symlink_at_recreated_dest() {
+    use tempfile::TempDir;
+
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+
+    let src_dir =
+        TempDir::new_in("/dev/shm/").expect("Unable to create temp directory in /dev/shm");
+    let src = src_dir.path().join("srcdir");
+    std::fs::create_dir(&src).expect("create src");
+    std::fs::write(src.join("payload"), "PAYLOAD_FROM_SRC").expect("write payload");
+
+    at.mkdir("victim");
+    at.write("victim/guard", "PROTECTED_DATA");
+    at.symlink_dir("victim", "target");
+
+    // Whether this succeeds or fails, the invariant is that nothing from the
+    // source is written inside `victim`.
+    scene
+        .ucmd()
+        .arg("-T")
+        .arg(src.to_str().unwrap())
+        .arg("target")
+        .run();
+
+    assert!(
+        !at.file_exists("victim/payload"),
+        "cross-device dir move escaped the destination through a symlink"
+    );
+    assert_eq!(at.read("victim/guard"), "PROTECTED_DATA");
 }
