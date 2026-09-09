@@ -1,6 +1,6 @@
-# Runtime multicall binary, one symlink per applet, and stdbuf's preload
-# library under usr/libexec. Documentation and translations remain optional
-# in dev.peios.peiosutils-common.
+# Runtime multicall binary, one symlink per applet, and stdbuf's private
+# triplet-scoped preload library. Documentation and translations remain
+# optional in dev.peios.peiosutils-common.
 
 [package]
 name        = "dev.peios.peiosutils"
@@ -19,4 +19,4 @@ peiosutils = "<= 0.1.4-15"
 [files]
 "@source:LICENSE" = "usr/share/licenses/dev.peios.peiosutils/LICENSE"
 ":usr/bin/**"     = "usr/bin"
-":usr/libexec/**" = "usr/libexec"
+":usr/lib/x86_64-linux-peios/peiosutils/**" = "usr/lib/x86_64-linux-peios/peiosutils"
