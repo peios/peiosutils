@@ -3158,22 +3158,20 @@ fn test_mv_cross_device_file_symlink_preserved() {
     );
 }
 
-/// Find a supplementary group that differs from `current`.
-/// Non-root users can chgrp to any group they belong to.
-#[cfg(target_os = "linux")]
-fn find_other_group(current: u32) -> Option<u32> {
-    rustix::process::getgroups().ok()?.iter().find_map(|group| {
-        let gid = group.as_raw();
-        (gid != current).then_some(gid)
-    })
-}
-
-/// Test that group ownership is preserved during cross-device file moves.
-/// Uses chgrp to a supplementary group (no root needed).
-/// See https://github.com/uutils/coreutils/issues/9714
+/// A cross-device `mv` creates a new inode on the destination. On Peios that
+/// new file takes its identity from the destination: the security descriptor
+/// re-inherits from the target directory (the `--preserve` family carries the
+/// source's instead), and the POSIX uid/gid are simply the creator's, because
+/// KACS is the access gate and uid/gid carry no authority. What a plain `mv`
+/// does promise to carry is the data, the timestamps and the ordinary
+/// extended attributes (`MV_DEFAULT` in mv.rs).
+///
+/// Upstream's tests here asserted that a chgrp'd group survived the move
+/// (uutils/coreutils#9714). That is not Peios's contract; see ADVISORIES.toml,
+/// GHSA-p29p-xpv8-mh7g, for the decision.
 #[test]
 #[cfg(target_os = "linux")]
-fn test_mv_cross_device_preserves_ownership() {
+fn test_mv_cross_device_carries_data_and_timestamps() {
     use std::fs;
     use std::os::unix::fs::MetadataExt;
     use tempfile::TempDir;
@@ -3181,61 +3179,47 @@ fn test_mv_cross_device_preserves_ownership() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
 
-    at.write("owned_file", "owned content");
-    let file_path = at.plus("owned_file");
-
-    let original_meta = fs::metadata(&file_path).expect("Failed to get metadata");
-    let Some(other_gid) = find_other_group(original_meta.gid()) else {
-        println!("SKIPPED: no supplementary group available for chgrp");
-        return;
-    };
-
-    // chgrp to a different group (non-root users can do this for their own groups)
-    uucore::perms::wrap_chown(
-        &file_path,
-        &original_meta,
-        None,
-        Some(other_gid),
-        false,
-        uucore::perms::Verbosity::default(),
-    )
-    .expect("Failed to chgrp file");
-
-    let meta = fs::metadata(&file_path).expect("Failed to get metadata");
-    assert_eq!(meta.gid(), other_gid, "chgrp should have changed the gid");
+    at.write("moved_file", "moved content");
+    let file_path = at.plus("moved_file");
+    let stamp = FileTime::from_unix_time(1_000_000_000, 0);
+    filetime::set_file_times(&file_path, stamp, stamp).expect("Failed to set timestamps");
 
     // Force cross-filesystem move using /dev/shm (tmpfs)
     let target_dir =
         TempDir::new_in("/dev/shm/").expect("Unable to create temp directory in /dev/shm");
-    let target_file = target_dir.path().join("owned_file");
+    let target_file = target_dir.path().join("moved_file");
 
     scene
         .ucmd()
-        .arg("owned_file")
+        .arg("moved_file")
         .arg(target_file.to_str().unwrap())
         .succeeds()
         .no_stderr();
 
+    assert!(!at.file_exists("moved_file"), "source should be gone");
+    assert_eq!(
+        fs::read_to_string(&target_file).expect("Failed to read moved file"),
+        "moved content"
+    );
     let moved_meta = fs::metadata(&target_file).expect("Failed to get metadata of moved file");
     assert_eq!(
-        moved_meta.gid(),
-        other_gid,
-        "gid should be preserved after cross-device move (expected {other_gid}, got {})",
-        moved_meta.gid()
+        FileTime::from_last_modification_time(&moved_meta),
+        stamp,
+        "mtime should be preserved after cross-device move"
     );
+    // The new inode belongs to whoever created it, not to a carried-over owner.
     assert_eq!(
         moved_meta.uid(),
-        meta.uid(),
-        "uid should be preserved after cross-device move"
+        rustix::process::geteuid().as_raw(),
+        "a cross-device move creates the destination as the caller"
     );
 }
 
-/// Test that group ownership is preserved for files inside directories during cross-device moves.
-/// Uses chgrp to a supplementary group (no root needed).
-/// See https://github.com/uutils/coreutils/issues/9714
+/// The recursive form of the test above: every file in a moved tree keeps its
+/// data and timestamps; ownership is the caller's, as for any new inode.
 #[test]
 #[cfg(target_os = "linux")]
-fn test_mv_cross_device_preserves_ownership_recursive() {
+fn test_mv_cross_device_carries_data_and_timestamps_recursive() {
     use std::fs;
     use std::os::unix::fs::MetadataExt;
     use tempfile::TempDir;
@@ -3243,73 +3227,95 @@ fn test_mv_cross_device_preserves_ownership_recursive() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
 
-    at.mkdir("owned_dir");
-    at.mkdir("owned_dir/sub");
-    at.write("owned_dir/file1", "content1");
-    at.write("owned_dir/sub/file2", "content2");
-
-    let dir_meta = fs::metadata(at.plus("owned_dir")).expect("Failed to get metadata");
-    let Some(other_gid) = find_other_group(dir_meta.gid()) else {
-        println!("SKIPPED: no supplementary group available for chgrp");
-        return;
-    };
-
-    // chgrp all entries to a different group
-    for path in &[
-        "owned_dir",
-        "owned_dir/sub",
-        "owned_dir/file1",
-        "owned_dir/sub/file2",
-    ] {
-        let p = at.plus(path);
-        let m = fs::metadata(&p).expect("Failed to get metadata");
-        uucore::perms::wrap_chown(
-            &p,
-            &m,
-            None,
-            Some(other_gid),
-            false,
-            uucore::perms::Verbosity::default(),
-        )
-        .expect("Failed to chgrp");
+    at.mkdir("moved_dir");
+    at.mkdir("moved_dir/sub");
+    at.write("moved_dir/file1", "content1");
+    at.write("moved_dir/sub/file2", "content2");
+    let stamp = FileTime::from_unix_time(1_000_000_000, 0);
+    for path in &["moved_dir/file1", "moved_dir/sub/file2"] {
+        filetime::set_file_times(at.plus(path), stamp, stamp).expect("Failed to set timestamps");
     }
 
     // Force cross-filesystem move using /dev/shm (tmpfs)
     let target_dir =
         TempDir::new_in("/dev/shm/").expect("Unable to create temp directory in /dev/shm");
-    let target_path = target_dir.path().join("owned_dir");
+    let target_path = target_dir.path().join("moved_dir");
 
     scene
         .ucmd()
-        .arg("owned_dir")
+        .arg("moved_dir")
         .arg(target_path.to_str().unwrap())
         .succeeds()
         .no_stderr();
 
-    // Check ownership of the directory itself
-    let moved_dir_meta = fs::metadata(&target_path).expect("Failed to get dir metadata");
+    assert!(!at.dir_exists("moved_dir"), "source tree should be gone");
+    let uid = rustix::process::geteuid().as_raw();
+    for (relative, content) in [("file1", "content1"), ("sub/file2", "content2")] {
+        let moved = target_path.join(relative);
+        assert_eq!(
+            fs::read_to_string(&moved).expect("Failed to read moved file"),
+            content
+        );
+        let meta = fs::metadata(&moved).expect("Failed to get metadata");
+        assert_eq!(
+            FileTime::from_last_modification_time(&meta),
+            stamp,
+            "mtime of {relative} should be preserved after cross-device move"
+        );
+        assert_eq!(meta.uid(), uid, "{relative} is created as the caller");
+    }
     assert_eq!(
-        moved_dir_meta.gid(),
-        other_gid,
-        "directory gid should be preserved after cross-device move"
+        fs::metadata(&target_path)
+            .expect("Failed to get dir metadata")
+            .uid(),
+        uid,
+        "the moved directory is created as the caller"
     );
+}
 
-    // Check ownership of a file inside the directory
-    let file1_meta = fs::metadata(target_path.join("file1")).expect("Failed to get file1 metadata");
-    assert_eq!(
-        file1_meta.gid(),
-        other_gid,
-        "file gid should be preserved after cross-device move"
-    );
+/// Ownership is not carried across a cross-device move, so the setuid and
+/// setgid bits must not be either: a copy that kept them would be a set-id
+/// file owned by whoever ran `mv`. GNU strips them in the same situation.
+/// Upstream 37b1d11d0 (GHSA-6c4j-6pgg-xgg8); see ADVISORIES.toml,
+/// GHSA-p29p-xpv8-mh7g.
+#[test]
+#[cfg(target_os = "linux")]
+fn test_mv_cross_device_strips_setuid_and_setgid() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use tempfile::TempDir;
 
-    // Check ownership of a file in a subdirectory
-    let file2_meta =
-        fs::metadata(target_path.join("sub/file2")).expect("Failed to get file2 metadata");
-    assert_eq!(
-        file2_meta.gid(),
-        other_gid,
-        "nested file gid should be preserved after cross-device move"
-    );
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+
+    for (name, mode) in [("f6755", 0o6755), ("f4755", 0o4755), ("f2755", 0o2755)] {
+        at.write(name, "#!/bin/sh\n");
+        fs::set_permissions(at.plus(name), fs::Permissions::from_mode(mode))
+            .expect("Failed to set mode");
+        if fs::metadata(at.plus(name)).unwrap().permissions().mode() & 0o6000 == 0 {
+            println!("SKIPPED: filesystem does not keep set-id bits");
+            return;
+        }
+    }
+
+    // Force cross-filesystem move using /dev/shm (tmpfs)
+    let target_dir =
+        TempDir::new_in("/dev/shm/").expect("Unable to create temp directory in /dev/shm");
+
+    for name in ["f6755", "f4755", "f2755"] {
+        let target = target_dir.path().join(name);
+        scene
+            .ucmd()
+            .arg(name)
+            .arg(target.to_str().unwrap())
+            .succeeds()
+            .no_stderr();
+        let mode = fs::metadata(&target).expect("Failed to stat").permissions().mode() & 0o7777;
+        assert_eq!(
+            mode, 0o755,
+            "{name}: set-id bits must be stripped on a cross-device move, got {mode:o}"
+        );
+    }
 }
 
 /// The cross-device directory fallback removes the destination and recreates it.
