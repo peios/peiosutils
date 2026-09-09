@@ -108,6 +108,63 @@ fn test_nohup_creates_output_in_cwd() {
     assert!(content.contains("test output"));
 }
 
+// A nohup.out that nohup creates must be owner-only (0600), not left at the
+// umask default of 0644 where any other local user could read whatever the
+// detached job logged. Regression for GHSA-5gmx-24pj-xhwv / CVE-2026-35367.
+#[test]
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn test_nohup_output_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let ts = TestScenario::new(util_name!());
+    let at = &ts.fixtures;
+
+    ts.ucmd()
+        .terminal_simulation(true)
+        .args(&["echo", "test output"])
+        .succeeds();
+
+    sleep(std::time::Duration::from_millis(10));
+
+    assert!(at.file_exists("nohup.out"));
+    let mode = std::fs::metadata(at.plus_as_string("nohup.out"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600, "nohup.out has mode {mode:#o}, expected 0o600");
+}
+
+// An existing nohup.out keeps its own permissions, matching GNU.
+#[test]
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn test_nohup_existing_output_keeps_its_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let ts = TestScenario::new(util_name!());
+    let at = &ts.fixtures;
+
+    at.write("nohup.out", "existing content\n");
+    at.set_mode("nohup.out", 0o644);
+
+    ts.ucmd()
+        .terminal_simulation(true)
+        .args(&["echo", "new output"])
+        .succeeds();
+
+    sleep(std::time::Duration::from_millis(10));
+
+    let mode = std::fs::metadata(at.plus_as_string("nohup.out"))
+        .unwrap()
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        mode, 0o644,
+        "nohup re-permissioned a file it did not create"
+    );
+}
+
 // Test that nohup appends to existing nohup.out
 #[test]
 #[cfg(any(
