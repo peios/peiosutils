@@ -3,6 +3,7 @@
 # One entry per advisory: upstream (uutils/coreutils GitHub security advisories) or
 # dependency (RustSec, matched against Cargo.lock). An advisory that is not in this
 # file is untriaged. Statuses: fixed | not-affected | accepted | todo.
+# Current inventory: 67 total; 26 fixed, 39 not affected, 1 accepted, 1 todo.
 
 [[advisory]]
 id           = "GHSA-9rv8-9hvg-92mq"
