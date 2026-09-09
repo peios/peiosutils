@@ -13,7 +13,7 @@ use std::io::{self, BufWriter, Read, Seek, SeekFrom, Write};
 use std::num::TryFromIntError;
 #[cfg(unix)]
 use std::os::fd::AsFd;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use thiserror::Error;
 use uucore::display::{Quotable, print_verbatim};
 use uucore::error::{FromIo, UError, UResult, USimpleError};
@@ -447,43 +447,30 @@ fn pu_head(options: &HeadOptions) -> UResult<()> {
 
             Ok(())
         } else {
-            // Stat the path first so we know whether to print the header.
+            // When 0 bytes or 0 lines are requested, there is nothing to
+            // read, so we should succeed on directories just like GNU head
+            // does.
+            let zero_output = matches!(options.mode, Mode::FirstBytes(0) | Mode::FirstLines(0));
+
             // GNU head prints "==> name <==" for existing files and
             // directories, but NOT for nonexistent ones — those produce
             // only an error message.
-            let metadata = match Path::new(file).metadata() {
-                Ok(m) => m,
-                Err(err) => {
-                    show!(err.map_err_context(
-                        || translate!("head-error-cannot-open", "name" => file.quote())
-                    ));
-                    continue;
+            let mut print_header = || -> UResult<()> {
+                if (options.files.len() > 1 && !options.quiet) || options.verbose {
+                    if !first {
+                        writeln!(stdout)?;
+                    }
+                    write!(stdout, "==> ")?;
+                    print_verbatim(file).unwrap();
+                    writeln!(stdout, " <==")?;
+                    first = false;
                 }
+                Ok(())
             };
-            if (options.files.len() > 1 && !options.quiet) || options.verbose {
-                if !first {
-                    writeln!(stdout)?;
-                }
-                write!(stdout, "==> ")?;
-                print_verbatim(file).unwrap();
-                writeln!(stdout, " <==")?;
-                first = false;
-            }
-            // When 0 bytes or 0 lines are requested, there is nothing to
-            // read, so we should succeed on directories just like GNU head
-            // does. Skip opening the file entirely in that case (also
-            // avoids platform differences: on Windows, `File::open` on a
-            // directory fails with "Permission denied").
-            let zero_output = matches!(options.mode, Mode::FirstBytes(0) | Mode::FirstLines(0));
-            if metadata.is_dir() {
-                if !zero_output {
-                    show!(USimpleError::new(
-                        1,
-                        translate!("head-error-reading-file", "name" => file.quote(), "err" => "Is a directory")
-                    ));
-                }
-                continue;
-            }
+
+            // Open first, then take the metadata from the open descriptor, so
+            // the is-a-directory check and the read refer to the same inode.
+            // Stat'ing the path and opening it separately is a TOCTOU window.
             let mut file_handle = match File::open(file) {
                 Ok(f) => f,
                 Err(err) => {
@@ -493,6 +480,27 @@ fn pu_head(options: &HeadOptions) -> UResult<()> {
                     continue;
                 }
             };
+
+            let metadata = match file_handle.metadata() {
+                Ok(m) => m,
+                Err(err) => {
+                    show!(err.map_err_context(
+                        || translate!("head-error-cannot-open", "name" => file.quote())
+                    ));
+                    continue;
+                }
+            };
+
+            print_header()?;
+            if metadata.is_dir() {
+                if !zero_output {
+                    show!(USimpleError::new(
+                        1,
+                        translate!("head-error-reading-file", "name" => file.quote(), "err" => "Is a directory")
+                    ));
+                }
+                continue;
+            }
             head_file(&mut file_handle, options)?;
             Ok(())
         };
