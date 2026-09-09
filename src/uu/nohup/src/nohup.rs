@@ -12,6 +12,7 @@ use rustix::stdio::{dup2_stderr, dup2_stdin, dup2_stdout, stdout};
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, IsTerminal};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -118,15 +119,10 @@ pub fn uu_app() -> Command {
         .about(translate!("nohup-about"))
         .after_help(translate!("nohup-after-help"))
         .override_usage(format_usage(&translate!("nohup-usage")))
-        .arg(
-            Arg::new(OPT_SDDL)
-                .long("sddl")
-                .value_name("SDDL")
-                .help(
-                    "security descriptor (SDDL) for a nohup.out that nohup creates; \
+        .arg(Arg::new(OPT_SDDL).long("sddl").value_name("SDDL").help(
+            "security descriptor (SDDL) for a nohup.out that nohup creates; \
                      the default grants the owner only",
-                ),
-        )
+        ))
         .arg(
             Arg::new(options::CMD)
                 .hide(true)
@@ -177,7 +173,19 @@ fn try_open_nohup_file(path: &str, creator_sd: &CreatorSd) -> std::io::Result<Fi
     // create_new distinguishes a nohup.out that *nohup* made from a
     // pre-existing one: the creator descriptor is only ever applied to a
     // file nohup itself created.
-    let file = match OpenOptions::new().append(true).create_new(true).open(path) {
+    //
+    // The mode is 0600 from the open(2) itself, not from a later chmod, for
+    // the same reason the descriptor is stamped before any output reaches the
+    // file: POSIX nohup owes the owner a file nobody else can read, and the
+    // umask would otherwise leave it 0644 for the window between create and
+    // secure. `.mode()` only applies to a file this call creates; the
+    // pre-existing branch below leaves the mode alone, matching GNU.
+    let file = match OpenOptions::new()
+        .append(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)
+    {
         Ok(file) => {
             // Lock the fresh nohup.out down before any command output can
             // reach it. If that fails, unlink it — an under-secured
