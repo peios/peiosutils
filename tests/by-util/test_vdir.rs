@@ -18,6 +18,7 @@ fn test_vdir() {
 }
 
 #[test]
+#[ignore = "PEI-18: asserts GNU mode-bit columns; Peios ls prints security marks"]
 fn test_default_output() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;

@@ -692,9 +692,15 @@ fn test_du_dereference_args() {
         assert!(stdout.contains("sublink"));
     }
 
-    // Without the option
+    // Without the option du reports the link itself. A symlink's own
+    // allocation is filesystem-dependent: always 0 on tmpfs, and on ext4
+    // 0 only while the target fits inline (60 bytes) — the fixture's
+    // absolute target is longer than that, so there it costs a block.
+    // Derive the expectation from the link rather than assuming 0.
+    use std::os::unix::fs::MetadataExt;
+    let link_kib = at.symlink_metadata("sublink").blocks() / 2;
     let result = ts.ucmd().arg("-s").arg("sublink").succeeds();
-    result.stdout_contains("0\tsublink\n");
+    result.stdout_is(format!("{link_kib}\tsublink\n"));
 }
 
 #[cfg(target_vendor = "apple")]

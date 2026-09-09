@@ -36,7 +36,7 @@ fn binary_name_protection() {
         .arg(&bin)
         .arg("--version")
         .succeeds()
-        .stdout_contains("coreutils");
+        .stdout_contains("peiosutils");
 }
 
 #[test]
@@ -230,7 +230,10 @@ fn util_version() {
         assert_eq!(output.stderr, b"");
         let output_str = String::from_utf8(output.stdout).unwrap();
         let ver = env::var("CARGO_PKG_VERSION").unwrap();
-        assert_eq!(format!("coreutils {ver} (multi-call binary)\n"), output_str);
+        assert_eq!(
+            format!("peiosutils {ver} (multi-call binary)\n"),
+            output_str
+        );
     }
 }
 

@@ -120,6 +120,7 @@ fn test_shred_u() {
 }
 
 #[test]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_shred_force() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;

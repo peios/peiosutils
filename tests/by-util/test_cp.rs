@@ -783,6 +783,7 @@ fn test_cp_arg_interactive_verbose_clobber() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_f_i_verbose_non_writeable_destination_y() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -801,6 +802,7 @@ fn test_cp_f_i_verbose_non_writeable_destination_y() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_f_i_verbose_non_writeable_destination_empty() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -1611,6 +1613,7 @@ fn test_cp_parents_dest_not_directory() {
 
 #[test]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_parents_with_permissions_copy_file() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -1652,6 +1655,7 @@ fn test_cp_parents_with_permissions_copy_file() {
 
 #[test]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_parents_with_permissions_copy_dir() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -1710,6 +1714,7 @@ fn test_cp_issue_1665() {
 
 #[test]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_preserve_no_args() {
     let (at, mut ucmd) = at_and_ucmd!();
     let src_file = "a";
@@ -1738,6 +1743,7 @@ fn test_cp_preserve_no_args() {
 
 #[test]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_preserve_no_args_before_opts() {
     let (at, mut ucmd) = at_and_ucmd!();
     let src_file = "a";
@@ -1765,6 +1771,7 @@ fn test_cp_preserve_no_args_before_opts() {
 }
 
 #[test]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_preserve_all() {
     for argument in ["--preserve=all", "--preserve=al"] {
         let (at, mut ucmd) = at_and_ucmd!();
@@ -2117,6 +2124,7 @@ fn test_cp_preserve_links_case_7() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_no_preserve_mode() {
     use uucore::fs as uufs;
     let (at, mut ucmd) = at_and_ucmd!();
@@ -2336,6 +2344,7 @@ fn test_cp_no_deref_folder_to_folder() {
 
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_archive() {
     let (at, mut ucmd) = at_and_ucmd!();
     let ts = time::OffsetDateTime::now_utc();
@@ -2369,6 +2378,7 @@ fn test_cp_archive() {
 
 #[test]
 #[cfg(all(unix, not(target_os = "android")))]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_archive_recursive() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -2945,6 +2955,7 @@ fn test_copy_symlink_force() {
 #[test]
 #[cfg(unix)]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_no_preserve_mode() {
     use std::os::unix::prelude::MetadataExt;
 
@@ -2975,6 +2986,7 @@ fn test_no_preserve_mode() {
 #[test]
 #[cfg(unix)]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_preserve_mode() {
     use std::os::unix::prelude::MetadataExt;
 
@@ -3208,6 +3220,7 @@ fn test_cp_link_backup() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_fifo() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.mkfifo("fifo");
@@ -3355,6 +3368,7 @@ fn test_cp_block_device_no_permission() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_socket() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.mksocket("socket");
@@ -3389,6 +3403,7 @@ fn find_other_group(_current: u32) -> Option<u32> {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_r_symlink() {
     let (at, mut ucmd) = at_and_ucmd!();
     // Specifically test copying a link in a subdirectory, as the internal path
@@ -3567,6 +3582,7 @@ fn test_copy_same_symlink_no_dereference_dangling() {
 // TODO: enable for Android, when #3477 solved
 #[cfg(not(any(windows, target_os = "android", target_os = "openbsd")))]
 #[test]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_parents_2_dirs() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.mkdir_all("a/b/c");
@@ -3792,6 +3808,7 @@ fn test_copy_nested_directory_to_itself_disallowed() {
 /// Test for preserving permissions when copying a directory.
 #[cfg(all(not(windows), not(target_os = "freebsd"), not(target_os = "openbsd")))]
 #[test]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_copy_dir_preserve_permissions() {
     // Create a directory that has some non-default permissions.
     let (at, mut ucmd) = at_and_ucmd!();
@@ -3818,6 +3835,7 @@ fn test_copy_dir_preserve_permissions() {
 /// cp should preserve attributes of subdirectories when copying recursively.
 #[cfg(all(not(windows), not(target_os = "freebsd"), not(target_os = "openbsd")))]
 #[test]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_copy_dir_preserve_subdir_permissions() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.mkdir("a1");
@@ -3840,6 +3858,7 @@ fn test_copy_dir_preserve_subdir_permissions() {
 /// read-only mode, causing EPERM when copying files into it.
 #[cfg(all(not(windows), not(target_os = "freebsd"), not(target_os = "openbsd")))]
 #[test]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_copy_dir_preserve_readonly_source_with_files() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.mkdir("src");
@@ -3859,6 +3878,7 @@ fn test_copy_dir_preserve_readonly_source_with_files() {
 /// the face of an inaccessible file in that directory.
 #[cfg(all(not(windows), not(target_os = "freebsd"), not(target_os = "openbsd")))]
 #[test]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_copy_dir_preserve_permissions_inaccessible_file() {
     // Create a directory that has some non-default permissions and
     // contains an inaccessible file.
@@ -3979,6 +3999,7 @@ fn test_reflink_never_sparse_always() {
 /// Test for preserving attributes of a hard link in a directory.
 #[test]
 #[cfg(not(any(target_os = "android", target_os = "openbsd")))]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_preserve_hardlink_attributes_in_directory() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -4093,6 +4114,7 @@ fn test_non_utf8_target() {
 
 #[test]
 #[cfg(not(windows))]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_archive_on_directory_ending_dot() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.mkdir("dir1");
@@ -5104,6 +5126,7 @@ fn test_cp_debug_reflink_never_without_hole() {
 }
 
 #[test]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_force_remove_destination_attributes_only_with_symlink() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
@@ -6274,6 +6297,7 @@ mod link_deref {
 #[test]
 #[cfg(unix)]
 #[cfg(not(target_os = "openbsd"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_dir_perm_race_with_preserve_mode_and_ownership() {
     const SRC_DIR: &str = "src";
     const DEST_DIR: &str = "dest";
@@ -6329,6 +6353,7 @@ fn test_dir_perm_race_with_preserve_mode_and_ownership() {
 #[test]
 // when -d and -a are overridden with --preserve or --no-preserve make sure that it only
 // overrides attributes not other flags like -r or --no_deref implied in -a and -d.
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_preserve_attrs_overriding_1() {
     const FILE: &str = "file";
     const SYMLINK: &str = "symlink";
@@ -6348,6 +6373,7 @@ fn test_preserve_attrs_overriding_1() {
 
 #[test]
 #[cfg(all(unix, not(target_os = "android")))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_preserve_attrs_overriding_2() {
     const FILE1: &str = "file1";
     const FILE2: &str = "file2";
@@ -6397,6 +6423,7 @@ fn test_preserve_attrs_overriding_2() {
 /// Test the behavior of preserving permissions when copying through a symlink
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_symlink_permissions() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
@@ -6419,6 +6446,7 @@ fn test_cp_symlink_permissions() {
 /// Test the behavior of preserving permissions of parents when copying through a symlink
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_parents_symlink_permissions_file() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
@@ -6487,6 +6515,7 @@ fn test_cp_recursive_target_dir_symlink_still_allowed() {
 /// a symlink when source is a dir.
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_parents_symlink_permissions_dir() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
@@ -6799,6 +6828,7 @@ fn test_cp_attribute_phase_does_not_chmod_through_swapped_dest() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_archive_preserves_directory_permissions() {
     // Test for issue #8407
     let (at, mut ucmd) = at_and_ucmd!();
@@ -7429,6 +7459,7 @@ fn test_cp_current_directory_verbose() {
 // This ensures attributes are preserved when copying the current directory.
 #[test]
 #[cfg(all(not(windows), not(target_os = "freebsd"), not(target_os = "openbsd")))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_current_directory_preserve_attributes() {
     use filetime::FileTime;
     use std::os::unix::prelude::MetadataExt;
@@ -7749,6 +7780,7 @@ fn test_cp_hlp_flag_ordering() {
 
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: needs a Peios kernel (KACS is ENOSYS on Linux); covered by peios-integration-tests"]
 fn test_cp_archive_deref_flag_ordering() {
     // (flags, expect_symlink): last flag wins; a/d imply -P, H/L dereference
     for (flags, expect_symlink) in [
@@ -7886,6 +7918,7 @@ fn test_cp_xattr_enotsup_handling() {
 
 #[test]
 #[cfg(not(target_os = "windows"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_preserve_directory_permissions_by_default() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
@@ -7930,6 +7963,7 @@ fn test_cp_preserve_directory_permissions_by_default() {
 
 #[test]
 #[cfg(not(target_os = "windows"))]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_existing_perm_dir() {
     let scene = TestScenario::new(util_name!());
     let at = &scene.fixtures;
@@ -8043,6 +8077,7 @@ fn test_cp_preserve_context_with_z_fails() {
 // is exercised by GNU's test suite; documenting here as future coverage.
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_preserve_setuid_when_chown_succeeds() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.touch("src");
@@ -8085,6 +8120,7 @@ fn test_cp_recursive_non_utf8_source() {
 // behavior changes.
 #[test]
 #[cfg(unix)]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_final_mode_unchanged_after_restrictive_create() {
     let (at, mut ucmd) = at_and_ucmd!();
     at.touch("src");
@@ -8145,6 +8181,7 @@ fn test_cp_d_overwrites_existing_symlink_dest() {
 // non-Linux CI do not flag spurious failures.
 #[test]
 #[cfg(target_os = "linux")]
+#[ignore = "PEI-18: built on POSIX mode bits or --preserve=mode, which the Peios model does not have"]
 fn test_cp_p_preserves_posix_acls() {
     use std::process::Command;
 

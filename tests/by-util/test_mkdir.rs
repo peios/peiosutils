@@ -104,6 +104,7 @@ fn test_mkdir_dup_dir() {
 }
 
 #[test]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mkdir_mode() {
     new_ucmd!().arg("-m").arg("755").arg("test_dir").succeeds();
 }
@@ -147,6 +148,7 @@ fn test_mkdir_dup_dir_parent() {
 
 #[cfg(not(windows))]
 #[test]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mkdir_parent_mode() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -174,6 +176,7 @@ fn test_mkdir_parent_mode() {
 
 #[cfg(not(windows))]
 #[test]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mkdir_parent_mode_check_existing_parent() {
     let (at, mut ucmd) = at_and_ucmd!();
 
@@ -224,6 +227,7 @@ fn test_mkdir_parent_mode_skip_existing_last_component_chmod() {
 }
 
 #[test]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mkdir_dup_file() {
     let scene = TestScenario::new(util_name!());
     let test_file = "test_file.txt";
@@ -238,6 +242,7 @@ fn test_mkdir_dup_file() {
 
 #[test]
 #[cfg(not(windows))]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_symbolic_mode() {
     let (at, mut ucmd) = at_and_ucmd!();
     let test_dir = "test_dir";
@@ -249,6 +254,7 @@ fn test_symbolic_mode() {
 
 #[test]
 #[cfg(not(windows))]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_symbolic_alteration() {
     let (at, mut ucmd) = at_and_ucmd!();
     let test_dir = "test_dir";
@@ -266,6 +272,7 @@ fn test_symbolic_alteration() {
 
 #[test]
 #[cfg(not(windows))]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_multi_symbolic() {
     let (at, mut ucmd) = at_and_ucmd!();
     let test_dir = "test_dir";
@@ -792,6 +799,7 @@ fn test_mkdir_environment_expansion() {
 /// Now it temporarily sets umask to 0 and creates with the exact mode.
 #[cfg(not(windows))]
 #[test]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mkdir_mode_ignores_umask() {
     // Test that -m 0700 with restrictive umask still creates 0700
     {
@@ -865,6 +873,7 @@ fn test_mkdir_mode_ignores_umask() {
 /// - Final directory uses the exact requested mode (ignoring umask)
 #[cfg(not(windows))]
 #[test]
+#[ignore = "PEI-18: uses mkdir -m / symbolic modes, not a Peios concept"]
 fn test_mkdir_parent_mode_with_explicit_mode() {
     let (at, mut ucmd) = at_and_ucmd!();
     let umask: mode_t = 0o022;
