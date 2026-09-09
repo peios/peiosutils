@@ -3310,7 +3310,11 @@ fn test_mv_cross_device_strips_setuid_and_setgid() {
             .arg(target.to_str().unwrap())
             .succeeds()
             .no_stderr();
-        let mode = fs::metadata(&target).expect("Failed to stat").permissions().mode() & 0o7777;
+        let mode = fs::metadata(&target)
+            .expect("Failed to stat")
+            .permissions()
+            .mode()
+            & 0o7777;
         assert_eq!(
             mode, 0o755,
             "{name}: set-id bits must be stripped on a cross-device move, got {mode:o}"
