@@ -15,7 +15,7 @@ rustflags = ["-C", "target-feature=+crt-static"]
 # See feat_external_libstdbuf in src/uu/stdbuf/Cargo.toml. The packaged build
 # enables that feature and installs libstdbuf.so here (pekit.toml); the value
 # is compiled into stdbuf as its fallback search directory.
-LIBSTDBUF_DIR = "/usr/libexec/peiosutils"
+LIBSTDBUF_DIR = "/usr/lib/x86_64-linux-peios/peiosutils"
 
 # libpeios is deliberately not located here. Production builds consume the
 # declared dev.peios.libpeios-devel package through pkg-config; developers may
