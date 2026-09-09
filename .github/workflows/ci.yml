@@ -1,10 +1,18 @@
-# Minimal CI for peiosutils.
+# CI for peiosutils.
 #
-# Intentionally thin while the fork is in early peiosification. The uutils
-# upstream workflows were stripped because they target a different set of
-# platforms (Android, BSD, Windows, WSL, etc.) and run GNU-conformance suites
-# that we will increasingly diverge from. As individual utilities get
-# peiosified (uu_* → pu_*) we will expand this file.
+# The workspace links libpeios: the Peios-native applets (token, sd, reg,
+# logonse, mount, feat) bind its C ABI through peios-sys, whose build
+# script needs the library, its headers and the PKM UAPI headers. Without
+# them `cargo check --workspace` fails in the build script before a line
+# of peiosutils compiles — which is what this workflow did on every run
+# from June to September 2026 while two releases were cut underneath it.
+#
+# The library is built here from the same pinned revision the packaging
+# recipe (pekit.toml) vendors, read from that file so there is one pin.
+# Building libpeios materialises the locked pkm checkout in Cargo's git
+# cache, which is where the UAPI headers come from — the recipe does the
+# same. Nothing here is a substitute for the recipe's own test run inside
+# the packaging build; it is the gate that runs on every push.
 
 name: ci
 
@@ -21,8 +29,55 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: cargo check (default features)
-        run: cargo check --workspace
+        with:
+          workspaces: |
+            .
+            libpeios
+
+      # bindgen (peios-sys) needs libclang; the freestanding headers
+      # (stddef.h, stdint.h) come from gcc's own include dir, which
+      # libclang does not find on its own.
+      - name: Install bindgen prerequisites
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libclang-dev
+
+      - name: Build libpeios at the recipe's pinned revision
+        run: |
+          set -eu
+          LIBPEIOS_REV=$(sed -n 's/^LIBPEIOS_REV=\([0-9a-f]\{40\}\)$/\1/p' pekit.toml)
+          PKM_REV=$(sed -n 's/^PKM_REV=\([0-9a-f]\{40\}\)$/\1/p' pekit.toml)
+          test -n "$LIBPEIOS_REV" && test -n "$PKM_REV"
+          git clone --filter=blob:none --no-checkout https://github.com/peios/libpeios.git libpeios
+          git -C libpeios checkout --detach "$LIBPEIOS_REV"
+          cargo build --locked --manifest-path libpeios/Cargo.toml
+          # The soname is libpeios.so.0; cargo writes only libpeios.so.
+          ln -sf libpeios.so libpeios/target/debug/libpeios.so.0
+          test -f libpeios/target/debug/libpeios.so.0
+
+          # The UAPI headers: the pkm checkout libpeios's lockfile pinned,
+          # which the build above just materialised.
+          PKM_SHORT=$(printf %.7s "$PKM_REV")
+          PKM_ROOT=
+          for candidate in "$HOME"/.cargo/git/checkouts/pkm-*/"$PKM_SHORT"; do
+            [ -d "$candidate/uapi/pkm" ] || continue
+            PKM_ROOT=$candidate
+          done
+          test -n "$PKM_ROOT" || { echo "no pkm checkout at $PKM_REV in Cargo's git cache" >&2; exit 1; }
+          test -f "$PKM_ROOT/uapi/pkm/pkm.h"
+
+          {
+            echo "PEIOS_LIB_DIR=$PWD/libpeios/target/debug"
+            echo "PEIOS_INCLUDE=$PWD/libpeios/include"
+            echo "PKM_UAPI=$PKM_ROOT/uapi"
+            echo "BINDGEN_EXTRA_CLANG_ARGS=-isystem $(gcc -print-file-name=include)"
+            # A dependency's rpath does not reach the multicall binary the
+            # integration tests spawn; it has to find libpeios.so.0 at run time.
+            echo "LD_LIBRARY_PATH=$PWD/libpeios/target/debug"
+          } >> "$GITHUB_ENV"
+
+      - name: cargo check (workspace, locked)
+        run: cargo check --workspace --locked
+
       - name: cargo test (workspace, exclude GNU conformance)
-        run: cargo test --workspace --exclude uucore -- --skip gnu
-        continue-on-error: true
+        run: cargo test --workspace --locked --exclude uucore --no-fail-fast -- --skip gnu

@@ -104,6 +104,45 @@ An advisory that is not in the file is untriaged. Refreshing the list
 against the sources and diffing it against the file is a mechanical step
 (a pekit feature is proposed for it); the decisions are not.
 
+## Releasing
+
+A release is cut from `main` only when the `ci` workflow is green on the
+commit being released. That is the whole rule, and it exists because the
+opposite happened: the workflow was red from June to September 2026 (it
+could not build the workspace at all — see the note in
+`.github/workflows/ci.yml`), the red became the expected state, and 0.8.4
+and 0.8.5, both security releases, were cut underneath it with no run of
+the suite behind them beyond the nine-applet subset the packaging recipe
+tests.
+
+What "green" covers, so nobody mistakes it for less or more:
+
+- `cargo check --workspace --locked`, with libpeios built from the
+  revision `pekit.toml` pins.
+- `cargo test --workspace --exclude uucore -- --skip gnu`: every unit and
+  by-util test in the tree, on a plain Linux host. Applet behaviour that
+  needs a Peios kernel (KACS ioctls, security descriptors) cannot run
+  there and is exercised by `peios-integration-tests` against a booted
+  image instead.
+- The test step is not allowed to `continue-on-error`. A test that fails
+  because upstream's expectation differs from the Peios model is rewritten
+  to the Peios contract, or marked `#[ignore = "…"]` with the reason in
+  the source, never skipped from the workflow.
+
+To run the same thing locally, point the build at a libpeios checkout:
+
+```sh
+export PEIOS_LIB_DIR=…/libpeios/target/debug PEIOS_INCLUDE=…/libpeios/include
+export PKM_UAPI=…/pkm/uapi LD_LIBRARY_PATH=$PEIOS_LIB_DIR
+export BINDGEN_EXTRA_CLANG_ARGS="-isystem $(gcc -print-file-name=include)"
+cargo test --workspace --exclude uucore --no-fail-fast -- --skip gnu
+```
+
+A release commit (`chore(release): X.Y.Z`) carries the version bump in
+`Cargo.toml` and `Cargo.lock` and nothing else; fixes, test edits and
+advisory bookkeeping go in their own commits before it, so the release
+diff is reviewable at a glance and the tag points at exactly what CI ran.
+
 ## Procedure for a cherry-pick
 
 ```sh
