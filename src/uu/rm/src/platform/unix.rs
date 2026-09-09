@@ -11,6 +11,7 @@ use indicatif::ProgressBar;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{IsTerminal, stdin};
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use uucore::display::Quotable;
 use uucore::error::FromIo;
@@ -256,18 +257,23 @@ pub fn safe_remove_dir_recursive(
 ) -> bool {
     // Base case 1: this is a file or a symbolic link.
     // Use lstat to avoid a race between the check and the removal.
-    match fs::symlink_metadata(path) {
+    let (root_dev, root_ino) = match fs::symlink_metadata(path) {
         Ok(metadata) if !metadata.is_dir() => {
             return remove_file(path, options, progress_bar);
         }
-        Ok(_) => {}
+        Ok(metadata) => (metadata.dev(), metadata.ino()),
         Err(e) => {
             return show_removal_error(e, path);
         }
-    }
+    };
 
-    // Try to open the directory using DirFd for secure traversal
-    let dir_fd = match DirFd::open(path, SymlinkBehavior::Follow) {
+    // Open the directory with DirFd for secure traversal. The lstat above
+    // already established that the operand is a real directory, so a symlink
+    // here can only have been swapped in since, and following it would land on
+    // a tree we never named. GNU refuses the same way, opening directories
+    // O_NOFOLLOW under FTS_PHYSICAL. The descent is already hardened this way;
+    // this is the entry point.
+    let dir_fd = match DirFd::open(path, SymlinkBehavior::NoFollow) {
         Ok(fd) => fd,
         Err(e) => {
             // If we can't open the directory for safe traversal,
@@ -286,6 +292,26 @@ pub fn safe_remove_dir_recursive(
         }
     };
 
+    // O_NOFOLLOW only rejects a symlink as the *final* component, and a trailing
+    // slash ("dir/") makes the link stop being final, so it still resolves. Pin
+    // the result down by confirming the fd we hold is the inode we checked.
+    match dir_fd.metadata() {
+        Ok(m) if m.dev() == root_dev && m.ino() == root_ino => {}
+        Ok(_) => {
+            // Not necessarily a symlink: a directory swapped for another
+            // directory, or an automount that only lstat failed to trigger,
+            // lands here too, so don't claim ELOOP.
+            show_error!(
+                "{}",
+                translate!("rm-error-cannot-remove-changed", "file" => path.quote())
+            );
+            return true;
+        }
+        Err(e) => {
+            return show_removal_error(e, path);
+        }
+    }
+
     let error = safe_remove_dir_recursive_impl(path, &dir_fd, options);
 
     // After processing all children, remove the directory itself
@@ -293,9 +319,7 @@ pub fn safe_remove_dir_recursive(
         error
     } else {
         // Ask user permission if needed
-        if options.interactive == InteractiveMode::Always
-            && !prompt_dir_access(path, options)
-        {
+        if options.interactive == InteractiveMode::Always && !prompt_dir_access(path, options) {
             return false;
         }
 
@@ -364,8 +388,12 @@ pub fn safe_remove_dir_recursive_impl(path: &Path, dir_fd: &DirFd, options: &Opt
                 continue;
             }
 
-            // Recursively remove subdirectory using safe traversal
-            let child_dir_fd = match dir_fd.open_subdir(&entry_name, SymlinkBehavior::Follow) {
+            // Recursively remove subdirectory using safe traversal. rm never
+            // follows symlinks during recursion, so open with NoFollow: if an
+            // attacker swaps this just-stat'd directory for a symlink before the
+            // open, O_NOFOLLOW makes openat fail instead of descending off-tree
+            // and deleting unrelated files.
+            let child_dir_fd = match dir_fd.open_subdir(&entry_name, SymlinkBehavior::NoFollow) {
                 Ok(fd) => fd,
                 Err(e) => {
                     // If we can't open the subdirectory for safe traversal,
