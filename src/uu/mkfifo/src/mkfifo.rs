@@ -81,8 +81,11 @@ fn make_fifo(path: &str, sd: Option<&CreatorSd>) -> UResult<()> {
         )
     })?;
 
+    // `apply_to_created`, not `apply_to`: the FIFO was just created, so a
+    // symlink at that name can only be one an attacker swapped in, and
+    // following it would stamp our descriptor on their target instead.
     if let Some(sd) = sd
-        && let Err(e) = sd.apply_to(Path::new(path))
+        && let Err(e) = sd.apply_to_created(Path::new(path))
     {
         let _ = fs::remove_file(path);
         return Err(e);

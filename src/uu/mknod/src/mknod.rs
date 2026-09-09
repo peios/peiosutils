@@ -139,8 +139,11 @@ fn make_node(name: &str, file_type: &FileType, dev: u64, sd: Option<&CreatorSd>)
         },
     )?;
 
+    // `apply_to_created`, not `apply_to`: the node was just created, so a
+    // symlink at that name can only be one an attacker swapped in, and
+    // following it would stamp our descriptor on their target instead.
     if let Some(sd) = sd
-        && let Err(e) = sd.apply_to(Path::new(name))
+        && let Err(e) = sd.apply_to_created(Path::new(name))
     {
         let _ = fs::remove_file(name);
         return Err(e);
