@@ -6,11 +6,7 @@
 name        = "dev.peios.peiosutils"
 description = "Peios core userspace utilities and native security, registry, storage, and boot tools"
 
-[provides]
-peiosutils = "{{version}}-1"
 
-[replaces]
-peiosutils = "<= 0.1.4-15"
 
 [dependencies]
 # mount and lsblk dlopen libblkid rather than gaining a DT_NEEDED entry.

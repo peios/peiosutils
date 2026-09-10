@@ -3,11 +3,7 @@ name         = "dev.peios.peiosutils-debugsource"
 architecture = "noarch"
 description  = "Debug sources for peiosutils"
 
-[provides]
-peiosutils-debugsource = "{{version}}-1"
 
-[replaces]
-peiosutils-debugsource = "<= 0.1.4-15"
 
 [dependencies]
 "dev.peios.peiosutils-debuginfo" = "= {{version}}-1"
