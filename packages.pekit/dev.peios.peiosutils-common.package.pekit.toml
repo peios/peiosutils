@@ -5,11 +5,7 @@ name         = "dev.peios.peiosutils-common"
 architecture = "noarch"
 description  = "Manual pages, shell completions, and translations for peiosutils"
 
-[provides]
-peiosutils-common = "{{version}}-1"
 
-[replaces]
-peiosutils-common = "<= 0.1.4-15"
 
 [files]
 "@source:LICENSE"                  = "usr/share/licenses/dev.peios.peiosutils-common/LICENSE"

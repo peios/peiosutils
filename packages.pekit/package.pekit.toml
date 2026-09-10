@@ -1,6 +1,5 @@
 # Shared metadata for the qualified peiosutils package family. 0.8.0-1 is the
-# first production release built against the libpeios 0.5 ABI baseline; each
-# package fragment carries the migration from its unqualified predecessor.
+# first production release built against the libpeios 0.5 ABI baseline.
 
 format = "peipkg"
 
