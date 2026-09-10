@@ -1,7 +1,8 @@
 // upgrade-peios ~ (peiosutils) — entry point.
 //
-// A Peios release is a package: the edition package (peios-experimental,
-// later peios-pro and friends) whose version is the OS version and whose
+// A Peios release is a package: the edition package
+// (dev.peios.peios-experimental, later dev.peios.peios-pro and friends)
+// whose version is the OS version and whose
 // dependency closure is the base system. Moving a system to the next
 // release is therefore a package upgrade — but not *only* a package
 // upgrade. The package manager is deliberately weak: installing a package
@@ -22,11 +23,12 @@
 // re-stages the seeds and applies whatever is still queued; a system
 // already current does nothing.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use uucore::error::{UResult, USimpleError};
@@ -62,7 +64,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     Usage(String),
     NoRelease(String),
-    Peipkg(Option<i32>),
+    Peipkg {
+        operation: &'static str,
+        code: Option<i32>,
+    },
+    PeipkgQuery(String),
     Seeds(String),
     Apply(Option<i32>),
 }
@@ -70,11 +76,11 @@ pub enum Error {
 impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Usage(_) => 1,
-            Error::NoRelease(_) => 2,
-            Error::Peipkg(_) => 3,
-            Error::Seeds(_) => 4,
-            Error::Apply(_) => 5,
+            Self::Usage(_) => 1,
+            Self::NoRelease(_) => 2,
+            Self::Peipkg { .. } | Self::PeipkgQuery(_) => 3,
+            Self::Seeds(_) => 4,
+            Self::Apply(_) => 5,
         }
     }
 }
@@ -82,9 +88,13 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Usage(m) | Error::NoRelease(m) | Error::Seeds(m) => f.write_str(m),
-            Error::Peipkg(code) => write!(f, "peipkg upgrade failed{}", exit_suffix(*code)),
-            Error::Apply(code) => write!(f, "reg apply failed{}", exit_suffix(*code)),
+            Self::Usage(m) | Self::NoRelease(m) | Self::PeipkgQuery(m) | Self::Seeds(m) => {
+                f.write_str(m)
+            }
+            Self::Peipkg { operation, code } => {
+                write!(f, "peipkg {operation} failed{}", exit_suffix(*code))
+            }
+            Self::Apply(code) => write!(f, "reg apply failed{}", exit_suffix(*code)),
         }
     }
 }
@@ -152,11 +162,7 @@ pub fn uu_app() -> ClapCommand {
 }
 
 fn run(m: &ArgMatches) -> Result<()> {
-    let root = PathBuf::from(
-        m.get_one::<String>("root")
-            .map(String::as_str)
-            .unwrap_or("/"),
-    );
+    let root = PathBuf::from(m.get_one::<String>("root").map_or("/", String::as_str));
     let live = root == Path::new("/");
     let on_reboot = m.get_flag("on-reboot") || !live;
     let mut out = io::stdout().lock();
@@ -164,14 +170,17 @@ fn run(m: &ArgMatches) -> Result<()> {
     let edition = edition(&root)?;
 
     if !m.get_flag("seeds-only") {
-        writeln!(out, "upgrade-peios: upgrading {edition}").ok();
-        let mut cmd = Command::new("peipkg");
-        if !live {
-            cmd.arg("--root").arg(&root);
+        let installed = installed_packages(&root, live)?;
+        let operation = edition_operation(&edition, &installed)?;
+        match &operation {
+            EditionOperation::Install { legacy, concrete } => {
+                writeln!(out, "upgrade-peios: migrating {legacy} to {concrete}").ok();
+            }
+            EditionOperation::Upgrade { concrete } => {
+                writeln!(out, "upgrade-peios: upgrading {concrete}").ok();
+            }
         }
-        cmd.arg("upgrade")
-            .arg(&edition)
-            .arg("--bypass-alternate-upgrade");
+        let mut cmd = peipkg_command(&root, live, &operation);
         if m.get_flag("yes") {
             cmd.arg("--yes");
         }
@@ -179,7 +188,10 @@ fn run(m: &ArgMatches) -> Result<()> {
             .status()
             .map_err(|e| Error::Usage(format!("cannot run peipkg: {e}")))?;
         if !status.success() {
-            return Err(Error::Peipkg(status.code()));
+            return Err(Error::Peipkg {
+                operation: operation.verb(),
+                code: status.code(),
+            });
         }
     }
 
@@ -218,10 +230,16 @@ fn run(m: &ArgMatches) -> Result<()> {
     Ok(())
 }
 
-/// The edition package name, from os-release: `peios-<VARIANT_ID>`. The
-/// edition package is what wrote os-release, so this is the package
-/// database's own answer read from the file it owns.
-fn edition(root: &Path) -> Result<String> {
+#[derive(Debug, Eq, PartialEq)]
+struct Edition {
+    legacy: String,
+    concrete: String,
+}
+
+/// The edition identities derived from os-release. Current packages use
+/// `dev.peios.peios-<VARIANT_ID>`; `peios-<VARIANT_ID>` is retained only long
+/// enough to migrate an installed pre-qualification package.
+fn edition(root: &Path) -> Result<Edition> {
     let path = root.join("usr/lib/os-release");
     let text = fs::read_to_string(&path)
         .map_err(|e| Error::NoRelease(format!("{}: {e}", path.display())))?;
@@ -241,11 +259,203 @@ fn edition(root: &Path) -> Result<String> {
         )));
     }
     match variant {
-        Some(v) if !v.is_empty() => Ok(format!("peios-{v}")),
+        Some(v) if !v.is_empty() => {
+            let legacy = format!("peios-{v}");
+            Ok(Edition {
+                concrete: format!("dev.peios.{legacy}"),
+                legacy,
+            })
+        }
         _ => Err(Error::NoRelease(format!(
             "{}: no VARIANT_ID; cannot tell which edition is installed",
             path.display()
         ))),
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct InstalledPackage {
+    #[serde(rename = "Name")]
+    name: String,
+}
+
+/// Read the package database through peipkg's stable JSON interface. Looking
+/// at os-release alone cannot distinguish an old package from its qualified
+/// successor because both intentionally write the same system identity.
+fn installed_packages(root: &Path, live: bool) -> Result<HashSet<String>> {
+    let mut cmd = Command::new("peipkg");
+    add_root_args(&mut cmd, root, live);
+    let output = cmd
+        .args(["list", "--json"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::inherit())
+        .output()
+        .map_err(|e| Error::PeipkgQuery(format!("cannot query installed packages: {e}")))?;
+    if !output.status.success() {
+        return Err(Error::PeipkgQuery(format!(
+            "peipkg list failed{}",
+            exit_suffix(output.status.code())
+        )));
+    }
+    let packages: Vec<InstalledPackage> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| Error::PeipkgQuery(format!("peipkg list returned invalid JSON: {e}")))?;
+    Ok(packages.into_iter().map(|p| p.name).collect())
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum EditionOperation {
+    Install { legacy: String, concrete: String },
+    Upgrade { concrete: String },
+}
+
+impl EditionOperation {
+    fn verb(&self) -> &'static str {
+        match self {
+            Self::Install { .. } => "install",
+            Self::Upgrade { .. } => "upgrade",
+        }
+    }
+}
+
+/// Pick a concrete package operation. Peipkg intentionally never follows a
+/// `provides` edge for a named upgrade, so the one-time rename is an install
+/// of the qualified package; its bounded `replaces` declaration removes the
+/// legacy package in the same transaction. Every subsequent run upgrades the
+/// qualified concrete name normally.
+fn edition_operation(edition: &Edition, installed: &HashSet<String>) -> Result<EditionOperation> {
+    match (
+        installed.contains(&edition.legacy),
+        installed.contains(&edition.concrete),
+    ) {
+        (true, false) => Ok(EditionOperation::Install {
+            legacy: edition.legacy.clone(),
+            concrete: edition.concrete.clone(),
+        }),
+        (false, true) => Ok(EditionOperation::Upgrade {
+            concrete: edition.concrete.clone(),
+        }),
+        (true, true) => Err(Error::NoRelease(format!(
+            "both {} and {} are installed; refusing an ambiguous edition upgrade",
+            edition.legacy, edition.concrete
+        ))),
+        (false, false) => Err(Error::NoRelease(format!(
+            "neither {} nor {} is installed; os-release and the package database disagree",
+            edition.legacy, edition.concrete
+        ))),
+    }
+}
+
+fn peipkg_command(root: &Path, live: bool, operation: &EditionOperation) -> Command {
+    let mut cmd = Command::new("peipkg");
+    add_root_args(&mut cmd, root, live);
+    match operation {
+        EditionOperation::Install { concrete, .. } => {
+            cmd.arg("install").arg(concrete);
+        }
+        EditionOperation::Upgrade { concrete } => {
+            cmd.arg("upgrade").arg(concrete);
+        }
+    }
+    cmd.arg("--bypass-alternate-upgrade");
+    cmd
+}
+
+fn add_root_args(cmd: &mut Command, root: &Path, live: bool) {
+    if !live {
+        cmd.arg("--root").arg(root);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    fn edition() -> Edition {
+        Edition {
+            legacy: "peios-experimental".into(),
+            concrete: "dev.peios.peios-experimental".into(),
+        }
+    }
+
+    fn names(values: &[&str]) -> HashSet<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    fn command_args(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(OsStr::to_string_lossy)
+            .map(std::borrow::Cow::into_owned)
+            .collect()
+    }
+
+    #[test]
+    fn legacy_edition_is_migrated_by_installing_the_concrete_successor() {
+        let operation = edition_operation(&edition(), &names(&["peios-experimental"])).unwrap();
+        assert_eq!(
+            operation,
+            EditionOperation::Install {
+                legacy: "peios-experimental".into(),
+                concrete: "dev.peios.peios-experimental".into(),
+            }
+        );
+        let command = peipkg_command(Path::new("/mnt/system"), false, &operation);
+        assert_eq!(command.get_program(), OsStr::new("peipkg"));
+        assert_eq!(
+            command_args(&command),
+            [
+                "--root",
+                "/mnt/system",
+                "install",
+                "dev.peios.peios-experimental",
+                "--bypass-alternate-upgrade",
+            ]
+        );
+    }
+
+    #[test]
+    fn qualified_edition_uses_a_concrete_named_upgrade() {
+        let operation =
+            edition_operation(&edition(), &names(&["dev.peios.peios-experimental"])).unwrap();
+        assert_eq!(
+            operation,
+            EditionOperation::Upgrade {
+                concrete: "dev.peios.peios-experimental".into(),
+            }
+        );
+        let command = peipkg_command(Path::new("/"), true, &operation);
+        assert_eq!(
+            command_args(&command),
+            [
+                "upgrade",
+                "dev.peios.peios-experimental",
+                "--bypass-alternate-upgrade",
+            ]
+        );
+    }
+
+    #[test]
+    fn ambiguous_or_missing_package_database_state_is_refused() {
+        let both = names(&["peios-experimental", "dev.peios.peios-experimental"]);
+        assert!(matches!(
+            edition_operation(&edition(), &both),
+            Err(Error::NoRelease(message)) if message.contains("both")
+        ));
+        assert!(matches!(
+            edition_operation(&edition(), &HashSet::new()),
+            Err(Error::NoRelease(message)) if message.contains("neither")
+        ));
+    }
+
+    #[test]
+    fn peipkg_json_names_are_decoded_without_coupling_to_other_fields() {
+        let packages: Vec<InstalledPackage> = serde_json::from_slice(
+            br#"[{"Name":"peios-experimental","Version":"2026.8-9","Architecture":"x86_64","Origin":"peios","orphaned":false}]"#,
+        )
+        .unwrap();
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].name, "peios-experimental");
     }
 }
 
