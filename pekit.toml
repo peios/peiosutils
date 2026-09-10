@@ -184,7 +184,8 @@ TARGET=$PEKIT_OUT/target
 # not allowed to obscure failures in Peios's intentionally divergent model.
 cargo test --release --locked --offline --target-dir "$TARGET" \
   -p pu_token -p pu_logonse -p pu_mount -p pu_lsblk \
-  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep -p pu_mkuki
+  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep -p pu_mkuki \
+  -p pu_upgrade_peios
 
 # stdbuf preloads libstdbuf.so into the command it runs. The shipped build
 # installs that library under a triplet-scoped private library directory and
@@ -260,6 +261,7 @@ test -d "$(TMPDIR="$SMOKE" "$BIN" mktemp -d)"
 "$BIN" token --help >/dev/null
 "$BIN" token adjust --help | grep -F interactivity-scope >/dev/null
 "$BIN" logonse --help >/dev/null
+"$BIN" upgrade-peios --help >/dev/null
 # stdbuf must find the preload library where the package installs it. The
 # build root has no installed triplet library tree, so exercise the other documented
 # lookup, beside the executable, with a temporary copy.
