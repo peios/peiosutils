@@ -179,13 +179,7 @@ export CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$PREFIX_MAPS"
 
 TARGET=$PEKIT_OUT/target
 
-# Unit coverage for the Peios-native ABI users and the applets required during
-# early boot. Broader GNU-conformance tests remain upstream-oriented and are
-# not allowed to obscure failures in Peios's intentionally divergent model.
-cargo test --release --locked --offline --target-dir "$TARGET" \
-  -p pu_token -p pu_logonse -p pu_mount -p pu_lsblk \
-  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep -p pu_mkuki \
-  -p pu_upgrade_peios
+# Unit coverage runs from the gated test target below.
 
 # stdbuf preloads libstdbuf.so into the command it runs. The shipped build
 # installs that library under a triplet-scoped private library directory and
@@ -245,30 +239,6 @@ for directory in src/uu/*/locales; do
   done
 done
 
-# Installed-payload smoke tests catch multicall dispatch and loader failures,
-# including the removed pre-0.5 peios_token_session_id symbol that prompted
-# this rebuild.
-BIN=$PEKIT_OUT/$BINDIR/peiosutils
-test "$(printf 'closure-ok\n' | "$BIN" cat)" = closure-ok
-test "$("$BIN" dirname /usr/lib/test)" = /usr/lib
-SMOKE=$PEKIT_OUT/.smoke
-mkdir -p "$SMOKE"
-test -d "$(TMPDIR="$SMOKE" "$BIN" mktemp -d)"
-"$BIN" sleep 0
-"$BIN" lsblk --help >/dev/null
-"$BIN" mount --help >/dev/null
-"$BIN" mkuki --help | grep -F -- --kernel-dir >/dev/null
-"$BIN" token --help >/dev/null
-"$BIN" token adjust --help | grep -F interactivity-scope >/dev/null
-"$BIN" logonse --help >/dev/null
-"$BIN" upgrade-peios --help >/dev/null
-# stdbuf must find the preload library where the package installs it. The
-# build root has no installed triplet library tree, so exercise the other documented
-# lookup, beside the executable, with a temporary copy.
-cp "$PEKIT_OUT/$STDBUFLIBDIR/libstdbuf.so" "$PEKIT_OUT/$BINDIR/libstdbuf.so"
-test "$(printf 'preload-ok\n' | "$BIN" stdbuf -oL "$BIN" cat)" = preload-ok
-rm -f "$PEKIT_OUT/$BINDIR/libstdbuf.so"
-
 # Split build-ID-indexed DWARF from the preload library too, into the same
 # build-id tree; its sources are the applet's own and are already retained.
 LIB=$PEKIT_OUT/$STDBUFLIBDIR/libstdbuf.so
@@ -320,6 +290,103 @@ done
 rm -f "$LIST"
 test -n "$(find "$DEBUG_ROOT" -type f -print -quit)"
 
+'''
+
+[test]
+needs = ["vendor", "main"]
+gate = true
+command = '''
+set -eu
+set -o pipefail 2>/dev/null || true
+for tool in cargo rustc gcc readelf pkg-config; do
+  command -v "$tool" >/dev/null || { echo "missing required peiosutils test tool: $tool" >&2; exit 1; }
+done
+SRC=$(pwd -P)
+BINDIR=usr/bin
+SHAREDIR=usr/share
+STDBUFLIBDIR=usr/lib/x86_64-linux-peios/peiosutils
+DEBUG_PREFIX=/usr/src/debug/dev.peios.peiosutils
+export CARGO_HOME=$PEKIT_OUT/cargo-home
+mkdir -p "$CARGO_HOME"
+cp "$PEKIT_VENDOR_OUT/cargo-config.toml" "$CARGO_HOME/config.toml"
+
+# Recreate the same provider-specific ABI environment used by the release build.
+if [ "${PEKIT_NATIVE_ROOT:-0}" = 1 ]; then
+  test "$(pkg-config --modversion peios)" = 0.5.0
+  LIBPEIOS_DIR=$(pkg-config --variable=libdir peios)
+  export LIBCLANG_PATH=/usr/lib/x86_64-linux-peios
+else
+  RUST_VERSION=1.98.1
+  RUST_BASE=rust-$RUST_VERSION-x86_64-unknown-linux-gnu
+  RUST_TOOLCHAIN=$PEKIT_OUT/rust-toolchain
+  sh "$PEKIT_VENDOR_OUT/rust-dist/$RUST_BASE/install.sh" \
+    --prefix="$RUST_TOOLCHAIN" \
+    --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu \
+    --disable-ldconfig
+  export PATH="$RUST_TOOLCHAIN/bin:$PATH"
+  BOOTSTRAP=$PEKIT_OUT/libpeios-bootstrap
+  BOOTSTRAP_CARGO=$PEKIT_OUT/libpeios-cargo-home
+  mkdir -p "$BOOTSTRAP" "$BOOTSTRAP_CARGO"
+  cp "$PEKIT_VENDOR_OUT/libpeios-cargo-config.toml" "$BOOTSTRAP_CARGO/config.toml"
+  CARGO_HOME="$BOOTSTRAP_CARGO" cargo build --release --locked --offline \
+    --manifest-path "$PEKIT_VENDOR_OUT/libpeios/Cargo.toml" \
+    --target-dir "$BOOTSTRAP/target"
+  mkdir -p "$BOOTSTRAP/lib" "$BOOTSTRAP/include/peios"
+  cp "$BOOTSTRAP/target/release/libpeios.so" "$BOOTSTRAP/lib/libpeios.so.0"
+  ln -s libpeios.so.0 "$BOOTSTRAP/lib/libpeios.so"
+  cp "$PEKIT_VENDOR_OUT/libpeios/include/peios.h" "$BOOTSTRAP/include/"
+  cp "$PEKIT_VENDOR_OUT/libpeios/include/peios/"*.h "$BOOTSTRAP/include/peios/"
+  export PEIOS_LIB_DIR="$BOOTSTRAP/lib"
+  export PEIOS_INCLUDE="$BOOTSTRAP/include"
+  export PKM_UAPI="$PEKIT_VENDOR_OUT/pkm-uapi"
+  LIBPEIOS_DIR=$BOOTSTRAP/lib
+fi
+export LD_LIBRARY_PATH="$LIBPEIOS_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export BINDGEN_EXTRA_CLANG_ARGS="-isystem $(gcc -print-file-name=include) ${BINDGEN_EXTRA_CLANG_ARGS:-}"
+export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$PEKIT_WORKSPACE_ROOT=$DEBUG_PREFIX/.workspace --remap-path-prefix=$PEKIT_OUT_BASE=$DEBUG_PREFIX/.build --remap-path-prefix=$PEKIT_VENDOR_OUT/vendor=$DEBUG_PREFIX/vendor --remap-path-prefix=$SRC=$DEBUG_PREFIX"
+TARGET=$PEKIT_OUT/target
+# Unit coverage for the Peios-native ABI users and the applets required during
+# early boot. Broader GNU-conformance tests remain upstream-oriented and are
+# not allowed to obscure failures in Peios's intentionally divergent model.
+cargo test --release --locked --offline --target-dir "$TARGET" \
+  -p pu_token -p pu_logonse -p pu_mount -p pu_lsblk \
+  -p pu_cat -p pu_dirname -p pu_mktemp -p pu_sleep -p pu_mkuki \
+  -p pu_upgrade_peios
+
+
+# The remaining checks exercise the exact staged package output.
+PEKIT_OUT="$PEKIT_MAIN_OUT"
+BIN=$PEKIT_OUT/$BINDIR/peiosutils
+LIB=$PEKIT_OUT/$STDBUFLIBDIR/libstdbuf.so
+LIB_BUILD_ID=$(readelf -n "$LIB" | sed -n 's/^[[:space:]]*Build ID: //p')
+LIB_DEBUG=$PEKIT_OUT/usr/lib/debug/.build-id/$(printf %s "$LIB_BUILD_ID" | cut -c1-2)/$(printf %s "$LIB_BUILD_ID" | cut -c3-).debug
+BUILD_ID=$(readelf -n "$BIN" | sed -n 's/^[[:space:]]*Build ID: //p')
+DEBUG=$PEKIT_OUT/usr/lib/debug/.build-id/$(printf %s "$BUILD_ID" | cut -c1-2)/$(printf %s "$BUILD_ID" | cut -c3-).debug
+APPLETS=$("$BIN" --list)
+# Installed-payload smoke tests catch multicall dispatch and loader failures,
+# including the removed pre-0.5 peios_token_session_id symbol that prompted
+# this rebuild.
+BIN=$PEKIT_OUT/$BINDIR/peiosutils
+test "$(printf 'closure-ok\n' | "$BIN" cat)" = closure-ok
+test "$("$BIN" dirname /usr/lib/test)" = /usr/lib
+SMOKE=$PEKIT_OUT/.smoke
+mkdir -p "$SMOKE"
+test -d "$(TMPDIR="$SMOKE" "$BIN" mktemp -d)"
+"$BIN" sleep 0
+"$BIN" lsblk --help >/dev/null
+"$BIN" mount --help >/dev/null
+"$BIN" mkuki --help | grep -F -- --kernel-dir >/dev/null
+"$BIN" token --help >/dev/null
+"$BIN" token adjust --help | grep -F interactivity-scope >/dev/null
+"$BIN" logonse --help >/dev/null
+"$BIN" upgrade-peios --help >/dev/null
+# stdbuf must find the preload library where the package installs it. The
+# build root has no installed triplet library tree, so exercise the other documented
+# lookup, beside the executable, with a temporary copy.
+cp "$PEKIT_OUT/$STDBUFLIBDIR/libstdbuf.so" "$PEKIT_OUT/$BINDIR/libstdbuf.so"
+test "$(printf 'preload-ok\n' | "$BIN" stdbuf -oL "$BIN" cat)" = preload-ok
+rm -f "$PEKIT_OUT/$BINDIR/libstdbuf.so"
+
 # ELF, ABI, package-split and path-leak policy.
 readelf -h "$BIN" | grep -E 'Type:[[:space:]]+DYN' >/dev/null
 readelf -lW "$BIN" | grep 'GNU_RELRO' >/dev/null
@@ -365,6 +432,33 @@ test -n "$(find "$PEKIT_OUT/$SHAREDIR/bash-completion/completions" -type f -prin
 rm -rf "$SMOKE"
 '''
 
+[test.dependencies.peipkg]
+"org.git.kernel.dash"      = "*"
+"org.gnu.coreutils"        = "*"
+"org.gnu.findutils"        = "*"
+"org.gnu.grep"             = "*"
+"org.gnu.sed"              = "*"
+"org.rust-lang.rust"       = ">= 1.98.1"
+"org.gnu.gcc"              = ">= 16, < 17"
+"org.gnu.binutils"         = "*"
+"org.sourceware.debugedit" = "*"
+"org.llvm.clang-devel"     = ">= 22.1.8, < 23"
+"org.pkgconf.pkgconf"      = "*"
+"dev.peios.libpeios-devel" = "= 0.5.0-1"
+
+[test.dependencies.apt]
+dash           = "*"
+coreutils      = "*"
+findutils      = "*"
+grep           = "*"
+sed            = "*"
+cargo          = "*"
+rustc          = "*"
+gcc            = "*"
+binutils       = "*"
+debugedit      = "*"
+"libclang-dev" = "*"
+pkgconf        = "*"
 [build.main.dependencies.peipkg]
 "org.git.kernel.dash"      = "*"
 "org.gnu.coreutils"        = "*"

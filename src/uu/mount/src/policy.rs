@@ -10,7 +10,9 @@
 //! failure the fd is simply dropped and nothing is ever attached with an
 //! unintended policy (§8.3) — no rollback. `kacs_set_mount_policy` resolves the
 //! superblock via `fget_raw`, which accepts the O_PATH-style `fsmount` fd
-//! (provium-verified, see test-suite mount-newapi).
+//! (provium-verified: `peios-integration-tests` runs this exact sequence in
+//! `tests/helpers/kacs.lua`'s `new_mount`, asserted by
+//! `PKM *facs.storage.set-mount-policy`).
 
 use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd};
 
@@ -70,11 +72,7 @@ fn parse_template(sddl: Option<&[u8]>) -> Result<Option<peios::security::Securit
         .map_err(|_| MountError::Usage("--synth-sddl must be valid SDDL text".to_string()))?;
     let sd = peios::security::sddl::parse(text)
         .map_err(|e| MountError::Usage(format!("invalid --synth-sddl: {e}")))?;
-    let has_owner = sd
-        .view()
-        .ok()
-        .and_then(|v| v.owner().map(|_| ()))
-        .is_some();
+    let has_owner = sd.view().ok().and_then(|v| v.owner().map(|_| ())).is_some();
     if !has_owner {
         return Err(MountError::Usage(
             "--synth-sddl must include an owner (e.g. O:SY)".to_string(),
@@ -109,7 +107,10 @@ fn dup(fd: BorrowedFd<'_>) -> Result<OwnedFd> {
     // SAFETY: dup of a valid fd; the result is a fresh owned descriptor.
     let raw = unsafe { libc::dup(fd.as_raw_fd()) };
     if raw < 0 {
-        return Err(MountError::from_syscall("dup", std::io::Error::last_os_error()));
+        return Err(MountError::from_syscall(
+            "dup",
+            std::io::Error::last_os_error(),
+        ));
     }
     // SAFETY: `raw` is a fresh, owned fd from dup.
     Ok(unsafe { OwnedFd::from_raw_fd(raw) })
