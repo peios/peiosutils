@@ -237,9 +237,6 @@ fn print_stub_info() {
 /// path. During an upgrade, zero or multiple candidates merely make that
 /// rebuild fail; the resident watcher retries after the next directory event.
 fn watch(cfg: &Config, debounce_secs: u64) -> Result<(), Box<dyn Error>> {
-    // Build once up front so the UKI is current before the watch begins.
-    rebuild(cfg);
-
     let targets = watch_targets(cfg);
 
     // Guard the one self-retriggering case the non-recursive watch can't avoid:
@@ -277,6 +274,11 @@ fn watch(cfg: &Config, debounce_secs: u64) -> Result<(), Box<dyn Error>> {
             .watch(&target.path, mode)
             .map_err(|e| format!("cannot watch {}: {e}", target.path.display()))?;
     }
+
+    // Arm every watch before the initial build. Otherwise an input update in
+    // the gap between that build and watcher registration can be missed, leaving
+    // the UKI stale until an unrelated later event happens to trigger a rebuild.
+    rebuild(cfg);
     eprintln!(
         "mkuki: watching {} input dir(s) (debounce {debounce_secs}s) — Ctrl-C to stop",
         targets.len(),

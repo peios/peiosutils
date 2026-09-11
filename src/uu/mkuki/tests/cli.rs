@@ -266,18 +266,14 @@ fn watch_adopts_a_replaced_release_directory() {
         .arg(&out)
         .arg("--watch")
         .arg("--debounce")
-        .arg("0")
+        .arg("1")
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .unwrap();
     let _watcher = KillOnDrop(child);
 
     wait_for_payload(&out, b"old-directory-kernel");
-    // The initial image is written immediately before the watches are armed.
-    // Give the child enough time to enter its receive loop before changing the
-    // directory tree.
-    thread::sleep(Duration::from_millis(100));
 
     fs::create_dir_all(&new_release).unwrap();
     fs::write(
