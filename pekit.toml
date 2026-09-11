@@ -178,6 +178,7 @@ export CFLAGS="${CFLAGS:+$CFLAGS }$PREFIX_MAPS"
 export CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$PREFIX_MAPS"
 
 TARGET=$PEKIT_OUT/target
+BIN=$PEKIT_OUT/$BINDIR/peiosutils
 
 # Unit coverage runs from the gated test target below.
 
