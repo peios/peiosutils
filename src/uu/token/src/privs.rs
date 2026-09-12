@@ -1,64 +1,101 @@
 // Privilege-name table helpers.
 //
-// This table was inlined from the old `libp_token::uapi::PRIVILEGES` because
-// the `peios`/`peios-sys` crates shipped only typed `Privileges` flag constants
-// and no name table. That is no longer true — `peios::security::Privileges`
-// now carries the names, derived from the ABI headers so no bit number is
-// written out by hand — and this copy should be deleted in favour of it. It
-// cannot be yet: this crate pins `peios` to git tag v0.2.0, which predates the
-// table, so the switch waits on that pin moving.
+// This table used to be a hand-written copy of the old
+// `libp_token::uapi::PRIVILEGES`, and it drifted, twice. First `SeBackup` (17),
+// `SeRemoteShutdown` (24) and `SeSystemProfile` (11) were simply absent;
+// because `entries()` filtered *by* this table, a token holding any of them did
+// not show them, so `token show` under-reported a real token with no indication
+// anything was missing, which read as a policy failure rather than a display
+// one. That is why `entries()` now walks the mask rather than the table. Then
+// `SeManageVolume` (28) went missing the same way and printed as
+// `<privilege bit 28>` on a booted image (PEI-1077).
 //
-// Until then, treat this as a mirror that is known to drift, and note what the
-// drift already cost: `SeBackup` (17), `SeRemoteShutdown` (24) and
-// `SeSystemProfile` (11) were simply absent. Because `entries()` filtered *by
-// this table*, a token holding any of them did not show them — `token show`
-// under-reported a real token by two privileges with no indication anything
-// was missing, which read as a policy failure rather than a display one. That
-// is why `entries()` now walks the mask rather than the table.
+// So the table is no longer written here. It is derived from
+// `peios::security::Privileges`, whose own bits come from the ABI headers, plus
+// the handful of privileges the headers name that `Privileges` has no constant
+// for yet — and those take their bits from `peios_sys` rather than from a
+// literal. Nothing below writes a bit number by hand, which is the point: a
+// name↔bit mapping typed out in two places drifts silently, and a wrong bit
+// still *is* a bit.
 
-/// (bit_index, name) for every named KACS privilege.
-///
-/// Bit numbers are the ABI's, from `pkm/uapi/pkm/token.h`.
-const PRIVILEGES: &[(u32, &str)] = &[
-    (2, "SeCreateToken"),
-    (3, "SeAssignPrimaryToken"),
-    (4, "SeLockMemory"),
-    (5, "SeIncreaseQuota"),
-    (7, "SeTcb"),
-    (8, "SeSecurity"),
-    (10, "SeLoadDriver"),
-    (11, "SeSystemProfile"),
-    (12, "SeSystemTime"),
-    (13, "SeProfileSingleProcess"),
-    (14, "SeIncreaseBasePriority"),
-    (17, "SeBackup"),
-    (18, "SeRestore"),
-    (19, "SeShutdown"),
-    (20, "SeDebug"),
-    (21, "SeAudit"),
-    (23, "SeChangeNotify"),
-    (24, "SeRemoteShutdown"),
-    (29, "SeImpersonate"),
-    (35, "SeCreateSymbolicLink"),
-    // 63 was SeBindPrivilegedPort; retired for port reservations, not reused.
+use std::sync::OnceLock;
+
+use peios::security::Privileges;
+
+/// Privileges the ABI header names but `peios::security::Privileges` has no
+/// constant for (PEI-186). Their bits still come from the header, through
+/// `peios_sys`, so this list adds names and never bit numbers. Drop an entry
+/// here when `Privileges` grows the matching constant.
+const UNNAMED_BY_PEIOS_RS: &[(u64, &str)] = &[
+    (
+        peios_sys::KACS_SE_TAKE_OWNERSHIP_PRIVILEGE as u64,
+        "SeTakeOwnership",
+    ),
+    (
+        peios_sys::KACS_SE_SYSTEM_PROFILE_PRIVILEGE as u64,
+        "SeSystemProfile",
+    ),
+    (peios_sys::KACS_SE_RELABEL_PRIVILEGE as u64, "SeRelabel"),
 ];
+
+/// (bit_index, name) for every named KACS privilege, in bit order.
+///
+/// Names are the short form the applet displays — `peios-rs`'s canonical
+/// `SeXxxPrivilege` with the `Privilege` suffix removed.
+fn privileges() -> &'static [(u32, &'static str)] {
+    static TABLE: OnceLock<Vec<(u32, &'static str)>> = OnceLock::new();
+    TABLE.get_or_init(|| {
+        let derived = Privileges::all_named().filter_map(|(name, privilege)| {
+            let bits = privilege.bits();
+            // A canonical name describes exactly one bit; anything else is not
+            // a privilege this table can address by LUID.
+            (bits.count_ones() == 1)
+                .then(|| (bits.trailing_zeros(), strip_privilege_suffix(name)))
+        });
+        let extra = UNNAMED_BY_PEIOS_RS
+            .iter()
+            .map(|(mask, name)| (mask.trailing_zeros(), *name));
+
+        let mut table: Vec<(u32, &'static str)> = derived.chain(extra).collect();
+        table.sort_unstable_by_key(|(bit, _)| *bit);
+        table
+    })
+}
+
+/// Drop a trailing `Privilege`, matched case-insensitively, from a privilege
+/// name. `SeDebugPrivilege` and `sedebugprivilege` both become the short form
+/// the applet displays; a name that is only the suffix is left alone.
+fn strip_privilege_suffix(name: &str) -> &str {
+    const SUFFIX: &str = "Privilege";
+    let Some(head_len) = name.len().checked_sub(SUFFIX.len()).filter(|n| *n > 0) else {
+        return name;
+    };
+    match (name.get(..head_len), name.get(head_len..)) {
+        (Some(head), Some(tail)) if tail.eq_ignore_ascii_case(SUFFIX) => head,
+        _ => name,
+    }
+}
 
 /// Name → bit index. Case-insensitive.
 pub fn bit_for_name(name: &str) -> Option<u32> {
-    PRIVILEGES
+    // Both the short form the applet prints (`SeDebug`) and the canonical form
+    // the rest of Peios writes (`SeDebugPrivilege`) are accepted, so an
+    // operator can paste a name out of the documentation.
+    let short = strip_privilege_suffix(name);
+    privileges()
         .iter()
-        .find(|(_, n)| n.eq_ignore_ascii_case(name))
+        .find(|(_, n)| n.eq_ignore_ascii_case(short))
         .map(|(b, _)| *b)
 }
 
-/// Bit index → name (the `SeXxxPrivilege` form).
+/// Bit index → name (the short `SeXxx` form).
 pub fn name_for_bit(bit: u32) -> Option<&'static str> {
-    PRIVILEGES.iter().find(|(b, _)| *b == bit).map(|(_, n)| *n)
+    privileges().iter().find(|(b, _)| *b == bit).map(|(_, n)| *n)
 }
 
 /// All privilege (bit, name) tuples.
 pub fn all() -> impl Iterator<Item = (u32, &'static str)> {
-    PRIVILEGES.iter().copied()
+    privileges().iter().copied()
 }
 
 /// Parse a LUID/name from a CLI token. Accepts:
@@ -228,17 +265,76 @@ mod tests {
 
     #[test]
     fn no_two_privileges_share_a_bit_or_a_name() {
-        let mut bits: Vec<u32> = PRIVILEGES.iter().map(|(b, _)| *b).collect();
+        let mut bits: Vec<u32> = privileges().iter().map(|(b, _)| *b).collect();
         bits.sort_unstable();
         let before = bits.len();
         bits.dedup();
         assert_eq!(before, bits.len(), "two entries share a bit");
 
-        let mut names: Vec<String> =
-            PRIVILEGES.iter().map(|(_, n)| n.to_ascii_lowercase()).collect();
+        let mut names: Vec<String> = privileges()
+            .iter()
+            .map(|(_, n)| n.to_ascii_lowercase())
+            .collect();
         names.sort();
         let before = names.len();
         names.dedup();
         assert_eq!(before, names.len(), "two entries share a name");
+    }
+
+    /// PEI-1077: bit 28 printed as `<privilege bit 28>` on a booted image
+    /// because the hand-written table jumped from 24 to 29.
+    #[test]
+    fn manage_volume_is_nameable() {
+        assert_eq!(name_for_bit(28), Some("SeManageVolume"));
+        assert_eq!(bit_for_name("SeManageVolume"), Some(28));
+
+        let snap = PrivSnapshot {
+            present: peios_sys::KACS_SE_MANAGE_VOLUME_PRIVILEGE as u64,
+            enabled: peios_sys::KACS_SE_MANAGE_VOLUME_PRIVILEGE as u64,
+            enabled_by_default: 0,
+            used: 0,
+        };
+        let entries: Vec<_> = snap.entries().collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].label(), "SeManageVolume");
+    }
+
+    /// The table is derived, so every name `peios-rs` knows must be in it at
+    /// the bit `peios-rs` gives it. This is the assertion that makes the two
+    /// unable to drift: adding a privilege to `Privileges` adds it here.
+    #[test]
+    fn every_privilege_peios_rs_names_is_in_the_table() {
+        for (canonical, privilege) in Privileges::all_named() {
+            let bit = privilege.bits().trailing_zeros();
+            let short = canonical.strip_suffix("Privilege").unwrap_or(canonical);
+            assert_eq!(
+                name_for_bit(bit),
+                Some(short),
+                "{canonical} (bit {bit}) is missing or misnamed"
+            );
+            assert_eq!(bit_for_name(canonical), Some(bit), "{canonical} by name");
+        }
+    }
+
+    /// The privileges the ABI header names that `Privileges` has no constant
+    /// for yet (PEI-186) are still nameable here.
+    #[test]
+    fn the_privileges_peios_rs_cannot_name_are_still_in_the_table() {
+        assert_eq!(name_for_bit(9), Some("SeTakeOwnership"));
+        assert_eq!(name_for_bit(11), Some("SeSystemProfile"));
+        assert_eq!(name_for_bit(32), Some("SeRelabel"));
+    }
+
+    /// Both spellings parse: the short form the applet prints and the
+    /// canonical form the specifications and the rest of Peios write.
+    #[test]
+    fn both_the_short_and_the_canonical_spelling_parse() {
+        assert_eq!(parse_bit("SeDebug"), Ok(20));
+        assert_eq!(parse_bit("SeDebugPrivilege"), Ok(20));
+        assert_eq!(parse_bit("sedebugprivilege"), Ok(20));
+        // The canonical spelling is `SeSystemtimePrivilege`; the table used to
+        // print `SeSystemTime`, which nothing else in Peios wrote.
+        assert_eq!(name_for_bit(12), Some("SeSystemtime"));
+        assert_eq!(parse_bit("SeSystemTime"), Ok(12));
     }
 }
