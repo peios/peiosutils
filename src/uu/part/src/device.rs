@@ -14,8 +14,10 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use crate::error::{PartError, Result};
 
@@ -23,6 +25,24 @@ use crate::error::{PartError, Result};
 const BLKRRPART: libc::c_ulong = 0x125F;
 /// `BLKSSZGET` — logical sector size.
 const BLKSSZGET: libc::c_ulong = 0x1268;
+
+/// How long `reread_partition_table` keeps asking after the kernel answers
+/// `EBUSY`, and how it spaces the attempts.
+///
+/// Writing a GPT makes the kernel publish the new partition nodes, and whatever
+/// probes new block devices — `blkid` out of eudev, on an installed system —
+/// opens one straight away. A `BLKRRPART` landing in that window is refused
+/// even though nothing lasting holds the disk, which took an install down after
+/// the disk had already been repartitioned (PEI-654). `partprobe` and `sfdisk`
+/// retry for the same reason. The budget is short because the only hold it is
+/// meant to outlast is a probe, and a real mount should be reported promptly
+/// rather than waited on.
+const REREAD_BUSY_BUDGET: Duration = Duration::from_millis(3_000);
+/// The first wait after an `EBUSY`, doubling up to [`REREAD_MAX_WAIT`].
+const REREAD_FIRST_WAIT: Duration = Duration::from_millis(10);
+/// The longest single wait, so the disk is re-asked several times a second
+/// rather than once at the end of the budget.
+const REREAD_MAX_WAIT: Duration = Duration::from_millis(250);
 
 /// Default sector size for a regular file, which has no geometry of its own.
 pub const FILE_SECTOR_SIZE: usize = 512;
@@ -150,28 +170,149 @@ impl Device {
     /// ships none.
     ///
     /// A regular file has no kernel-side table, so this is a no-op there.
+    ///
+    /// `EBUSY` is retried for [`REREAD_BUSY_BUDGET`] rather than reported at
+    /// once: the common cause is a probe holding a partition for a moment, not
+    /// a hold the operator can do anything about.
     pub fn reread_partition_table(&mut self) -> Result<()> {
         if !self.is_block {
             return Ok(());
         }
-        // SAFETY: BLKRRPART takes no argument and the fd is a live block device.
-        let rc = unsafe { libc::ioctl(self.file.as_raw_fd(), BLKRRPART) };
-        if rc != 0 {
-            let e = std::io::Error::last_os_error();
-            // EBUSY means something still holds a partition open. The table on
-            // disk is correct; it is the kernel's view that is stale, and
-            // saying so is more useful than a bare errno.
-            if e.raw_os_error() == Some(libc::EBUSY) {
-                return Err(PartError::Refused(format!(
-                    "{}: the table was written, but the kernel will not re-read it while a \
-                     partition is in use; detach or reboot before formatting",
-                    self.path.display()
-                )));
+        let fd = self.file.as_raw_fd();
+        let outcome = retry_while_busy(
+            REREAD_BUSY_BUDGET,
+            || {
+                // SAFETY: BLKRRPART takes no argument and the fd is a live block device.
+                let rc = unsafe { libc::ioctl(fd, BLKRRPART) };
+                if rc == 0 {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::last_os_error())
+                }
+            },
+            std::thread::sleep,
+        );
+        match outcome {
+            Ok(()) => Ok(()),
+            // The table on disk is correct; it is the kernel's view that is
+            // stale, and saying so is more useful than a bare errno.
+            Err(e) if e.raw_os_error() == Some(libc::EBUSY) => {
+                Err(PartError::Refused(busy_message(&self.path)))
             }
-            return Err(io_err(&self.path, e));
+            Err(e) => Err(io_err(&self.path, e)),
         }
-        Ok(())
     }
+}
+
+/// Call `attempt` until it stops answering `EBUSY`, the budget runs out, or it
+/// fails some other way.
+///
+/// Sleeping is a parameter so the schedule can be tested without spending the
+/// budget: the retry policy is the part worth proving, and it is not observable
+/// from outside an ioctl that only a real disk can refuse.
+fn retry_while_busy<A, S>(
+    budget: Duration,
+    mut attempt: A,
+    mut sleep: S,
+) -> std::io::Result<()>
+where
+    A: FnMut() -> std::io::Result<()>,
+    S: FnMut(Duration),
+{
+    let mut waited = Duration::ZERO;
+    let mut wait = REREAD_FIRST_WAIT;
+    loop {
+        match attempt() {
+            Err(e) if e.raw_os_error() == Some(libc::EBUSY) && waited < budget => {
+                // Never sleep past the budget: the caller asked for a bounded
+                // wait, and overshooting it on the last nap is still overshoot.
+                let nap = wait.min(budget - waited);
+                sleep(nap);
+                waited += nap;
+                wait = (wait * 2).min(REREAD_MAX_WAIT);
+            }
+            other => return other,
+        }
+    }
+}
+
+/// The message for a `BLKRRPART` the kernel still refuses once the whole retry
+/// budget is spent.
+///
+/// It names what is holding the disk, because the operator's next move depends
+/// on which kind of hold it is: a mount is theirs to undo, while nothing
+/// identifiable means the disk was still being probed, and the answer there is
+/// to run the command again rather than to go looking for a mount that does not
+/// exist. The old wording advised "detach or reboot" in both cases, which was
+/// wrong advice exactly when the tool was wrong.
+fn busy_message(path: &Path) -> String {
+    let held = held_partitions(path);
+    let millis = REREAD_BUSY_BUDGET.as_millis();
+    if held.is_empty() {
+        format!(
+            "{}: the table was written, but the kernel would not re-read it within {millis}ms. \
+             No partition of it is mounted, so something was still probing the disk; run the \
+             command again, or reboot before formatting",
+            path.display()
+        )
+    } else {
+        format!(
+            "{}: the table was written, but the kernel would not re-read it within {millis}ms: \
+             {}. Release it or reboot before formatting",
+            path.display(),
+            held.join("; ")
+        )
+    }
+}
+
+/// Which partitions of `path` something is holding, described for a human.
+///
+/// Two sources, because the two holds look different. A mount is in
+/// `/proc/mounts` and is the operator's to undo. An exclusive open — `mkfs`,
+/// another `part` — appears in no table, but an `O_EXCL` open of the node is
+/// refused `EBUSY`, which names it. A plain non-exclusive probe, the case the
+/// retry above exists for, shows up in neither; by the time the budget has run
+/// out it has almost always gone, and saying nothing is held is then the honest
+/// answer rather than a gap.
+fn held_partitions(path: &Path) -> Vec<String> {
+    let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
+    partition_nodes(path)
+        .into_iter()
+        .filter_map(|node| {
+            if let Some(target) = mount_target_of(&node, &mounts) {
+                Some(format!("{node} is mounted on {target}"))
+            } else if is_held_exclusively(&node) {
+                Some(format!("{node} is open in another program"))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Where `node` is mounted, according to the text of `/proc/mounts`.
+///
+/// Matched on the whole source field, never as a substring: `/dev/vdb1` must
+/// not match a line for `/dev/vdb11`.
+fn mount_target_of(node: &str, mounts: &str) -> Option<String> {
+    mounts.lines().find_map(|line| {
+        let mut f = line.split_whitespace();
+        let (source, target) = (f.next()?, f.next()?);
+        (source == node).then(|| target.to_string())
+    })
+}
+
+/// Whether something holds `node` exclusively — a mount, or an opener that
+/// asked for exclusive access. A read-only probe is not exclusive and so is not
+/// reported here.
+fn is_held_exclusively(node: &str) -> bool {
+    matches!(
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_EXCL)
+            .open(node),
+        Err(e) if e.raw_os_error() == Some(libc::EBUSY)
+    )
 }
 
 /// Length of a regular file, or `None` if it is neither a regular file nor
@@ -413,22 +554,34 @@ fn device_and_partitions(path: &Path) -> Vec<String> {
             out.push(s);
         }
     }
-    let Some(name) = sysfs_name(path) else {
-        return out;
-    };
-    // A partition's sysfs directory is nested inside its disk's, so listing the
-    // disk's directory and keeping the entries that are themselves partitions
-    // enumerates them without parsing names for trailing digits (which gets
-    // nvme0n1 vs nvme0n1p1 wrong).
-    if let Ok(rd) = std::fs::read_dir(format!("/sys/class/block/{name}")) {
-        for e in rd.flatten() {
-            let child = e.file_name().to_string_lossy().into_owned();
-            if Path::new(&format!("/sys/class/block/{name}/{child}/partition")).exists() {
-                out.push(format!("/dev/{child}"));
-            }
-        }
-    }
+    out.extend(partition_nodes(path));
     out
+}
+
+/// The `/dev` nodes of `path`'s partitions, in kernel order.
+///
+/// A partition's sysfs directory is nested inside its disk's, so listing the
+/// disk's directory and keeping the entries that are themselves partitions
+/// enumerates them without parsing names for trailing digits (which gets
+/// nvme0n1 vs nvme0n1p1 wrong).
+fn partition_nodes(path: &Path) -> Vec<String> {
+    let Some(name) = sysfs_name(path) else {
+        return Vec::new();
+    };
+    let base = format!("/sys/class/block/{name}");
+    let Ok(rd) = std::fs::read_dir(&base) else {
+        return Vec::new();
+    };
+    let mut parts: Vec<(u64, String)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let child = e.file_name().to_string_lossy().into_owned();
+            let idx = read_u64(&format!("{base}/{child}/partition"))?;
+            Some((idx, format!("/dev/{child}")))
+        })
+        .collect();
+    parts.sort_by_key(|(idx, _)| *idx);
+    parts.into_iter().map(|(_, node)| node).collect()
 }
 
 fn io_err(path: &Path, source: std::io::Error) -> PartError {
@@ -622,5 +775,141 @@ mod tests {
         }
         let mut dev = Device::open(&p, false).unwrap();
         assert_eq!(&dev.read_sectors(0, 1).unwrap()[..5], b"hello");
+    }
+
+    // --- the BLKRRPART retry (PEI-654) -----------------------------------
+
+    fn busy() -> std::io::Error {
+        std::io::Error::from_raw_os_error(libc::EBUSY)
+    }
+
+    /// A recorded run of `retry_while_busy`: how many times the ioctl was
+    /// attempted, and every wait it asked for.
+    fn run(budget: Duration, busy_for: usize) -> (std::io::Result<()>, usize, Vec<Duration>) {
+        let mut attempts = 0usize;
+        let mut naps = Vec::new();
+        let result = retry_while_busy(
+            budget,
+            || {
+                attempts += 1;
+                if attempts <= busy_for {
+                    Err(busy())
+                } else {
+                    Ok(())
+                }
+            },
+            |d| naps.push(d),
+        );
+        (result, attempts, naps)
+    }
+
+    #[test]
+    fn a_table_the_kernel_accepts_at_once_is_not_waited_on() {
+        let (result, attempts, naps) = run(REREAD_BUSY_BUDGET, 0);
+        assert!(result.is_ok());
+        assert_eq!(attempts, 1);
+        assert!(naps.is_empty(), "{naps:?}");
+    }
+
+    /// The case this exists for: a probe holds a partition for a moment and
+    /// lets go. The install must not die.
+    #[test]
+    fn a_transient_busy_is_retried_until_it_clears() {
+        let (result, attempts, naps) = run(REREAD_BUSY_BUDGET, 3);
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(attempts, 4);
+        assert_eq!(naps.len(), 3);
+        // Backoff doubles rather than spinning.
+        assert_eq!(naps[0], REREAD_FIRST_WAIT);
+        assert!(naps[1] > naps[0] && naps[2] > naps[1], "{naps:?}");
+    }
+
+    #[test]
+    fn a_lasting_busy_gives_up_inside_the_budget() {
+        let (result, attempts, naps) = run(REREAD_BUSY_BUDGET, usize::MAX);
+        assert_eq!(
+            result.unwrap_err().raw_os_error(),
+            Some(libc::EBUSY),
+            "the errno must survive so the caller can still recognise it"
+        );
+        let slept: Duration = naps.iter().sum();
+        assert!(slept <= REREAD_BUSY_BUDGET, "{slept:?} overshot the budget");
+        // It asked more than a couple of times, and no wait ran away.
+        assert!(attempts > 5, "only {attempts} attempts");
+        assert!(naps.iter().all(|d| *d <= REREAD_MAX_WAIT), "{naps:?}");
+    }
+
+    /// A zero budget still makes exactly one attempt — the retry is an
+    /// addition to the old behaviour, never a replacement for it.
+    #[test]
+    fn a_zero_budget_still_asks_once() {
+        let (result, attempts, naps) = run(Duration::ZERO, usize::MAX);
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::EBUSY));
+        assert_eq!(attempts, 1);
+        assert!(naps.is_empty(), "{naps:?}");
+    }
+
+    /// Only EBUSY is transient. Anything else is reported at once, because
+    /// retrying an EINVAL just delays the report by the whole budget.
+    #[test]
+    fn another_errno_is_not_retried() {
+        let mut attempts = 0usize;
+        let mut naps = Vec::new();
+        let result = retry_while_busy(
+            REREAD_BUSY_BUDGET,
+            || {
+                attempts += 1;
+                Err(std::io::Error::from_raw_os_error(libc::EINVAL))
+            },
+            |d| naps.push(d),
+        );
+        assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::EINVAL));
+        assert_eq!(attempts, 1);
+        assert!(naps.is_empty());
+    }
+
+    // --- naming what holds the disk --------------------------------------
+
+    #[test]
+    fn a_mount_is_matched_on_the_whole_source_field() {
+        let mounts = "\
+proc /proc proc rw 0 0
+/dev/vdb11 /srv ext4 rw 0 0
+/dev/vdb1 /mnt/rootfs ext4 rw,relatime 0 0
+";
+        assert_eq!(
+            mount_target_of("/dev/vdb1", mounts).as_deref(),
+            Some("/mnt/rootfs")
+        );
+        assert_eq!(mount_target_of("/dev/vdb11", mounts).as_deref(), Some("/srv"));
+        assert_eq!(mount_target_of("/dev/vdb2", mounts), None);
+        // A source that is a prefix of another must not match it.
+        assert_eq!(mount_target_of("/dev/vdb", mounts), None);
+    }
+
+    #[test]
+    fn an_empty_mount_table_names_nothing() {
+        assert_eq!(mount_target_of("/dev/vdb1", ""), None);
+    }
+
+    /// The message has to say something useful in both cases, and the two must
+    /// not give the same advice — that was half the defect.
+    #[test]
+    fn the_give_up_message_distinguishes_a_probe_from_a_mount() {
+        // A regular file has no partitions in sysfs, so nothing is held: the
+        // "something was probing it" wording is what an operator sees.
+        let (_d, p) = image(1024 * 1024);
+        let msg = busy_message(&p);
+        assert!(msg.contains("probing"), "{msg}");
+        assert!(msg.contains("run the command again"), "{msg}");
+        assert!(msg.contains(&REREAD_BUSY_BUDGET.as_millis().to_string()), "{msg}");
+        assert!(msg.contains(&p.display().to_string()), "{msg}");
+    }
+
+    #[test]
+    fn a_file_has_no_partitions_to_report_as_held() {
+        let (_d, p) = image(1024 * 1024);
+        assert!(partition_nodes(&p).is_empty());
+        assert!(held_partitions(&p).is_empty());
     }
 }
