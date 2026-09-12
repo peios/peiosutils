@@ -9,6 +9,21 @@ use uutests::new_ucmd;
 
 #[test]
 #[cfg(unix)]
+fn test_tty_name_is_newline_terminated() {
+    use uutests::util::pty_path;
+
+    let (path, _controller, replica) = pty_path();
+    let mut expected = path.into_bytes();
+    expected.push(b'\n');
+
+    new_ucmd!()
+        .set_stdin(replica)
+        .succeeds()
+        .stdout_is_bytes(&expected);
+}
+
+#[test]
+#[cfg(unix)]
 fn test_dev_null() {
     new_ucmd!()
         .set_stdin(File::open("/dev/null").unwrap())

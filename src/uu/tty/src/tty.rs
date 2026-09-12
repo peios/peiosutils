@@ -42,7 +42,12 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         use std::os::unix::ffi::OsStrExt;
         use uucore::display::OsWrite;
         let os_name = std::ffi::OsStr::from_bytes(name.as_bytes());
-        stdout.write_all_os(os_name)
+        // The name is written as raw bytes so that it stays byte-exact; the
+        // terminating newline is appended separately rather than formatted in.
+        match stdout.write_all_os(os_name) {
+            Ok(()) => stdout.write_all(b"\n"),
+            Err(e) => Err(e),
+        }
     } else {
         set_exit_code(1);
         writeln!(stdout, "{}", translate!("tty-not-a-tty"))
