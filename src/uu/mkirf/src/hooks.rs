@@ -223,11 +223,14 @@ pub fn discover_all(root: &Path) -> Result<(Vec<Hook>, Vec<String>), Box<dyn Err
                 continue;
             }
             if *dest == LEGACY_HOOK_DIR {
+                // The sentence names the *directory* being migrated away
+                // from, not the file — the file is already named at the
+                // front of it.
                 warnings.push(format!(
-                    "hook `{}` is in the legacy {} directory; \
+                    "hook `{}` is in the legacy /{LEGACY_HOOK_DIR} directory; \
                      move it to /usr/libexec/prelude/hooks.d (packaged) or \
                      /lcl/libexec/prelude/hooks.d (local)",
-                    hook.name, hook.path,
+                    hook.name,
                 ));
             }
             hooks.push(hook);
@@ -485,7 +488,7 @@ pub fn resolve(hooks: &[Hook]) -> Result<Resolved, String> {
 /// everywhere downstream — it orders the DAG, and it is written into
 /// `hooks.seq.2` like any other declaration.
 ///
-/// Two hooks are skipped, each for its own reason:
+/// Three hooks are skipped, each for its own reason:
 ///
 ///   - **Suppliers of `initramfs-ready`.** They are what the capability
 ///     consists of; ordering them after it would be a cycle.
@@ -493,12 +496,24 @@ pub fn resolve(hooks: &[Hook]) -> Result<Resolved, String> {
 ///     name order, after every constrained hook — so the edge would change
 ///     nothing about when they run, and adding it would move them into the
 ///     DAG and silently retire the no-metadata escape hatch.
+///   - **Hooks that already wait on `initramfs-ready`**, by `requires` as
+///     well as by `after`. The resolved order would be the same either way,
+///     but the stanza written into `hooks.seq.2` is meant to explain itself
+///     in a rescue shell, and one that says a hook waits on a capability
+///     twice, in two senses, explains itself worse.
 pub fn apply_implicit_ordering(hooks: &mut [Hook]) {
     for h in hooks.iter_mut() {
         if !h.is_constrained() || h.supplies().any(|c| c == INITRAMFS_READY) {
             continue;
         }
-        if h.after.iter().all(|c| c != INITRAMFS_READY) {
+        // `consumes()`, not `after`: a hook that already waits on the
+        // capability through `requires` does not need the implicit `after`
+        // too. The edge set would dedup them, but the stanza in
+        // `hooks.seq.2` would say the same thing twice in two senses that
+        // are not equivalent at run time — `requires` waits for the
+        // capability to be achieved, `after` only for it to be settled.
+        let already_waits = h.consumes().any(|c| c == INITRAMFS_READY);
+        if !already_waits {
             h.after.push(INITRAMFS_READY.to_string());
         }
     }
@@ -992,6 +1007,31 @@ mod tests {
     }
 
     #[test]
+    fn a_requires_on_initramfs_ready_does_not_gain_a_redundant_after() {
+        // A hook that already waits on the capability the hard way must not
+        // also be given the soft edge. The resolved order is the same either
+        // way — `kahn_sort` dedups the edge set — but the stanza in
+        // `hooks.seq.2` is meant to be read in a rescue shell, and saying the
+        // hook waits on `initramfs-ready` twice, in two senses that differ at
+        // run time, explains it worse than saying it once.
+        let mut hooks = vec![
+            hook4("a.sh", &["cap"], &[], &[INITRAMFS_READY], &[]),
+            hook4("topo.sh", &[INITRAMFS_READY], &[], &[], &[]),
+        ];
+        apply_implicit_ordering(&mut hooks);
+        assert!(hooks[0].after.is_empty(), "{:?}", hooks[0].after);
+        assert_eq!(hooks[0].requires, [INITRAMFS_READY]);
+
+        // The hook is still ordered after the capability, and the rendered
+        // stanza names the dependency exactly once.
+        let order = resolve(&hooks).unwrap().order;
+        assert_eq!(order, ["/hooks/topo.sh", "/hooks/a.sh"]);
+        let body = String::from_utf8(render_seq_v2(&hooks, &order)).unwrap();
+        assert!(body.contains("requires initramfs-ready"), "{body}");
+        assert!(!body.contains("after initramfs-ready"), "{body}");
+    }
+
+    #[test]
     fn the_implicit_edge_reaches_the_rendered_sequence() {
         // The rule lives in mkirf alone, so it has to be VISIBLE in the file
         // prelude reads — otherwise prelude would need to know it too.
@@ -1127,6 +1167,13 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("legacy"), "{warnings:?}");
         assert!(warnings[0].contains("/usr/libexec/prelude/hooks.d"));
+        // The sentence's grammar expects a directory, so it has to name one:
+        // `/hooks`, not the hook's own path.
+        assert!(
+            warnings[0].contains("legacy /hooks directory"),
+            "{warnings:?}"
+        );
+        assert!(!warnings[0].contains("/hooks/old.sh"), "{warnings:?}");
     }
 
     #[test]
