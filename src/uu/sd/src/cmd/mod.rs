@@ -51,12 +51,26 @@ pub fn dispatch(matches: &ArgMatches) -> Result<()> {
 }
 
 /// Common: extract a path target from the matches.
+///
+/// `--recursive` implies `--no-follow-symlinks`. A recursive run is stamping a
+/// **tree**, and a symlink is a node *in* that tree rather than a route out of
+/// it: following one means the walk leaves its own tree — possibly stamping
+/// something outside it, repeatedly, once per link — while leaving the node it
+/// was asked to stamp untouched. That is how a recursive grant over `/usr/bin`
+/// came to report success on 174 targets and leave every command unreachable
+/// (PEI-584). `seed-sd` already stamps with `AT_SYMLINK_NOFOLLOW` for the same
+/// reason, so this also stops the two tools that stamp trees disagreeing about
+/// what a symlink is.
+///
+/// The non-recursive form still follows: the operator named that one path, and
+/// naming a symlink is how you say you mean its target.
 pub fn parse_path_target(matches: &ArgMatches) -> Result<PathTarget> {
     let path = matches
         .get_one::<String>("path")
         .ok_or_else(|| Error::Usage("missing PATH".into()))?
         .clone();
-    let no_follow_symlinks = matches.get_flag("no-follow-symlinks");
+    let no_follow_symlinks =
+        matches.get_flag("no-follow-symlinks") || crate::walk::parse_recursive(matches);
     Ok(PathTarget {
         path,
         no_follow_symlinks,
@@ -100,5 +114,55 @@ pub fn parse_sid_style(matches: &ArgMatches) -> Result<SidStyle> {
         (true, false) => Ok(SidStyle::Raw),
         (false, true) => Ok(SidStyle::Label),
         (false, false) => Ok(SidStyle::Both),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn target_for(args: &[&str]) -> PathTarget {
+        let matches = crate::cli::build().try_get_matches_from(args).unwrap();
+        let (_, sub) = matches.subcommand().expect("subcommand");
+        parse_path_target(sub).unwrap()
+    }
+
+    /// PEI-584: a recursive grant over `/usr/bin` stamped the multicall binary
+    /// 174 times and left every command's link untouched.
+    #[test]
+    fn recursive_implies_no_follow_symlinks() {
+        for args in [
+            &["sd", "allow", "-r", "/usr/bin", "Everyone:rx"][..],
+            &["sd", "allow", "--recursive", "/usr/bin", "Everyone:rx"][..],
+            &["sd", "deny", "-r", "/usr/bin", "Everyone:rx"][..],
+            &["sd", "owner", "-r", "/usr/bin", "SYSTEM"][..],
+            &["sd", "reset", "-r", "/usr/bin"][..],
+        ] {
+            let target = target_for(args);
+            assert!(target.no_follow_symlinks, "{args:?}");
+            assert_eq!(target.at_flags(), libc::AT_SYMLINK_NOFOLLOW, "{args:?}");
+        }
+    }
+
+    /// The operator named one path; naming a symlink is how you say you mean
+    /// its target.
+    #[test]
+    fn the_non_recursive_form_still_follows() {
+        for args in [
+            &["sd", "allow", "/usr/bin/whoami", "Everyone:rx"][..],
+            &["sd", "show", "/usr/bin/whoami"][..],
+        ] {
+            let target = target_for(args);
+            assert!(!target.no_follow_symlinks, "{args:?}");
+            assert_eq!(target.at_flags(), 0, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn an_explicit_no_follow_still_works_on_its_own() {
+        assert!(
+            target_for(&["sd", "allow", "-P", "/usr/bin/whoami", "Everyone:rx"])
+                .no_follow_symlinks
+        );
     }
 }
