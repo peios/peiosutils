@@ -10,21 +10,31 @@
 // (not SQLite — see §7.1): a sorted descriptor array + an anchor blob, queried
 // with mmap + binary search, rebuilt by writing a temp file and renaming.
 //
+// Wildcard anchors (see `pattern`) do not sort adjacent to the concrete paths
+// they answer for, so the binary search alone cannot find them. They are few,
+// so the index carries a second small array — the descriptor indices of the
+// wildcard-bearing anchors — which a lookup scans linearly after the search.
+// The sorted descriptor array, and the contiguity `lookup_key` depends on, are
+// untouched by this.
+//
 // On-disk layout (little-endian throughout):
 //
-//   header (40 bytes)
+//   header (48 bytes)
 //     0  magic     [u8;8] = "REGMANIX"
-//     8  version   u32    = 1
+//     8  version   u32    = 2
 //     12 entries   u32      number of descriptors (distinct anchors, sorted)
 //     16 desc_off  u32      byte offset of the descriptor array
 //     20 locs_off  u32      byte offset of the locations array
 //     24 files_off u32      byte offset of the file table
 //     28 anch_off  u32      byte offset of the anchor blob
 //     32 files     u32      number of provider files
-//     36 reserved  u32
+//     36 wild_off  u32      byte offset of the wildcard descriptor-index array
+//     40 wild_n    u32      number of wildcard descriptors
+//     44 reserved  u32
 //   descriptors  entries × 16: anchor_off u32, anchor_len u32, loc_idx u32, loc_n u32
 //   locations    Σ loc_n × 12: file_idx u32, rec_offset u64
 //   file table   files × (len u32 + path bytes)
+//   wildcards    wild_n × 4: descriptor index u32 (ascending)
 //   anchor blob  concatenated anchor bytes (descriptors point in absolutely)
 
 use std::collections::BTreeMap;
@@ -35,13 +45,15 @@ use memmap2::Mmap;
 use crate::corpus;
 use crate::error::Result;
 use crate::fragment;
+use crate::pattern;
 use crate::scan;
 
 const MAGIC: &[u8; 8] = b"REGMANIX";
-const VERSION: u32 = 1;
-const HEADER_LEN: usize = 40;
+const VERSION: u32 = 2;
+const HEADER_LEN: usize = 48;
 const DESC_LEN: usize = 16;
 const LOC_LEN: usize = 12;
+const WILD_LEN: usize = 4;
 
 /// A resolved location of a documented record.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,21 +91,24 @@ pub fn build(dir: &Path, out: &Path) -> Result<()> {
 fn serialize(entries: &BTreeMap<String, Vec<(u32, u64)>>, files: &[String]) -> Vec<u8> {
     let entry_count = entries.len();
     let loc_count: usize = entries.values().map(Vec::len).sum();
+    let wild_count = entries.keys().filter(|a| pattern::has_wildcard(a)).count();
 
     let desc_off = HEADER_LEN;
     let locs_off = desc_off + entry_count * DESC_LEN;
     let files_off = locs_off + loc_count * LOC_LEN;
 
-    // File table comes before the anchor blob; compute its length.
+    // File table and wildcard array both come before the anchor blob.
     let files_len: usize = files.iter().map(|f| 4 + f.len()).sum();
-    let anch_off = files_off + files_len;
+    let wild_off = files_off + files_len;
+    let anch_off = wild_off + wild_count * WILD_LEN;
 
     let mut descriptors = Vec::with_capacity(entry_count * DESC_LEN);
     let mut locations = Vec::with_capacity(loc_count * LOC_LEN);
+    let mut wildcards = Vec::with_capacity(wild_count * WILD_LEN);
     let mut anchors = Vec::new();
     let mut loc_idx: u32 = 0;
 
-    for (anchor, locs) in entries {
+    for (i, (anchor, locs)) in entries.iter().enumerate() {
         let a_off = (anch_off + anchors.len()) as u32;
         let a_len = anchor.len() as u32;
         anchors.extend_from_slice(anchor.as_bytes());
@@ -102,6 +117,10 @@ fn serialize(entries: &BTreeMap<String, Vec<(u32, u64)>>, files: &[String]) -> V
         descriptors.extend_from_slice(&a_len.to_le_bytes());
         descriptors.extend_from_slice(&loc_idx.to_le_bytes());
         descriptors.extend_from_slice(&(locs.len() as u32).to_le_bytes());
+
+        if pattern::has_wildcard(anchor) {
+            wildcards.extend_from_slice(&(i as u32).to_le_bytes());
+        }
 
         for (file_idx, offset) in locs {
             locations.extend_from_slice(&file_idx.to_le_bytes());
@@ -125,12 +144,15 @@ fn serialize(entries: &BTreeMap<String, Vec<(u32, u64)>>, files: &[String]) -> V
     out.extend_from_slice(&(files_off as u32).to_le_bytes());
     out.extend_from_slice(&(anch_off as u32).to_le_bytes());
     out.extend_from_slice(&(files.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(wild_off as u32).to_le_bytes());
+    out.extend_from_slice(&(wild_count as u32).to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     debug_assert_eq!(out.len(), HEADER_LEN);
 
     out.extend_from_slice(&descriptors);
     out.extend_from_slice(&locations);
     out.extend_from_slice(&file_table);
+    out.extend_from_slice(&wildcards);
     out.extend_from_slice(&anchors);
     out
 }
@@ -161,6 +183,8 @@ pub struct Index {
     entries: usize,
     desc_off: usize,
     locs_off: usize,
+    wild_off: usize,
+    wild_n: usize,
 }
 
 /// Load the index at `path`, if it exists and is valid. A missing or malformed
@@ -182,6 +206,11 @@ pub fn load(path: &Path) -> Option<Index> {
     let locs_off = rd_u32(&mmap, 20) as usize;
     let files_off = rd_u32(&mmap, 24) as usize;
     let file_count = rd_u32(&mmap, 32) as usize;
+    let wild_off = rd_u32(&mmap, 36) as usize;
+    let wild_n = rd_u32(&mmap, 40) as usize;
+    if wild_off + wild_n * WILD_LEN > mmap.len() {
+        return None;
+    }
 
     // Parse the (small) file table eagerly so lookups can resolve paths.
     let mut files = Vec::with_capacity(file_count);
@@ -205,6 +234,8 @@ pub fn load(path: &Path) -> Option<Index> {
         entries,
         desc_off,
         locs_off,
+        wild_off,
+        wild_n,
     })
 }
 
@@ -254,35 +285,72 @@ impl Index {
         lo
     }
 
-    /// Locations for an exact anchor match.
-    pub fn lookup_exact(&self, folded_anchor: &str) -> Vec<Location> {
-        let target = folded_anchor.as_bytes();
-        let i = self.lower_bound(target);
-        if i < self.entries && self.anchor(i) == target {
-            let (_, _, loc_idx, loc_n) = self.desc(i);
-            self.locations(loc_idx, loc_n)
-        } else {
-            Vec::new()
+    /// Descriptor index of the `k`th wildcard-bearing anchor.
+    fn wild(&self, k: usize) -> usize {
+        rd_u32(&self.mmap, self.wild_off + k * WILD_LEN) as usize
+    }
+
+    /// Add every wildcard anchor satisfying `pred` that `idxs` does not already
+    /// hold. Linear, because wildcard anchors do not sort next to the paths
+    /// they answer for — but over the wildcard array only, a small fraction of
+    /// the corpus. The membership test matters: a query spelling the wildcard
+    /// out literally (`...\Services\<name>`) is found by *both* passes, and
+    /// would otherwise be reported as two providers documenting one record.
+    fn push_wildcard_matches(&self, idxs: &mut Vec<usize>, pred: &dyn Fn(&str) -> bool) {
+        for k in 0..self.wild_n {
+            let i = self.wild(k);
+            if i >= self.entries || idxs.contains(&i) {
+                continue; // out of range ⇒ truncated or corrupt; the cascade re-scans
+            }
+            if let Ok(anchor) = std::str::from_utf8(self.anchor(i)) {
+                if pred(anchor) {
+                    idxs.push(i);
+                }
+            }
         }
     }
 
+    fn collect(&self, idxs: &[usize]) -> Vec<Location> {
+        let mut out = Vec::new();
+        for &i in idxs {
+            let (_, _, loc_idx, loc_n) = self.desc(i);
+            out.extend(self.locations(loc_idx, loc_n));
+        }
+        out
+    }
+
+    /// Locations for an exact anchor match, concrete and wildcard alike.
+    /// Specificity between the two is applied by `query`, the one funnel every
+    /// tier of the cascade passes through.
+    pub fn lookup_exact(&self, folded_anchor: &str) -> Vec<Location> {
+        let target = folded_anchor.as_bytes();
+        let mut idxs = Vec::new();
+        let i = self.lower_bound(target);
+        if i < self.entries && self.anchor(i) == target {
+            idxs.push(i);
+        }
+        self.push_wildcard_matches(&mut idxs, &|a| scan::is_exact(a, folded_anchor));
+        self.collect(&idxs)
+    }
+
     /// Locations for a key query: the key doc plus its directly-attached values.
-    /// All anchors sharing the path prefix are contiguous in sorted order, so we
-    /// seek the lower bound and walk forward while the prefix holds.
+    /// All concrete anchors sharing the path prefix are contiguous in sorted
+    /// order, so we seek the lower bound and walk forward while the prefix
+    /// holds; wildcard anchors are gathered separately.
     pub fn lookup_key(&self, folded_path: &str) -> Vec<Location> {
         let path = folded_path.as_bytes();
-        let mut out = Vec::new();
+        let mut idxs = Vec::new();
         let mut i = self.lower_bound(path);
         while i < self.entries && self.anchor(i).starts_with(path) {
             if let Ok(anchor) = std::str::from_utf8(self.anchor(i)) {
                 if scan::is_under_key(anchor, folded_path) {
-                    let (_, _, loc_idx, loc_n) = self.desc(i);
-                    out.extend(self.locations(loc_idx, loc_n));
+                    idxs.push(i);
                 }
             }
             i += 1;
         }
-        out
+        self.push_wildcard_matches(&mut idxs, &|a| scan::is_under_key(a, folded_path));
+        self.collect(&idxs)
     }
 }
 
@@ -402,5 +470,79 @@ A second package documenting the same value.
         clear(&idxp).unwrap();
         assert!(!idxp.exists());
         clear(&idxp).unwrap(); // no error second time
+    }
+
+    fn wildcard_built() -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("peinit.regman"),
+            "\
+--- machine\\system\\services\\<name>
+canonical: Machine\\System\\Services\\<name>
+
+One key per service definition.
+
+--- machine\\system\\services\\<name> imagepath
+canonical: Machine\\System\\Services\\<name> ImagePath
+type: REG_SZ
+
+Absolute path to the service binary.
+",
+        )
+        .unwrap();
+        let idx = tmp.path().join(".idx");
+        build(tmp.path(), &idx).unwrap();
+        (tmp, idx)
+    }
+
+    #[test]
+    fn wildcard_anchor_is_reachable_through_the_index() {
+        let (_t, idxp) = wildcard_built();
+        let idx = load(&idxp).unwrap();
+        // Binary search alone cannot find this: the anchor does not sort
+        // anywhere near the concrete path being asked about.
+        let locs = idx.lookup_exact("machine\\system\\services\\sshd imagepath");
+        assert_eq!(locs.len(), 1);
+        let text = std::fs::read_to_string(&locs[0].file).unwrap();
+        assert!(text[locs[0].offset as usize..]
+            .starts_with("--- machine\\system\\services\\<name> imagepath"));
+    }
+
+    #[test]
+    fn wildcard_key_lookup_returns_doc_and_values() {
+        let (_t, idxp) = wildcard_built();
+        let idx = load(&idxp).unwrap();
+        assert_eq!(idx.lookup_key("machine\\system\\services\\sshd").len(), 2);
+    }
+
+    #[test]
+    fn literal_wildcard_query_is_not_reported_twice() {
+        let (_t, idxp) = wildcard_built();
+        let idx = load(&idxp).unwrap();
+        // Spelling the placeholder out hits the binary search *and* the
+        // wildcard pass; it is still one record, from one provider.
+        assert_eq!(idx.lookup_exact("machine\\system\\services\\<name> imagepath").len(), 1);
+        assert_eq!(idx.lookup_key("machine\\system\\services\\<name>").len(), 2);
+    }
+
+    #[test]
+    fn concrete_corpus_records_no_wildcards() {
+        // The wildcard array stays empty for an ordinary corpus, so the added
+        // pass costs nothing where nothing uses it.
+        let (_t, idxp) = built();
+        let idx = load(&idxp).unwrap();
+        assert_eq!(idx.wild_n, 0);
+    }
+
+    #[test]
+    fn stale_index_version_is_rejected_not_misread() {
+        // A v1 index has no wildcard array; reading it as v2 would walk off
+        // into the anchor blob. The version guard must reject it outright so
+        // the cascade falls back to a scan.
+        let (_t, idxp) = built();
+        let mut bytes = std::fs::read(&idxp).unwrap();
+        bytes[8..12].copy_from_slice(&1u32.to_le_bytes());
+        std::fs::write(&idxp, &bytes).unwrap();
+        assert!(load(&idxp).is_none());
     }
 }

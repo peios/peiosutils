@@ -18,8 +18,9 @@ use std::path::{Path, PathBuf};
 
 use crate::corpus;
 use crate::error::Result;
-use crate::fragment::{self, Record};
+use crate::fragment::{self, Kind, Record};
 use crate::index::{self, Location};
+use crate::pattern;
 use crate::scan::{self, Hit};
 
 /// Resolve an exact `(path, value)` query.
@@ -46,7 +47,43 @@ pub fn resolve_key(dir: &Path, index_path: &Path, folded_path: &str) -> Result<V
     )
 }
 
+/// Every tier of the cascade funnels through here, so specificity is decided
+/// in exactly one place and an indexed answer cannot differ from a scanned one.
 fn cascade(
+    dir: &Path,
+    index_path: &Path,
+    lookup: impl Fn(&index::Index) -> Vec<Location>,
+    file_scan: impl Fn(&Path) -> Result<Vec<Hit>>,
+    corpus_scan: impl Fn(&Path) -> Result<Vec<Hit>>,
+    pred: &dyn Fn(&Record) -> bool,
+) -> Result<Vec<Hit>> {
+    let mut hits = tiers(dir, index_path, lookup, file_scan, corpus_scan, pred)?;
+    apply_specificity(&mut hits);
+    Ok(hits)
+}
+
+/// A record naming the path outright beats one that reached it through a
+/// wildcard — the same most-specific-match rule the port-reservation selectors
+/// and PNP use, so there is nothing new for an operator to learn.
+///
+/// Applied per kind rather than wholesale: a subtree may well have a concrete
+/// key doc while its per-instance values are documented generically, and
+/// dropping every wildcard hit the moment any concrete one appeared would
+/// silently empty that page's Values index.
+fn apply_specificity(hits: &mut Vec<Hit>) {
+    for kind in [Kind::Key, Kind::Value] {
+        let concrete = hits
+            .iter()
+            .any(|h| h.record.kind() == kind && !pattern::has_wildcard(&h.record.anchor));
+        if concrete {
+            hits.retain(|h| {
+                h.record.kind() != kind || !pattern::has_wildcard(&h.record.anchor)
+            });
+        }
+    }
+}
+
+fn tiers(
     dir: &Path,
     index_path: &Path,
     lookup: impl Fn(&index::Index) -> Vec<Location>,
@@ -195,5 +232,108 @@ Ring buffer capacity.
         let (tmp, idxp, _) = setup();
         let hits = resolve_key(tmp.path(), &idxp, "machine\\system\\kmes").unwrap();
         assert_eq!(hits.len(), 2);
+    }
+
+    const WILD: &str = "\
+--- machine\\system\\services\\<name>
+canonical: Machine\\System\\Services\\<name>
+
+One key per service definition.
+
+--- machine\\system\\services\\<name> imagepath
+canonical: Machine\\System\\Services\\<name> ImagePath
+type: REG_SZ
+
+Absolute path to the service binary.
+";
+
+    /// A corpus of wildcard docs, plus whatever concrete records the caller
+    /// wants layered over them.
+    fn wild_setup(concrete: &str) -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("peinit.regman"), WILD).unwrap();
+        if !concrete.is_empty() {
+            std::fs::write(tmp.path().join("sshd.regman"), concrete).unwrap();
+        }
+        let idxp = tmp.path().join(".idx");
+        index::build(tmp.path(), &idxp).unwrap();
+        (tmp, idxp)
+    }
+
+    #[test]
+    fn wildcard_answers_a_concrete_query() {
+        let (tmp, idxp) = wild_setup("");
+        let hits =
+            resolve_exact(tmp.path(), &idxp, "machine\\system\\services\\sshd imagepath").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.canonical, "Machine\\System\\Services\\<name> ImagePath");
+    }
+
+    #[test]
+    fn concrete_record_beats_the_wildcard() {
+        let (tmp, idxp) = wild_setup(
+            "\
+--- machine\\system\\services\\sshd imagepath
+canonical: Machine\\System\\Services\\sshd ImagePath
+type: REG_SZ
+
+sshd overrides the generic page.
+",
+        );
+        let hits =
+            resolve_exact(tmp.path(), &idxp, "machine\\system\\services\\sshd imagepath").unwrap();
+        assert_eq!(hits.len(), 1, "specificity must not report both as two providers");
+        assert_eq!(hits[0].record.canonical, "Machine\\System\\Services\\sshd ImagePath");
+    }
+
+    #[test]
+    fn concrete_key_doc_does_not_suppress_wildcard_values() {
+        // Per-kind specificity: the concrete key doc wins its own slot, but the
+        // Values index must still come from the generic page.
+        let (tmp, idxp) = wild_setup(
+            "\
+--- machine\\system\\services\\sshd
+canonical: Machine\\System\\Services\\sshd
+
+The SSH daemon's own page.
+",
+        );
+        let hits = resolve_key(tmp.path(), &idxp, "machine\\system\\services\\sshd").unwrap();
+        // Hits are ordered by provider, so assert the property rather than the
+        // order: the key slot went concrete, the value slot stayed generic.
+        let keys: Vec<_> = hits
+            .iter()
+            .filter(|h| h.record.kind() == Kind::Key)
+            .map(|h| h.record.canonical.as_str())
+            .collect();
+        let values: Vec<_> = hits
+            .iter()
+            .filter(|h| h.record.kind() == Kind::Value)
+            .map(|h| h.record.canonical.as_str())
+            .collect();
+        assert_eq!(keys, vec!["Machine\\System\\Services\\sshd"]);
+        assert_eq!(values, vec!["Machine\\System\\Services\\<name> ImagePath"]);
+    }
+
+    /// The cascade must give one answer whichever tier serves it: a wrong
+    /// wildcard result that only appears without an index would be invisible
+    /// on any developer box that had run `regman index`.
+    #[test]
+    fn indexed_and_scanned_wildcard_answers_agree() {
+        let (tmp, idxp) = wild_setup("");
+        let missing = tmp.path().join("does-not-exist.idx");
+        for query in [
+            "machine\\system\\services\\sshd imagepath",
+            "machine\\system\\services\\<name> imagepath",
+        ] {
+            let indexed = resolve_exact(tmp.path(), &idxp, query).unwrap();
+            let scanned = resolve_exact(tmp.path(), &missing, query).unwrap();
+            assert_eq!(indexed.len(), scanned.len(), "tiers disagree on {query}");
+            assert_eq!(indexed[0].record.canonical, scanned[0].record.canonical);
+        }
+
+        let indexed = resolve_key(tmp.path(), &idxp, "machine\\system\\services\\sshd").unwrap();
+        let scanned = resolve_key(tmp.path(), &missing, "machine\\system\\services\\sshd").unwrap();
+        assert_eq!(indexed.len(), scanned.len());
     }
 }

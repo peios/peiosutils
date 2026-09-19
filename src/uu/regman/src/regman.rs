@@ -18,6 +18,7 @@ pub mod fragment;
 pub mod index;
 pub mod markdown;
 pub mod pager;
+pub mod pattern;
 pub mod query;
 pub mod render;
 pub mod scan;

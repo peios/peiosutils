@@ -149,6 +149,105 @@ fn works_with_a_built_index() {
     assert!(!tmp.path().join(".index").exists());
 }
 
+/// A fragment documenting a family of keys through a `<…>` component, as
+/// peinit's service definitions and netd's per-interface records do.
+const WILDCARD_FRAGMENT: &str = "\
+--- machine\\system\\services\\<name>
+canonical: Machine\\System\\Services\\<name>
+
+One key per service definition; the key name is the service name.
+
+--- machine\\system\\services\\<name> imagepath
+canonical: Machine\\System\\Services\\<name> ImagePath
+type: REG_SZ
+default: (required)
+valid: a non-empty absolute path
+applies: restart
+
+Absolute path to the service binary.
+";
+
+fn wildcard_corpus() -> TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("peinit.regman"), WILDCARD_FRAGMENT).unwrap();
+    tmp
+}
+
+#[test]
+fn wildcard_answers_for_a_concrete_key() {
+    let tmp = wildcard_corpus();
+    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd", "ImagePath"]);
+    assert!(out.status.success());
+    let s = stdout(&out);
+    assert!(s.contains("Machine\\System\\Services\\<name> ImagePath"));
+    assert!(s.contains("Absolute path to the service binary."));
+}
+
+#[test]
+fn wildcard_key_view_lists_the_family_values() {
+    let tmp = wildcard_corpus();
+    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd"]);
+    assert!(out.status.success());
+    let s = stdout(&out);
+    assert!(s.contains("Values"));
+    assert!(s.contains("ImagePath"));
+}
+
+#[test]
+fn wildcard_matches_one_component_only() {
+    let tmp = wildcard_corpus();
+    // `<name>` stands for a single key name, never a path tail.
+    let out = regman(tmp.path(), &["Machine\\System\\Services\\a\\b", "ImagePath"]);
+    assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn wildcard_survives_an_indexed_lookup() {
+    // The index finds concrete anchors by binary search, which cannot reach a
+    // wildcard: this is the path that regressed if the wildcard array is lost.
+    let tmp = wildcard_corpus();
+    assert!(regman(tmp.path(), &["index"]).status.success());
+
+    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd", "ImagePath"]);
+    assert!(out.status.success());
+    let s = stdout(&out);
+    assert!(s.contains("Machine\\System\\Services\\<name> ImagePath"));
+    // One record, one provider — not reported twice by the two passes.
+    assert!(!s.contains("documented by 2 packages"));
+}
+
+#[test]
+fn a_concrete_record_wins_over_the_wildcard() {
+    let tmp = wildcard_corpus();
+    std::fs::write(
+        tmp.path().join("sshd.regman"),
+        "\
+--- machine\\system\\services\\sshd imagepath
+canonical: Machine\\System\\Services\\sshd ImagePath
+type: REG_SZ
+default: /usr/sbin/sshd
+valid: a non-empty absolute path
+applies: restart
+
+sshd ships its own page for this value.
+",
+    )
+    .unwrap();
+    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd", "ImagePath"]);
+    assert!(out.status.success());
+    let s = stdout(&out);
+    assert!(s.contains("sshd ships its own page"));
+    assert!(!s.contains("documented by 2 packages"));
+}
+
+#[test]
+fn lint_accepts_a_wildcard_fragment() {
+    let tmp = wildcard_corpus();
+    let path = tmp.path().join("peinit.regman");
+    let out = regman(tmp.path(), &["lint", path.to_str().unwrap()]);
+    assert!(out.status.success(), "wildcard anchors must fmt and lint cleanly");
+}
+
 #[test]
 fn markdown_is_rendered_not_literal() {
     let tmp = tempfile::tempdir().unwrap();
