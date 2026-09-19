@@ -6,6 +6,13 @@
 // anchor bytes contiguously cannot hold a matching record, so it's skipped at
 // memory-bandwidth speed. Survivors are parsed and confirmed on the parsed
 // anchor (rejecting incidental matches in body prose).
+//
+// The pre-scan has to account for wildcards (see `pattern`): a file whose only
+// matching record is `...\services\<name> imagepath` does not contain the bytes
+// of the query `...\services\sshd imagepath` anywhere, so testing the query
+// alone would skip the very file holding the answer — a wrong result, not a
+// slow one. Every wildcard anchor contains `<`, so the file is kept if it
+// holds either the query bytes or a `<`.
 
 use std::path::{Path, PathBuf};
 
@@ -15,6 +22,7 @@ use crate::corpus;
 use crate::error::Result;
 use crate::fold::fold;
 use crate::fragment::{self, Record};
+use crate::pattern;
 
 /// One matched record together with where it came from.
 #[derive(Debug, Clone)]
@@ -24,19 +32,17 @@ pub struct Hit {
     pub record: Record,
 }
 
-/// Does `anchor` denote the exact `(path, value)` named by `folded`?
+/// Does `anchor` denote the exact `(path, value)` named by `folded`? A `<…>`
+/// component in the anchor matches one component of the query (see `pattern`).
 pub fn is_exact(anchor: &str, folded: &str) -> bool {
-    anchor == folded
+    pattern::matches_exact(anchor, folded)
 }
 
 /// Does `anchor` belong to the key `folded_path` — i.e. the key doc itself, or
 /// one of its directly-attached values? The trailing-space test prevents a
 /// sibling key (`...\kmesfoo`) from matching a prefix of `...\kmes`.
 pub fn is_under_key(anchor: &str, folded_path: &str) -> bool {
-    anchor == folded_path
-        || (anchor.len() > folded_path.len()
-            && anchor.starts_with(folded_path)
-            && anchor.as_bytes()[folded_path.len()] == b' ')
+    pattern::matches_under_key(anchor, folded_path)
 }
 
 /// Exact match across the whole corpus.
@@ -108,8 +114,10 @@ fn scan_file(file: &Path, needle: &[u8], pred: &dyn Fn(&Record) -> bool) -> Resu
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.into()),
     };
-    // Cheap rejection: if the anchor bytes aren't present at all, skip parsing.
-    if memmem::find(text.as_bytes(), needle).is_none() {
+    // Cheap rejection: skip parsing a file that can hold neither a literal
+    // match for the query nor any wildcard record at all.
+    let bytes = text.as_bytes();
+    if memmem::find(bytes, needle).is_none() && memchr::memchr(b'<', bytes).is_none() {
         return Ok(Vec::new());
     }
     let provider = corpus::provider_of(file);
@@ -213,5 +221,70 @@ A sibling key that must NOT match a kmes prefix query.
         assert!(is_under_key("machine\\system\\kmes", "machine\\system\\kmes"));
         assert!(is_under_key("machine\\system\\kmes buffercapacity", "machine\\system\\kmes"));
         assert!(!is_under_key("machine\\system\\kmesfoo", "machine\\system\\kmes"));
+    }
+
+    fn write_wildcard_corpus() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("peinit.regman"),
+            "\
+--- machine\\system\\services\\<name>
+canonical: Machine\\System\\Services\\<name>
+
+One key per service definition.
+
+--- machine\\system\\services\\<name> imagepath
+canonical: Machine\\System\\Services\\<name> ImagePath
+type: REG_SZ
+default: (required)
+applies: restart
+
+Absolute path to the service binary.
+",
+        )
+        .unwrap();
+        tmp
+    }
+
+    // The regression this whole feature turns on: the corpus holds no record
+    // spelling `sshd` anywhere, so a pre-scan testing only the query bytes
+    // skips peinit.regman and reports "no manual entry" — a wrong answer that
+    // every other test in this file would still pass.
+    #[test]
+    fn wildcard_record_survives_the_byte_prescan() {
+        let tmp = write_wildcard_corpus();
+        let text = std::fs::read_to_string(tmp.path().join("peinit.regman")).unwrap();
+        assert!(
+            !text.contains("sshd"),
+            "the corpus must not contain the query bytes, or this proves nothing"
+        );
+
+        let hits =
+            corpus_exact(tmp.path(), "machine\\system\\services\\sshd imagepath").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.canonical, "Machine\\System\\Services\\<name> ImagePath");
+    }
+
+    #[test]
+    fn wildcard_key_query_collects_doc_and_values() {
+        let tmp = write_wildcard_corpus();
+        let hits = corpus_key(tmp.path(), "machine\\system\\services\\sshd").unwrap();
+        let anchors: Vec<_> = hits.iter().map(|h| h.record.anchor.as_str()).collect();
+        assert_eq!(
+            anchors,
+            vec![
+                "machine\\system\\services\\<name>",
+                "machine\\system\\services\\<name> imagepath"
+            ]
+        );
+    }
+
+    #[test]
+    fn wildcard_does_not_answer_for_a_deeper_path() {
+        let tmp = write_wildcard_corpus();
+        // One component only: `<name>` must not stand in for `a\b`.
+        assert!(corpus_exact(tmp.path(), "machine\\system\\services\\a\\b imagepath")
+            .unwrap()
+            .is_empty());
     }
 }
