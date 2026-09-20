@@ -240,6 +240,103 @@ sshd ships its own page for this value.
     assert!(!s.contains("documented by 2 packages"));
 }
 
+/// A fragment documenting a family that is a *tree* — PNP's rule exceptions
+/// nest to twelve, so the page has to answer at every depth.
+const SPANNING_FRAGMENT: &str = "\
+--- machine\\system\\network\\rules\\<layer>\\<rule...>
+canonical: Machine\\System\\Network\\Rules\\<Layer>\\<rule...>
+
+One rule. Subkeys are exceptions under the same laws.
+
+--- machine\\system\\network\\rules\\<layer>\\<rule...> actions
+canonical: Machine\\System\\Network\\Rules\\<Layer>\\<rule...> Actions
+type: REG_MULTI_SZ
+default: (absent — NULL, the rule abstains)
+valid: one action expression per element
+applies: live
+
+What the rule does when it matches.
+";
+
+fn spanning_corpus() -> TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("pnp.regman"), SPANNING_FRAGMENT).unwrap();
+    tmp
+}
+
+#[test]
+fn spanning_wildcard_answers_at_every_depth() {
+    let tmp = spanning_corpus();
+    for path in [
+        "Machine\\System\\Network\\Rules\\Packet\\ssh",
+        "Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan",
+        "Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan\\not-vpn",
+    ] {
+        let out = regman(tmp.path(), &[path, "Actions"]);
+        assert!(out.status.success(), "no answer for {path}");
+        assert!(stdout(&out).contains("What the rule does when it matches."));
+    }
+}
+
+#[test]
+fn spanning_wildcard_still_needs_one_component() {
+    // The layer key has its own page; the rule family must not answer for it.
+    let tmp = spanning_corpus();
+    let out = regman(tmp.path(), &["Machine\\System\\Network\\Rules\\Packet", "Actions"]);
+    assert_eq!(out.status.code(), Some(2));
+}
+
+#[test]
+fn a_narrower_family_wins_over_a_spanning_one() {
+    let tmp = spanning_corpus();
+    std::fs::write(
+        tmp.path().join("narrow.regman"),
+        "\
+--- machine\\system\\network\\rules\\<layer>\\<rule> actions
+canonical: Machine\\System\\Network\\Rules\\<Layer>\\<rule> Actions
+type: REG_MULTI_SZ
+
+A page for a rule at the top of a tree.
+",
+    )
+    .unwrap();
+
+    // At one component both match; the narrower page answers, alone.
+    let out = regman(tmp.path(), &["Machine\\System\\Network\\Rules\\Packet\\ssh", "Actions"]);
+    assert!(out.status.success());
+    let s = stdout(&out);
+    assert!(s.contains("A page for a rule at the top of a tree."));
+    assert!(!s.contains("documented by 2 packages"));
+
+    // Deeper, only the spanning page can reach.
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan", "Actions"],
+    );
+    assert!(out.status.success());
+    assert!(stdout(&out).contains("What the rule does when it matches."));
+}
+
+#[test]
+fn spanning_wildcard_survives_an_indexed_lookup() {
+    let tmp = spanning_corpus();
+    assert!(regman(tmp.path(), &["index"]).status.success());
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan", "Actions"],
+    );
+    assert!(out.status.success());
+    assert!(!stdout(&out).contains("documented by 2 packages"));
+}
+
+#[test]
+fn lint_accepts_a_spanning_fragment() {
+    let tmp = spanning_corpus();
+    let path = tmp.path().join("pnp.regman");
+    let out = regman(tmp.path(), &["lint", path.to_str().unwrap()]);
+    assert!(out.status.success(), "spanning anchors must fmt and lint cleanly");
+}
+
 #[test]
 fn lint_accepts_a_wildcard_fragment() {
     let tmp = wildcard_corpus();
