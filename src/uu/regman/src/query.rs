@@ -62,9 +62,24 @@ fn cascade(
     Ok(hits)
 }
 
-/// A record naming the path outright beats one that reached it through a
-/// wildcard — the same most-specific-match rule the port-reservation selectors
-/// and PNP use, so there is nothing new for an operator to learn.
+/// How narrowly a record claims the query it matched. Lower is more specific:
+/// a record naming the path outright beats one that reached it through a
+/// single-component wildcard, which beats one that spanned separators to get
+/// there — the same most-specific-match rule the port-reservation selectors and
+/// PNP use, so there is nothing new for an operator to learn.
+fn specificity(anchor: &str) -> u8 {
+    if !pattern::has_wildcard(anchor) {
+        0
+    } else if pattern::spans_components(anchor) {
+        2
+    } else {
+        1
+    }
+}
+
+/// Keep only the most specific records that matched, so an operator sees the
+/// page written about their key rather than that page *and* every broader
+/// family it also belongs to, flagged as if two packages disagreed.
 ///
 /// Applied per kind rather than wholesale: a subtree may well have a concrete
 /// key doc while its per-instance values are documented generically, and
@@ -72,13 +87,13 @@ fn cascade(
 /// silently empty that page's Values index.
 fn apply_specificity(hits: &mut Vec<Hit>) {
     for kind in [Kind::Key, Kind::Value] {
-        let concrete = hits
+        let best = hits
             .iter()
-            .any(|h| h.record.kind() == kind && !pattern::has_wildcard(&h.record.anchor));
-        if concrete {
-            hits.retain(|h| {
-                h.record.kind() != kind || !pattern::has_wildcard(&h.record.anchor)
-            });
+            .filter(|h| h.record.kind() == kind)
+            .map(|h| specificity(&h.record.anchor))
+            .min();
+        if let Some(best) = best {
+            hits.retain(|h| h.record.kind() != kind || specificity(&h.record.anchor) == best);
         }
     }
 }
@@ -284,6 +299,75 @@ sshd overrides the generic page.
             resolve_exact(tmp.path(), &idxp, "machine\\system\\services\\sshd imagepath").unwrap();
         assert_eq!(hits.len(), 1, "specificity must not report both as two providers");
         assert_eq!(hits[0].record.canonical, "Machine\\System\\Services\\sshd ImagePath");
+    }
+
+    /// Two families over the same subtree: one that stops at a component and
+    /// one that spans. Both are legitimate pages; specificity picks between
+    /// them rather than reporting a disagreement between providers.
+    fn tiered_setup() -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("deep.regman"),
+            "\
+--- machine\\x\\<layer>\\<rule...> actions
+canonical: Machine\\X\\<layer>\\<rule...> Actions
+type: REG_MULTI_SZ
+
+The spanning page: any rule, at any depth.
+",
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("shallow.regman"),
+            "\
+--- machine\\x\\<layer>\\<rule> actions
+canonical: Machine\\X\\<layer>\\<rule> Actions
+type: REG_MULTI_SZ
+
+The narrow page: a rule at the top of a tree.
+",
+        )
+        .unwrap();
+        let idxp = tmp.path().join(".idx");
+        index::build(tmp.path(), &idxp).unwrap();
+        (tmp, idxp)
+    }
+
+    #[test]
+    fn a_single_component_wildcard_beats_a_spanning_one() {
+        let (tmp, idxp) = tiered_setup();
+        let hits = resolve_exact(tmp.path(), &idxp, "machine\\x\\packet\\ssh actions").unwrap();
+        assert_eq!(hits.len(), 1, "specificity must not report both as two providers");
+        assert_eq!(hits[0].record.canonical, "Machine\\X\\<layer>\\<rule> Actions");
+    }
+
+    #[test]
+    fn the_spanning_page_answers_where_the_narrow_one_cannot_reach() {
+        let (tmp, idxp) = tiered_setup();
+        let hits =
+            resolve_exact(tmp.path(), &idxp, "machine\\x\\packet\\ssh\\from-lan actions").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.canonical, "Machine\\X\\<layer>\\<rule...> Actions");
+    }
+
+    #[test]
+    fn concrete_beats_both_wildcard_tiers() {
+        let (tmp, idxp) = tiered_setup();
+        std::fs::write(
+            tmp.path().join("own.regman"),
+            "\
+--- machine\\x\\packet\\ssh actions
+canonical: Machine\\X\\Packet\\ssh Actions
+type: REG_MULTI_SZ
+
+The rule's own page.
+",
+        )
+        .unwrap();
+        index::build(tmp.path(), &idxp).unwrap();
+        let hits = resolve_exact(tmp.path(), &idxp, "machine\\x\\packet\\ssh actions").unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].record.canonical, "Machine\\X\\Packet\\ssh Actions");
     }
 
     #[test]
