@@ -1,0 +1,32 @@
+[package]
+name = "pu_passwd"
+description = "passwd ~ (peiosutils) change your own password"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/passwd"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/passwd.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+# The PGSS Logon codec, and the terminal input `login` and `lps` share — both
+# pinned to the one authd revision, since libtty reaches libauthd by path
+# inside that repository and the two must be the same crate.
+libauthd = { git = "https://github.com/peios/authd.git", rev = "20a693ec2e6fccdd8f573e40f90726b1fabbf7d5" }
+libtty = { git = "https://github.com/peios/authd.git", rev = "20a693ec2e6fccdd8f573e40f90726b1fabbf7d5" }
+
+[[bin]]
+name = "passwd"
+path = "src/main.rs"

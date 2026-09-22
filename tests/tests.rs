@@ -254,6 +254,10 @@ mod test_od;
 #[path = "by-util/test_paste.rs"]
 mod test_paste;
 
+#[cfg(feature = "passwd")]
+#[path = "by-util/test_passwd.rs"]
+mod test_passwd;
+
 #[cfg(feature = "pathchk")]
 #[path = "by-util/test_pathchk.rs"]
 mod test_pathchk;

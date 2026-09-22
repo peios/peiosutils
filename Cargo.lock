@@ -1668,6 +1668,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "libauthd"
+version = "0.0.18"
+source = "git+https://github.com/peios/authd.git?rev=20a693ec2e6fccdd8f573e40f90726b1fabbf7d5#20a693ec2e6fccdd8f573e40f90726b1fabbf7d5"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1699,6 +1707,15 @@ dependencies = [
  "libc",
  "plain",
  "redox_syscall 0.7.3",
+]
+
+[[package]]
+name = "libtty"
+version = "0.0.18"
+source = "git+https://github.com/peios/authd.git?rev=20a693ec2e6fccdd8f573e40f90726b1fabbf7d5#20a693ec2e6fccdd8f573e40f90726b1fabbf7d5"
+dependencies = [
+ "libauthd 0.0.18",
+ "libc",
 ]
 
 [[package]]
@@ -2175,6 +2192,7 @@ dependencies = [
  "pu_numfmt",
  "pu_od",
  "pu_part",
+ "pu_passwd",
  "pu_paste",
  "pu_pathchk",
  "pu_pinky",
@@ -3132,6 +3150,16 @@ dependencies = [
  "rand 0.10.1",
  "tempfile",
  "thiserror 2.0.18",
+ "uucore",
+]
+
+[[package]]
+name = "pu_passwd"
+version = "0.8.12"
+dependencies = [
+ "clap",
+ "libauthd 0.0.18",
+ "libtty",
  "uucore",
 ]
 
@@ -4748,7 +4776,7 @@ dependencies = [
  "itertools 0.14.0",
  "jiff",
  "jiff-icu",
- "libauthd",
+ "libauthd 0.0.1",
  "libc",
  "libloading",
  "md-5",
