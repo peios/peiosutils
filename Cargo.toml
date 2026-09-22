@@ -125,6 +125,7 @@ feat_common_core = [
   "numfmt",
   "od",
   "part",
+  "passwd",
   "paste",
   "pathchk",
   "pr",
@@ -641,6 +642,7 @@ nproc = { optional = true, version = "0.8.0", package = "pu_nproc", path = "src/
 numfmt = { optional = true, version = "0.8.0", package = "pu_numfmt", path = "src/uu/numfmt" }
 od = { optional = true, version = "0.8.0", package = "pu_od", path = "src/uu/od" }
 part = { optional = true, version = "0.8.0", package = "pu_part", path = "src/uu/part" }
+passwd = { optional = true, version = "0.8.0", package = "pu_passwd", path = "src/uu/passwd" }
 paste = { optional = true, version = "0.8.0", package = "pu_paste", path = "src/uu/paste" }
 pathchk = { optional = true, version = "0.8.0", package = "pu_pathchk", path = "src/uu/pathchk" }
 pinky = { optional = true, version = "0.8.0", package = "pu_pinky", path = "src/uu/pinky" }
