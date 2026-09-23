@@ -2112,7 +2112,7 @@ dependencies = [
 
 [[package]]
 name = "peiosutils"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "bytecount",
  "clap",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "pu_arch"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2454,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "pu_b2sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "pu_base32"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2474,7 +2474,7 @@ dependencies = [
 
 [[package]]
 name = "pu_base64"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "pu_basename"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2495,7 +2495,7 @@ dependencies = [
 
 [[package]]
 name = "pu_basenc"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2505,7 +2505,7 @@ dependencies = [
 
 [[package]]
 name = "pu_cat"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2521,7 +2521,7 @@ dependencies = [
 
 [[package]]
 name = "pu_chroot"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2532,7 +2532,7 @@ dependencies = [
 
 [[package]]
 name = "pu_cksum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2543,7 +2543,7 @@ dependencies = [
 
 [[package]]
 name = "pu_comm"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2552,7 +2552,7 @@ dependencies = [
 
 [[package]]
 name = "pu_cp"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2569,7 +2569,7 @@ dependencies = [
 
 [[package]]
 name = "pu_csplit"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2582,7 +2582,7 @@ dependencies = [
 
 [[package]]
 name = "pu_cut"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "bstr",
  "clap",
@@ -2594,7 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "pu_date"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2612,7 +2612,7 @@ dependencies = [
 
 [[package]]
 name = "pu_dd"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2627,7 +2627,7 @@ dependencies = [
 
 [[package]]
 name = "pu_df"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2641,7 +2641,7 @@ dependencies = [
 
 [[package]]
 name = "pu_dir"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "pu_ls",
@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "pu_dircolors"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2659,7 +2659,7 @@ dependencies = [
 
 [[package]]
 name = "pu_dirname"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2668,7 +2668,7 @@ dependencies = [
 
 [[package]]
 name = "pu_du"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2682,7 +2682,7 @@ dependencies = [
 
 [[package]]
 name = "pu_echo"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2691,7 +2691,7 @@ dependencies = [
 
 [[package]]
 name = "pu_env"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2703,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "pu_expand"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2716,7 +2716,7 @@ dependencies = [
 
 [[package]]
 name = "pu_expr"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2729,7 +2729,7 @@ dependencies = [
 
 [[package]]
 name = "pu_factor"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2742,7 +2742,7 @@ dependencies = [
 
 [[package]]
 name = "pu_false"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2752,7 +2752,7 @@ dependencies = [
 
 [[package]]
 name = "pu_feat"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -2763,7 +2763,7 @@ dependencies = [
 
 [[package]]
 name = "pu_fmt"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2774,7 +2774,7 @@ dependencies = [
 
 [[package]]
 name = "pu_fold"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2786,7 +2786,7 @@ dependencies = [
 
 [[package]]
 name = "pu_groups"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2796,7 +2796,7 @@ dependencies = [
 
 [[package]]
 name = "pu_head"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2807,7 +2807,7 @@ dependencies = [
 
 [[package]]
 name = "pu_hostid"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2817,7 +2817,7 @@ dependencies = [
 
 [[package]]
 name = "pu_hostname"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2829,7 +2829,7 @@ dependencies = [
 
 [[package]]
 name = "pu_id"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2840,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "pu_install"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "file_diff",
@@ -2853,7 +2853,7 @@ dependencies = [
 
 [[package]]
 name = "pu_join"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "pu_kill"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2876,7 +2876,7 @@ dependencies = [
 
 [[package]]
 name = "pu_link"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2885,7 +2885,7 @@ dependencies = [
 
 [[package]]
 name = "pu_ln"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2895,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "pu_logname"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "pu_logonse"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -2918,7 +2918,7 @@ dependencies = [
 
 [[package]]
 name = "pu_ls"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "ansi-width",
  "clap",
@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "pu_lsblk"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -2949,7 +2949,7 @@ dependencies = [
 
 [[package]]
 name = "pu_md5sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2959,7 +2959,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mkdir"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2968,7 +2968,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mkexec"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "tempfile",
@@ -2977,7 +2977,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mkfifo"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -2987,7 +2987,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mkirf"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "flate2",
@@ -3001,7 +3001,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mknod"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3011,7 +3011,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mktemp"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3023,7 +3023,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mkuki"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "notify",
@@ -3033,7 +3033,7 @@ dependencies = [
 
 [[package]]
 name = "pu_more"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "crossterm",
@@ -3044,7 +3044,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mount"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -3056,7 +3056,7 @@ dependencies = [
 
 [[package]]
 name = "pu_mv"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3072,7 +3072,7 @@ dependencies = [
 
 [[package]]
 name = "pu_nice"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3082,7 +3082,7 @@ dependencies = [
 
 [[package]]
 name = "pu_nl"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3095,7 +3095,7 @@ dependencies = [
 
 [[package]]
 name = "pu_nohup"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3107,7 +3107,7 @@ dependencies = [
 
 [[package]]
 name = "pu_nproc"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3117,7 +3117,7 @@ dependencies = [
 
 [[package]]
 name = "pu_numfmt"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3129,7 +3129,7 @@ dependencies = [
 
 [[package]]
 name = "pu_od"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "byteorder",
  "clap",
@@ -3142,7 +3142,7 @@ dependencies = [
 
 [[package]]
 name = "pu_part"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "crc-fast",
@@ -3155,7 +3155,7 @@ dependencies = [
 
 [[package]]
 name = "pu_passwd"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libauthd 0.0.18",
@@ -3165,7 +3165,7 @@ dependencies = [
 
 [[package]]
 name = "pu_paste"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3174,7 +3174,7 @@ dependencies = [
 
 [[package]]
 name = "pu_pathchk"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3184,7 +3184,7 @@ dependencies = [
 
 [[package]]
 name = "pu_pinky"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3193,7 +3193,7 @@ dependencies = [
 
 [[package]]
 name = "pu_pr"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3206,7 +3206,7 @@ dependencies = [
 
 [[package]]
 name = "pu_printenv"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3215,7 +3215,7 @@ dependencies = [
 
 [[package]]
 name = "pu_printf"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3224,7 +3224,7 @@ dependencies = [
 
 [[package]]
 name = "pu_ptx"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3235,7 +3235,7 @@ dependencies = [
 
 [[package]]
 name = "pu_pwd"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3244,7 +3244,7 @@ dependencies = [
 
 [[package]]
 name = "pu_readlink"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3253,7 +3253,7 @@ dependencies = [
 
 [[package]]
 name = "pu_realpath"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3262,7 +3262,7 @@ dependencies = [
 
 [[package]]
 name = "pu_reg"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -3277,7 +3277,7 @@ dependencies = [
 
 [[package]]
 name = "pu_regman"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "memchr",
@@ -3291,7 +3291,7 @@ dependencies = [
 
 [[package]]
 name = "pu_revstrm"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3303,7 +3303,7 @@ dependencies = [
 
 [[package]]
 name = "pu_rm"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3317,7 +3317,7 @@ dependencies = [
 
 [[package]]
 name = "pu_rmdir"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3327,7 +3327,7 @@ dependencies = [
 
 [[package]]
 name = "pu_runcon"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3339,7 +3339,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sd"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -3354,7 +3354,7 @@ dependencies = [
 
 [[package]]
 name = "pu_seq"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "bigdecimal",
  "clap",
@@ -3368,7 +3368,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sha1sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3378,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sha224sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3388,7 +3388,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sha256sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3398,7 +3398,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sha384sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3408,7 +3408,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sha512sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3418,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "pu_shred"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3429,7 +3429,7 @@ dependencies = [
 
 [[package]]
 name = "pu_shuf"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3444,7 +3444,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sleep"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3453,7 +3453,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sort"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "bigdecimal",
  "binary-heap-plus",
@@ -3478,7 +3478,7 @@ dependencies = [
 
 [[package]]
 name = "pu_split"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3491,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "pu_stat"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3501,7 +3501,7 @@ dependencies = [
 
 [[package]]
 name = "pu_stdbuf"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3513,7 +3513,7 @@ dependencies = [
 
 [[package]]
 name = "pu_stdbuf_libstdbuf"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "ctor",
  "libc",
@@ -3521,7 +3521,7 @@ dependencies = [
 
 [[package]]
 name = "pu_stratafs"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -3534,7 +3534,7 @@ dependencies = [
 
 [[package]]
 name = "pu_stty"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "cfg_aliases",
  "clap",
@@ -3545,7 +3545,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sum"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3554,7 +3554,7 @@ dependencies = [
 
 [[package]]
 name = "pu_sync"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3564,7 +3564,7 @@ dependencies = [
 
 [[package]]
 name = "pu_tac"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3579,7 +3579,7 @@ dependencies = [
 
 [[package]]
 name = "pu_tail"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3594,7 +3594,7 @@ dependencies = [
 
 [[package]]
 name = "pu_tee"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3606,7 +3606,7 @@ dependencies = [
 
 [[package]]
 name = "pu_test"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3618,7 +3618,7 @@ dependencies = [
 
 [[package]]
 name = "pu_timeout"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3630,7 +3630,7 @@ dependencies = [
 
 [[package]]
 name = "pu_token"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -3645,7 +3645,7 @@ dependencies = [
 
 [[package]]
 name = "pu_touch"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "filetime",
@@ -3662,7 +3662,7 @@ dependencies = [
 
 [[package]]
 name = "pu_tr"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "bytecount",
  "clap",
@@ -3673,7 +3673,7 @@ dependencies = [
 
 [[package]]
 name = "pu_true"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3683,7 +3683,7 @@ dependencies = [
 
 [[package]]
 name = "pu_truncate"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3692,7 +3692,7 @@ dependencies = [
 
 [[package]]
 name = "pu_tsort"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3706,7 +3706,7 @@ dependencies = [
 
 [[package]]
 name = "pu_tty"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3716,7 +3716,7 @@ dependencies = [
 
 [[package]]
 name = "pu_umount"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "libc",
@@ -3727,7 +3727,7 @@ dependencies = [
 
 [[package]]
 name = "pu_uname"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3737,7 +3737,7 @@ dependencies = [
 
 [[package]]
 name = "pu_unexpand"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3749,7 +3749,7 @@ dependencies = [
 
 [[package]]
 name = "pu_uniq"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "codspeed-divan-compat",
@@ -3759,7 +3759,7 @@ dependencies = [
 
 [[package]]
 name = "pu_unlink"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3768,7 +3768,7 @@ dependencies = [
 
 [[package]]
 name = "pu_upgrade_peios"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "serde",
@@ -3778,7 +3778,7 @@ dependencies = [
 
 [[package]]
 name = "pu_uptime"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3789,7 +3789,7 @@ dependencies = [
 
 [[package]]
 name = "pu_users"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3799,7 +3799,7 @@ dependencies = [
 
 [[package]]
 name = "pu_vdir"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "pu_ls",
@@ -3808,7 +3808,7 @@ dependencies = [
 
 [[package]]
 name = "pu_wc"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "bytecount",
  "clap",
@@ -3824,7 +3824,7 @@ dependencies = [
 
 [[package]]
 name = "pu_who"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3834,7 +3834,7 @@ dependencies = [
 
 [[package]]
 name = "pu_whoami"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -3844,7 +3844,7 @@ dependencies = [
 
 [[package]]
 name = "pu_yes"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -4729,7 +4729,7 @@ dependencies = [
 
 [[package]]
 name = "uu_base_common"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -4738,7 +4738,7 @@ dependencies = [
 
 [[package]]
 name = "uu_checksum_common"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "clap",
  "fluent",
@@ -4747,7 +4747,7 @@ dependencies = [
 
 [[package]]
 name = "uucore"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "base64-simd",
  "bigdecimal",
@@ -4810,7 +4810,7 @@ dependencies = [
 
 [[package]]
 name = "uucore_procs"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4818,7 +4818,7 @@ dependencies = [
 
 [[package]]
 name = "uutests"
-version = "0.8.12"
+version = "0.8.13"
 dependencies = [
  "ctor",
  "libc",

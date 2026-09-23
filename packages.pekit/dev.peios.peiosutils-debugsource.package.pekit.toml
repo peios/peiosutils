@@ -6,7 +6,7 @@ description  = "Debug sources for peiosutils"
 
 
 [dependencies]
-"dev.peios.peiosutils-debuginfo" = "= {{version}}-1"
+"dev.peios.peiosutils-debuginfo" = "= {{release}}"
 
 [files]
 "@source:LICENSE"       = "usr/share/licenses/dev.peios.peiosutils-debugsource/LICENSE"
