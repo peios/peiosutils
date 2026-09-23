@@ -164,6 +164,9 @@ for applet in $APPLETS; do
   fish="$PEKIT_OUT/$SHAREDIR/fish/vendor_completions.d/$applet.fish"
   "$UUDOC" completion "$applet" fish > "$fish" 2>/dev/null || rm -f "$fish"
 done
+# The multicall dispatcher is a command in its own right.
+"$UUDOC" manpage peiosutils > "$PEKIT_OUT/$SHAREDIR/man/man1/peiosutils.1"
+find "$PEKIT_OUT/$SHAREDIR/man" -type f -name '*.[1-9]' -exec gzip -9n {} +
 for directory in src/uu/*/locales; do
   [ -d "$directory" ] || continue
   program=$(basename "$(dirname "$directory")")
@@ -389,6 +392,7 @@ pkgconf        = "*"
 "org.sourceware.debugedit" = "*"
 "org.llvm.clang-devel"     = ">= 22.1.8"
 "org.pkgconf.pkgconf"      = "*"
+"org.gnu.gzip"             = "*"
 "dev.peios.libpeios-devel" = ">= 0.5.0"
 "dev.peios.packaging-tools" = "*"
 
@@ -410,6 +414,7 @@ binutils       = "*"
 debugedit      = "*"
 "libclang-dev" = "*"
 pkgconf        = "*"
+gzip           = "*"
 
 [clean]
 command = "cargo clean"
