@@ -5,7 +5,7 @@ description = "Debugging symbols for peiosutils"
 
 
 [dependencies]
-"dev.peios.peiosutils" = "= {{version}}-1"
+"dev.peios.peiosutils" = "= {{release}}"
 
 [files]
 "@source:LICENSE"   = "usr/share/licenses/dev.peios.peiosutils-debuginfo/LICENSE"
