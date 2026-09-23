@@ -62,19 +62,37 @@ fn cascade(
     Ok(hits)
 }
 
-/// How narrowly a record claims the query it matched. Lower is more specific:
-/// a record naming the path outright beats one that reached it through a
-/// single-component wildcard, which beats one that spanned separators to get
-/// there — the same most-specific-match rule the port-reservation selectors and
-/// PNP use, so there is nothing new for an operator to learn.
-fn specificity(anchor: &str) -> u8 {
-    if !pattern::has_wildcard(anchor) {
-        0
-    } else if pattern::spans_components(anchor) {
-        2
-    } else {
-        1
-    }
+/// How narrowly a record claims the query it matched: one class per
+/// `\`-separated component — 0 for a literal one, 1 for one holding a
+/// single-component wildcard, 2 for one holding a spanning wildcard —
+/// compared left to right. Lower is more specific, and the leftmost component
+/// that differs decides, which is the same most-specific-match rule the
+/// port-reservation selectors and PNP use, so there is nothing new for an
+/// operator to learn.
+///
+/// Per component rather than one class for the whole anchor, because a single
+/// class cannot separate two records that both span. `Rules\Interface\<rule...>`
+/// and `Rules\<Layer>\<rule...>` are equally "spanning", yet the first names
+/// the layer and the second does not; ranking them equal reported one page as
+/// two packages disagreeing, which is the bug this shape fixes.
+///
+/// A wildcard in the value half is classed with the component it sits in
+/// rather than on its own. Two records differing only there therefore tie and
+/// surface as an overlap — the honest outcome for a genuine ambiguity, since
+/// regman flags rather than silently picking a winner.
+fn specificity(anchor: &str) -> Vec<u8> {
+    anchor
+        .split('\\')
+        .map(|component| {
+            if !pattern::has_wildcard(component) {
+                0
+            } else if pattern::spans_components(component) {
+                2
+            } else {
+                1
+            }
+        })
+        .collect()
 }
 
 /// Keep only the most specific records that matched, so an operator sees the
@@ -348,6 +366,45 @@ The narrow page: a rule at the top of a tree.
             resolve_exact(tmp.path(), &idxp, "machine\\x\\packet\\ssh\\from-lan actions").unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].record.canonical, "Machine\\X\\<layer>\\<rule...> Actions");
+    }
+
+    /// The case a single tier per anchor could not express: two pages that
+    /// both span, differing in whether they name the layer. This is netd's
+    /// `Rules\Interface\<rule...>` against pnp's `Rules\<Layer>\<rule...>`,
+    /// which used to be reported as two packages documenting one key.
+    #[test]
+    fn a_named_component_beats_a_wildcard_one_when_both_span() {
+        let (tmp, idxp) = tiered_setup();
+        std::fs::write(
+            tmp.path().join("named.regman"),
+            "\
+--- machine\\x\\packet\\<rule...> actions
+canonical: Machine\\X\\Packet\\<rule...> Actions
+type: REG_MULTI_SZ
+
+The page for this layer's rules, at any depth.
+",
+        )
+        .unwrap();
+        index::build(tmp.path(), &idxp).unwrap();
+        // Deep enough that the single-component page cannot reach it, so the
+        // two spanning pages are the only candidates.
+        let hits =
+            resolve_exact(tmp.path(), &idxp, "machine\\x\\packet\\ssh\\from-lan actions").unwrap();
+        assert_eq!(hits.len(), 1, "naming the layer must beat wildcarding it");
+        assert_eq!(hits[0].record.canonical, "Machine\\X\\Packet\\<rule...> Actions");
+    }
+
+    /// Specificity is decided left to right, so a page concrete in an earlier
+    /// component wins even where the other is concrete later on.
+    #[test]
+    fn the_leftmost_differing_component_decides() {
+        // [0,0,1] beats [0,1,0]: they first differ at the middle component,
+        // where one is literal and the other is not.
+        assert!(specificity("a\\b\\<y>") < specificity("a\\<x>\\c"));
+        assert!(specificity("machine\\x\\packet\\<r...>") < specificity("machine\\x\\<l>\\<r...>"));
+        // Equal shapes tie, which is what surfaces a genuine ambiguity.
+        assert_eq!(specificity("a\\<x> v"), specificity("a\\<y> v"));
     }
 
     #[test]
