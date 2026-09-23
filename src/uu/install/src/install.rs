@@ -10,7 +10,6 @@
 mod mode;
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use file_diff::diff;
 use filetime::{FileTime, set_file_times};
 #[cfg(all(feature = "selinux", any(target_os = "linux", target_os = "android")))]
 use selinux::SecurityContext;
@@ -18,7 +17,7 @@ use std::ffi::OsString;
 use std::fmt::Debug;
 use std::fs::{self, metadata};
 use std::fs::{File, OpenOptions};
-use std::io::{Write, stdout};
+use std::io::{Read, Write, stdout};
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::process;
 use thiserror::Error;
@@ -1272,11 +1271,39 @@ fn need_copy(from: &Path, to: &Path, b: &Behavior) -> bool {
     }
 
     // Check if the contents of the source and destination files differ.
-    if !diff(&from.to_string_lossy(), &to.to_string_lossy()) {
+    if !same_contents(from, to) {
         return true;
     }
 
     false
+}
+
+/// Whether two files hold byte-identical contents. Any error opening or
+/// reading either file counts as a difference, so `-C` then copies.
+///
+/// This replaces the `file_diff` crate, whose upstream publishes no licence
+/// text Peios can ship. Unlike it, this streams both files rather than
+/// reading them whole, and stops at the first differing block.
+fn same_contents(from: &Path, to: &Path) -> bool {
+    fn compare(from: &Path, to: &Path) -> std::io::Result<bool> {
+        let (mut a, mut b) = (File::open(from)?, File::open(to)?);
+        if a.metadata()?.len() != b.metadata()?.len() {
+            return Ok(false);
+        }
+        let (mut buf_a, mut buf_b) = (vec![0u8; 64 * 1024], vec![0u8; 64 * 1024]);
+        loop {
+            let n = a.read(&mut buf_a)?;
+            if n == 0 {
+                // Equal lengths: the other file must end here too.
+                return Ok(b.read(&mut buf_b[..1])? == 0);
+            }
+            b.read_exact(&mut buf_b[..n])?;
+            if buf_a[..n] != buf_b[..n] {
+                return Ok(false);
+            }
+        }
+    }
+    compare(from, to).unwrap_or(false)
 }
 
 #[cfg(all(feature = "selinux", any(target_os = "linux", target_os = "android")))]
@@ -1487,6 +1514,26 @@ pub fn set_selinux_context_for_directories_install(target_path: &Path, context: 
 mod tests {
     #[cfg(all(feature = "selinux", any(target_os = "linux", target_os = "android")))]
     use super::derive_context_from_parent;
+
+    #[test]
+    fn same_contents_compares_bytes_and_treats_errors_as_different() {
+        use super::same_contents;
+        let dir = std::env::temp_dir().join(format!("pu-install-same-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (a, b, c, d) = (dir.join("a"), dir.join("b"), dir.join("c"), dir.join("d"));
+        let big: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+        std::fs::write(&a, &big).unwrap();
+        std::fs::write(&b, &big).unwrap();
+        let mut changed = big.clone();
+        *changed.last_mut().unwrap() ^= 1;
+        std::fs::write(&c, &changed).unwrap();
+        std::fs::write(&d, &big[..big.len() - 1]).unwrap();
+        assert!(same_contents(&a, &b));
+        assert!(!same_contents(&a, &c)); // same length, last byte differs
+        assert!(!same_contents(&a, &d)); // shorter
+        assert!(!same_contents(&a, &dir.join("missing")));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[cfg(all(feature = "selinux", any(target_os = "linux", target_os = "android")))]
     #[test]
