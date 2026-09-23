@@ -109,6 +109,28 @@ CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=off \
 cargo build --release --locked --offline --target-dir "$TARGET" \
   --no-default-features --features "uudoc feat_os_unix feat_external_libstdbuf" --bin uudoc
 
+# The multicall binary and libstdbuf link their crate closure statically, so
+# the packages that carry them ship its notices and declare its conjunction of
+# licences; --check holds each definition to it (PEI-1163). Crates that ship no
+# notice of their own get the reviewed copies in third-party/, taken from each
+# crate's upstream repository at the locked commit.
+LICENSE_ROOT=$PEKIT_OUT/licenses
+set --
+for notice in third-party/*-[0-9]*-LICENSE; do
+  crate=${notice#third-party/}
+  crate=${crate%-LICENSE}
+  set -- "$@" --notice "${crate%-*}@${crate##*-}=$notice"
+done
+for definition in dev.peios.peiosutils dev.peios.peiosutils-debuginfo dev.peios.peiosutils-debugsource; do
+  /usr/libexec/peios-packaging/collect-rust-licences \
+    --licence-root "$LICENSE_ROOT" --root peiosutils --root pu_stdbuf_libstdbuf \
+    --no-default-features --features "feat_os_unix feat_external_libstdbuf" \
+    --notice "git+https://github.com/peios/authd.git=third-party/authd-LICENSE" \
+    --notice "git+https://github.com/peios/peios-rs.git=third-party/peios-rs-LICENSE" \
+    "$@" --check "packages.pekit/$definition.package.pekit.toml"
+done
+test -s "$LICENSE_ROOT/crate-licenses.tsv"
+
 # Runtime: one multicall binary and an exact symlink for every advertised
 # applet. No duplicate copies of the executable are shipped.
 mkdir -p "$PEKIT_OUT/$BINDIR" "$PEKIT_OUT/$STDBUFLIBDIR"
@@ -340,6 +362,7 @@ rm -rf "$SMOKE"
 "dev.peios.libpeios"       = ">= 0.5.0"
 "dev.peios.libpeios-devel" = ">= 0.5.0"
 "dev.peios.kernel-headers" = "*"
+"dev.peios.packaging-tools" = "*"
 dash           = "*"
 coreutils      = "*"
 findutils      = "*"
@@ -367,6 +390,7 @@ pkgconf        = "*"
 "org.llvm.clang-devel"     = ">= 22.1.8"
 "org.pkgconf.pkgconf"      = "*"
 "dev.peios.libpeios-devel" = ">= 0.5.0"
+"dev.peios.packaging-tools" = "*"
 
 [build.main.dependencies.apt]
 # The libpeios SDK and PKM UAPI headers come from the signed catalogue
