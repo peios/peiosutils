@@ -381,7 +381,7 @@ homepage = "https://github.com/peios/peiosutils"
 keywords = ["peios", "peiosutils", "coreutils", "uutils", "cli", "utility"]
 license = "MIT"
 readme = "README.package.md"
-version = "0.8.14"
+version = "0.8.15"
 
 [workspace.dependencies]
 ansi-width = "0.1.0"

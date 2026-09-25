@@ -415,6 +415,10 @@ debugedit      = "*"
 "libclang-dev" = "*"
 pkgconf        = "*"
 gzip           = "*"
+# collect-rust-licences, from the signed catalogue (only its own files), and
+# the interpreter it runs under.
+"dev.peios.packaging-tools" = "*"
+python3        = "*"
 
 [clean]
 command = "cargo clean"
