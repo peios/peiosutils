@@ -60,7 +60,7 @@ peios = { git = "https://github.com/peios/peios-rs.git", rev = "3dffee949a457509
 # The ident wire format, for turning a SID into a principal name
 # (`sid-resolver`). Dependency-free apart from libc by design, because it is
 # also linked into authd itself.
-libauthd = { git = "https://github.com/peios/authd.git", tag = "v0.0.13", optional = true }
+libauthd = { git = "https://github.com/peios/authd.git", rev = "5966669b523585c2e901b4c27d8bba6547691fc8", optional = true }
 filetime = { workspace = true, optional = true }
 
 # Benchmark dependencies (optional)
