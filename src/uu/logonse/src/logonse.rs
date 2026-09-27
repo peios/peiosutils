@@ -89,7 +89,7 @@ fn build_cli() -> Command {
                         .value_name("TYPE")
                         .help(
                             "Logon type: interactive|network|batch|service|\
-                             network-cleartext|new-credentials",
+                             network-cleartext|new-credentials|remote-interactive",
                         ),
                 )
                 .arg(
@@ -258,9 +258,10 @@ fn parse_logon_type(s: &str) -> Result<LogonType, String> {
         "service" => Ok(LogonType::Service),
         "network-cleartext" => Ok(LogonType::NetworkCleartext),
         "new-credentials" => Ok(LogonType::NewCredentials),
+        "remote-interactive" => Ok(LogonType::RemoteInteractive),
         other => Err(format!(
             "unknown logon-type `{other}` (expected one of: interactive, network, \
-             batch, service, network-cleartext, new-credentials)"
+             batch, service, network-cleartext, new-credentials, remote-interactive)"
         )),
     }
 }
