@@ -173,6 +173,7 @@ pub fn change(socket: &UnixStream, collector: &mut dyn Collector) -> Result<(), 
                 let mut answers = Vec::with_capacity(request.prompts.len());
                 for prompt in &request.prompts {
                     let data = match prompt.credential_type {
+                        CredentialType::SshPublicKey => return Err("the authority requested an unsupported credential".into()),
                         CredentialType::Password => collector
                             .password(prompt)
                             .map_err(|error| format!("could not read the password: {error}"))?,
@@ -262,6 +263,7 @@ mod tests {
 
     fn prompt(credential_ref: u32, name: &str) -> Prompt {
         Prompt {
+            parameters: Vec::new(),
             credential_ref,
             credential_type: CredentialType::Password,
             credential_name: name.into(),
