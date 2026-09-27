@@ -14,7 +14,7 @@ name = "dev.peios.peiosutils-source"
 command = '''
 set -eu
 
-PEIOS_RS_REV=f4309f78fbaa878a14429a5e07d778dba9ddfab7
+PEIOS_RS_REV=3dffee949a457509078ffc2f423613de330b5401
 export CARGO_HOME=/tmp/cargo-peiosutils-vendor
 mkdir -p "$CARGO_HOME" "$PEKIT_OUT"
 
