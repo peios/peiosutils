@@ -30,15 +30,15 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::{self, File, Metadata, OpenOptions, Permissions};
+use std::fs::{File, Metadata, OpenOptions, Permissions};
 use std::io;
 use std::os::fd::AsFd;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use clap::ArgMatches;
 use filetime::FileTime;
-use peios::file::{self, OpenFlags, SecInfo};
+use peios::file::{self, SecInfo};
 use peios::security::{Control, SdView, SecurityDescriptor, strip_inherited};
 
 use crate::display::Quotable;
@@ -482,12 +482,6 @@ fn handle_preserve<F: Fn() -> PreserveResult<()>>(p: Preserve, f: F) -> Preserve
     Ok(())
 }
 
-/// `AT_SYMLINK_NOFOLLOW`, for the `at_flags` argument of the path forms of
-/// [`peios::file::get_sd`] / [`peios::file::set_sd`].
-fn at_nofollow() -> i32 {
-    OpenFlags::SYMLINK_NOFOLLOW.bits() as i32
-}
-
 /// One end of an attribute copy, pinned to a single inode.
 ///
 /// [`copy_attributes`] used to re-resolve `source` and `dest` for every step —
@@ -501,24 +495,35 @@ fn at_nofollow() -> i32 {
 /// (GHSA-8r5f-98ww-c4c5, GHSA-p9fh-vm43-9xxc).
 ///
 /// A `FileHandle` resolves the name once, with `O_NOFOLLOW`, and drives every
-/// later step off that descriptor: `fstat`, `fchmod`, `f{list,get,set}xattr`
-/// and `peios::file::fd_{get,set}_sd`.
+/// later step off descriptors of that one object. There are two, because no
+/// single descriptor can do everything asked of it:
 ///
-/// Only regular files and directories are opened. A symlink cannot be opened
-/// for I/O; a socket cannot be opened at all (`ENXIO`); opening a FIFO blocks
-/// or has side effects, and opening a device node is visible to its driver.
-/// Those keep the path forms — but only the ones that cannot be redirected
-/// through a symlink swapped in at that name: `AT_SYMLINK_NOFOLLOW` for the
-/// security descriptor, `l*xattr` for extended attributes (which is what the
-/// `xattr` crate's non-`_deref` functions are), `utimensat(AT_SYMLINK_NOFOLLOW)`
-/// for timestamps, and no `chmod` at all.
+///  - the **anchor**, an `O_PATH` descriptor, which names the object and
+///    carries no access of its own. It can be had for anything with a name,
+///    a symlink included, and it is what the security descriptor is read and
+///    written through (see [`FileHandle::get_sd`]);
+///  - the **file**, an ordinary descriptor, for `fchmod`,
+///    `f{list,get,set}xattr` and `futimens`, which the kernel refuses on an
+///    anchor (`EBADF`).
+///
+/// Only regular files and directories get the second. A symlink cannot be
+/// opened for I/O; a socket cannot be opened at all (`ENXIO`); opening a FIFO
+/// blocks or has side effects, and opening a device node is visible to its
+/// driver. Those keep the path forms for everything but the security
+/// descriptor — but only the ones that cannot be redirected through a symlink
+/// swapped in at that name: `l*xattr` for extended attributes (which is what
+/// the `xattr` crate's non-`_deref` functions are),
+/// `utimensat(AT_SYMLINK_NOFOLLOW)` for timestamps, and no `chmod` at all.
 struct FileHandle<'a> {
     /// The name this handle came from. Used for diagnostics, and for the
-    /// no-follow path fallbacks when there is no descriptor.
+    /// no-follow path fallbacks when there is no `file`.
     path: &'a Path,
-    /// The pinned descriptor, for a regular file or a directory.
+    /// The `O_PATH` descriptor that names the object, whatever its type.
+    anchor: File,
+    /// The ordinary descriptor, for a regular file or a directory. Always the
+    /// object `anchor` names: [`FileHandle::open`] refuses any other.
     file: Option<File>,
-    /// `fstat` of `file`, or the `lstat` of `path` when there is no `file`.
+    /// `fstat` of `anchor`.
     metadata: Metadata,
 }
 
@@ -526,30 +531,43 @@ impl<'a> FileHandle<'a> {
     /// Pin `path`. Errors are labelled with the caller's `source -> dest`
     /// `context`.
     fn open(path: &'a Path, context: &str) -> PreserveResult<Self> {
-        let metadata = fs::symlink_metadata(path)
-            .map_err(|e| PreserveError::IoContext(e, context.to_string()))?;
+        let in_context = |e| PreserveError::IoContext(e, context.to_string());
+        let anchor = Self::open_anchor(path).map_err(in_context)?;
+        let metadata = anchor.metadata().map_err(in_context)?;
         let file_type = metadata.file_type();
         if !(file_type.is_file() || file_type.is_dir()) {
             return Ok(Self {
                 path,
+                anchor,
                 file: None,
                 metadata,
             });
         }
         match Self::open_nofollow(path, file_type.is_dir()) {
             Ok(file) => {
-                let metadata = file
-                    .metadata()
-                    .map_err(|e| PreserveError::IoContext(e, context.to_string()))?;
+                // The name was resolved a second time to get here, so it can
+                // have been swapped for another file or directory since the
+                // anchor was taken. Both descriptors are held, so neither
+                // inode number can have been reused: equal means the same
+                // object. Fail closed otherwise, or the descriptor would be
+                // copied onto one object and everything else onto another.
+                let opened = file.metadata().map_err(in_context)?;
+                if !same_object(&metadata, &opened) {
+                    return Err(PreserveError::Other(format!(
+                        "{}: replaced by another file while copying; refusing to preserve attributes through it",
+                        path.quote()
+                    )));
+                }
                 Ok(Self {
                     path,
+                    anchor,
                     file: Some(file),
                     metadata,
                 })
             }
-            // `ELOOP` from an `O_NOFOLLOW` open of something the `lstat` above
-            // saw as a regular file or a directory means the name was swapped
-            // for a symlink in between. Fail closed: falling back to path
+            // `ELOOP` from an `O_NOFOLLOW` open of something the anchor holds
+            // as a regular file or a directory means the name was swapped for
+            // a symlink in between. Fail closed: falling back to path
             // operations here would follow exactly the link we just caught.
             Err(e) if e.raw_os_error() == Some(libc::ELOOP) => Err(PreserveError::Other(format!(
                 "{}: replaced by a symbolic link while copying; refusing to preserve attributes through it",
@@ -561,10 +579,21 @@ impl<'a> FileHandle<'a> {
             // xattrs onto such an object can fail where it once succeeded.
             Err(_) => Ok(Self {
                 path,
+                anchor,
                 file: None,
                 metadata,
             }),
         }
+    }
+
+    /// Name `path` itself with an `O_PATH` descriptor. This asks for no access
+    /// to the object, so it cannot block, has no side effects, and works on a
+    /// symlink, which `O_NOFOLLOW` makes it name rather than follow.
+    fn open_anchor(path: &Path) -> io::Result<File> {
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_PATH | libc::O_NOFOLLOW | libc::O_CLOEXEC)
+            .open(path)
     }
 
     fn open_nofollow(path: &Path, is_dir: bool) -> io::Result<File> {
@@ -650,14 +679,28 @@ impl<'a> FileHandle<'a> {
     }
 
     /// Read the `info` components of the pinned object's security descriptor.
+    ///
+    /// Through the anchor, and deliberately not through `file`. The kernel
+    /// answers the two differently. On an ordinary descriptor it consults the
+    /// access the descriptor was granted when it was opened and runs no
+    /// access check, and an `open(2)` is never granted the right to read a
+    /// SACL (`ACCESS_SYSTEM_SECURITY`): through `file`, `cp -a` was refused
+    /// every regular file and directory, whoever ran it (PEI-1205). On an
+    /// `O_PATH` descriptor it runs the access check there and then, as it
+    /// does for a path, so the caller's privileges count — and the object is
+    /// still the pinned one.
     fn get_sd(&self, info: SecInfo) -> peios::Result<SecurityDescriptor> {
-        match &self.file {
-            Some(file) => file::fd_get_sd(file.as_fd(), info),
-            None => file::get_sd(None, self.path, info, at_nofollow()),
-        }
+        file::fd_get_sd(self.anchor.as_fd(), info)
     }
 
     /// Write the `info` components of `sd` onto the pinned object.
+    ///
+    /// Through the anchor, as [`FileHandle::get_sd`] is, and with one more
+    /// reason for it: only a check made there and then lets
+    /// `SeRestorePrivilege` do its work, and without it an owner can be set
+    /// to nothing but the caller or one of the caller's owner groups. Copying
+    /// another principal's file with its owner intact is exactly the case the
+    /// privilege is for.
     ///
     /// A symlink carries a descriptor of its own, and it is that descriptor
     /// the caller is copying: following the link would read and write the
@@ -665,14 +708,10 @@ impl<'a> FileHandle<'a> {
     /// object nobody asked about, and during a tree copy the target usually
     /// does not exist yet — `/init -> usr/bin/peinit2` is created long before
     /// `/usr` is — so the write fails outright with `ENOENT` and takes the
-    /// whole copy down. Hence `AT_SYMLINK_NOFOLLOW` on the path form; it is
-    /// inert on anything that is not a symlink, and the fd form cannot follow
-    /// anything by construction.
+    /// whole copy down. The anchor of a symlink is the symlink, and a
+    /// descriptor cannot follow anything by construction.
     fn set_sd(&self, info: SecInfo, sd: &SecurityDescriptor) -> peios::Result<()> {
-        match &self.file {
-            Some(file) => file::fd_set_sd(file.as_fd(), info, sd),
-            None => file::set_sd(None, self.path, info, sd, at_nofollow()),
-        }
+        file::fd_set_sd(self.anchor.as_fd(), info, sd)
     }
 
     fn set_times(&self, atime: FileTime, mtime: FileTime) -> io::Result<()> {
@@ -681,6 +720,13 @@ impl<'a> FileHandle<'a> {
             None => filetime::set_symlink_file_times(self.path, atime, mtime),
         }
     }
+}
+
+/// Whether two `fstat`s are of the same object. Only meaningful while both
+/// descriptors are held open, which is what keeps the inode number from being
+/// handed to something else.
+fn same_object(a: &Metadata, b: &Metadata) -> bool {
+    a.dev() == b.dev() && a.ino() == b.ino()
 }
 
 /// Copy extended attributes (`user.*`, `trusted.*`, `system.*` — everything
@@ -935,8 +981,45 @@ pub fn dacl_is_protected(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::os::fd::AsRawFd;
     use std::os::unix::fs::symlink;
     use tempfile::tempdir;
+
+    /// PEI-1205. The security descriptor goes through a descriptor that names
+    /// the object and nothing more, because that is the only kind the kernel
+    /// runs an access check for; through the ordinary one, `cp -a` could read
+    /// no file's SACL. The two must be the same object, or the descriptor and
+    /// the rest of the attributes would part company.
+    #[test]
+    fn the_descriptor_goes_through_an_anchor_of_the_same_object() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("file");
+        File::create(&file).unwrap();
+
+        let handle = FileHandle::open(&file, "src -> file").unwrap();
+        // SAFETY: a live descriptor, and F_GETFL takes no argument.
+        let flags = unsafe { libc::fcntl(handle.anchor.as_raw_fd(), libc::F_GETFL) };
+        assert_ne!(flags & libc::O_PATH, 0, "the anchor is not O_PATH");
+
+        let opened = handle.file.as_ref().unwrap().metadata().unwrap();
+        assert!(same_object(handle.metadata(), &opened));
+    }
+
+    /// What [`FileHandle::open`] refuses on: a name that comes to a different
+    /// object the second time it is resolved.
+    #[test]
+    fn another_file_is_not_the_same_object() {
+        let dir = tempdir().unwrap();
+        let one = dir.path().join("one");
+        let other = dir.path().join("other");
+        File::create(&one).unwrap();
+        File::create(&other).unwrap();
+
+        let one = FileHandle::open(&one, "one").unwrap();
+        let other = FileHandle::open(&other, "other").unwrap();
+        assert!(!same_object(one.metadata(), other.metadata()));
+    }
 
     /// GHSA-8r5f-98ww-c4c5 / GHSA-p9fh-vm43-9xxc. Once the destination name has
     /// been resolved, replacing it with a symlink must not redirect the `chmod`
@@ -1013,7 +1096,8 @@ mod tests {
     }
 
     /// A symlink end is never opened, and gets no `chmod` at all — the path
-    /// form would follow it onto the target.
+    /// form would follow it onto the target. Its anchor is the link itself,
+    /// which is what its security descriptor is copied through.
     #[test]
     fn a_symlink_end_is_not_opened_and_is_never_chmodded() {
         let dir = tempdir().unwrap();

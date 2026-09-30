@@ -315,6 +315,30 @@ coordinator to route:
      at_flags 0 (follows). It is a read-only probe feeding an mv warning, so
      nothing is written through the link; left alone to avoid changing which
      warnings mv emits for a symlink source.
+
+AMENDED 2026-09-30 (PEI-1205). The SD half of WHAT WAS DONE broke `cp -a`,
+`mv --sd` and every other preserve of a SACL or an owner, for every caller: the
+kernel checks kacs_get_sd/kacs_set_sd on an ORDINARY descriptor against the
+access the open was granted and runs no AccessCheck (TRM, FACS, "The
+Set-Security Interface"), a legacy open is never granted ACCESS_SYSTEM_SECURITY,
+and SeRestorePrivilege — what lets an owner be set to someone else — has no
+effect on that route at all. The descriptor now goes through a second, O_PATH
+descriptor of the same object (the handle's `anchor`), which the kernel checks
+live as it does a path. The pin is kept and widened:
+  - the anchor is taken first, O_PATH|O_NOFOLLOW, for ANY object type, so the SD
+    of a symlink, socket, FIFO or device node is pinned too; there is no path
+    form of the SD calls left in copy_attributes;
+  - the ordinary descriptor is still opened by name, so it is compared with the
+    anchor (st_dev, st_ino, both held open) and a mismatch fails closed with
+    "<path>: replaced by another file while copying; refusing to preserve
+    attributes through it". fchmod, the xattr calls and the timestamps are as
+    they were.
+Tests added: the_descriptor_goes_through_an_anchor_of_the_same_object,
+another_file_is_not_the_same_object. test_cp + test_mv: 443 passed, 0 failed,
+39 ignored. On a Peios VM (Experimental 2026.8): `cp -a` of a file, a directory
+and a symlink, `--preserve=sacl|owner|dacl`, and `mv --sd` across mounts all
+succeed where the shipped build was refused, and an administrator's copy of a
+SYSTEM-owned file keeps SYSTEM as its owner.
 """
 resolved     = "2026-09-09"
 
@@ -1171,6 +1195,11 @@ still land on a swapped-in object of the same name. Closing that needs either
 the *at() xattr syscalls (Linux 6.13+) or an O_PATH + /proc/self/fd idiom;
 neither is worth it for object types that carry no mode bits --preserve is
 about.
+
+AMENDED 2026-09-30 (PEI-1205): the SD copy no longer uses the ordinary
+descriptor or any path form. It goes through an O_PATH descriptor of the same
+object, for every object type; see the amendment to the GHSA-8r5f entry. The
+KNOWN LIMIT above now covers xattrs and timestamps only.
 """
 resolved     = "2026-09-09"
 
