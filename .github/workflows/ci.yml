@@ -57,8 +57,14 @@ jobs:
       - name: Build libpeios at the pinned revision
         run: |
           set -eu
-          git clone --filter=blob:none --no-checkout https://github.com/peios/libpeios.git libpeios
-          git -C libpeios checkout --detach "$LIBPEIOS_REV"
+          # Not `git clone`: rust-cache above restores libpeios/target from
+          # the last run, and clone refuses a directory that is not empty.
+          # That made every run after a green one fail here, since a green
+          # run is what saves the cache.
+          git init -q libpeios
+          git -C libpeios fetch -q --depth 1 https://github.com/peios/libpeios.git "$LIBPEIOS_REV"
+          git -C libpeios checkout -q --detach FETCH_HEAD
+          test "$(git -C libpeios rev-parse HEAD)" = "$LIBPEIOS_REV"
           # Exactly one pkm revision, or the lockfile is not what this
           # step takes it for.
           PKM_REV=$(sed -n 's|^source = "git+https://github.com/peios/pkm.git?rev=\([0-9a-f]\{40\}\)#.*|\1|p' libpeios/Cargo.lock | sort -u)
