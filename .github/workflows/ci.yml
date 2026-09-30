@@ -7,12 +7,20 @@
 # of peiosutils compiles — which is what this workflow did on every run
 # from June to September 2026 while two releases were cut underneath it.
 #
-# The library is built here from the same pinned revision the packaging
-# recipe (pekit.toml) vendors, read from that file so there is one pin.
-# Building libpeios materialises the locked pkm checkout in Cargo's git
-# cache, which is where the UAPI headers come from — the recipe does the
-# same. Nothing here is a substitute for the recipe's own test run inside
-# the packaging build; it is the gate that runs on every push.
+# The library is built here from the released revision named below. The
+# pin used to be read out of the packaging recipe (pekit.toml), which
+# vendored libpeios itself; since 56c012012 the recipe takes libpeios from
+# the package catalogue and names no revision, and this workflow went on
+# reading one that was no longer there — so it failed before building
+# anything, on every push, while 0.8.13 to 0.8.15 were cut underneath it.
+# The pin is this workflow's own now; move it when the tree needs a newer
+# libpeios.
+#
+# Building libpeios materialises the pkm checkout its lockfile pins in
+# Cargo's git cache, which is where the UAPI headers come from, so the
+# pkm revision is read from that lockfile and there is still one pin.
+# Nothing here is a substitute for the recipe's own test run inside the
+# packaging build; it is the gate that runs on every push.
 
 name: ci
 
@@ -21,6 +29,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
+env:
+  # libpeios v0.5.4.
+  LIBPEIOS_REV: 953081d2c54a30fe14068551e51a5b9ee036314e
 
 jobs:
   build-and-test:
@@ -42,14 +54,15 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q libclang-dev
 
-      - name: Build libpeios at the recipe's pinned revision
+      - name: Build libpeios at the pinned revision
         run: |
           set -eu
-          LIBPEIOS_REV=$(sed -n 's/^LIBPEIOS_REV=\([0-9a-f]\{40\}\)$/\1/p' pekit.toml)
-          PKM_REV=$(sed -n 's/^PKM_REV=\([0-9a-f]\{40\}\)$/\1/p' pekit.toml)
-          test -n "$LIBPEIOS_REV" && test -n "$PKM_REV"
           git clone --filter=blob:none --no-checkout https://github.com/peios/libpeios.git libpeios
           git -C libpeios checkout --detach "$LIBPEIOS_REV"
+          # Exactly one pkm revision, or the lockfile is not what this
+          # step takes it for.
+          PKM_REV=$(sed -n 's|^source = "git+https://github.com/peios/pkm.git?rev=\([0-9a-f]\{40\}\)#.*|\1|p' libpeios/Cargo.lock | sort -u)
+          test "$(printf '%s\n' "$PKM_REV" | grep -c .)" = 1
           cargo build --locked --manifest-path libpeios/Cargo.toml
           # The soname is libpeios.so.0; cargo writes only libpeios.so.
           ln -sf libpeios.so libpeios/target/debug/libpeios.so.0
