@@ -41,7 +41,7 @@ uucore = { workspace = true, features = ["blkid"] }
 thiserror = { workspace = true }
 # KACS mount policy (§8) goes through the peios crate's safe wrappers over
 # libpeios (File::mount_set_policy + security::sddl). Same git pin as pu_token.
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "3dffee949a457509078ffc2f423613de330b5401" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "fa833541e1837042765072f092140f4af683edc2" }
 
 [[bin]]
 name = "mount"

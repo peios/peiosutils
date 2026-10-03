@@ -1,20 +1,14 @@
 // Value literals: parse a CLI data token into (type, bytes), and format stored
 // bytes back for display (docs/reg-spec.md §3, §5).
 //
-// Encoding (Peios is UTF-8 throughout, so strings are UTF-8, not UTF-16):
-//   SZ / EXPAND_SZ / LINK : UTF-8 bytes + one trailing NUL
-//   MULTI_SZ              : each element UTF-8 + NUL, then a final NUL
-//   DWORD                 : u32 little-endian (4 bytes)
-//   DWORD_BIG_ENDIAN      : u32 big-endian (4 bytes)
-//   QWORD                 : u64 little-endian (8 bytes)
-//   BINARY                : raw bytes
-//   NONE                  : empty
-//
-// parse() and format() are inverses for these types, so a value round-trips
-// through `reg get`/`reg set` without changing type or content.
+// The bytes of each type are `peios::registry::Data`'s: UTF-8 strings with one
+// NUL, little-endian numbers. parse() and format() are inverses for these
+// types, so a value round-trips through `reg get`/`reg set` without changing
+// type or content. Bytes that don't decode as their type (a string that is
+// not UTF-8, a number of the wrong length) are shown as hex.
 
 use crate::error::{Error, Result};
-use peios::registry::ValueType;
+use peios::registry::{Data, ValueType};
 use serde_json::{json, Value as Json};
 
 /// Parse a CLI data token into a registry `(type, bytes)` pair.
@@ -90,21 +84,12 @@ fn infer(token: &str) -> (ValueType, Vec<u8>) {
 }
 
 fn sz_bytes(s: &str) -> Vec<u8> {
-    let mut b = s.as_bytes().to_vec();
-    b.push(0);
-    b
+    Data::Sz(s.to_owned()).encode()
 }
 
 fn multi_bytes(s: &str) -> Vec<u8> {
-    let mut out = Vec::new();
-    if !s.is_empty() {
-        for elem in split_escaped_commas(s) {
-            out.extend_from_slice(elem.as_bytes());
-            out.push(0);
-        }
-    }
-    out.push(0); // final terminator
-    out
+    let list = if s.is_empty() { Vec::new() } else { split_escaped_commas(s) };
+    Data::MultiSz(list).encode()
 }
 
 /// Split on commas, honouring `\,` as a literal comma and `\\` as a backslash.
@@ -177,19 +162,7 @@ fn parse_hex(s: &str) -> Result<Vec<u8>> {
 
 /// The canonical `REG_*` name for a value type.
 pub fn type_name(ty: ValueType) -> String {
-    match ty {
-        ValueType::NONE => "REG_NONE".into(),
-        ValueType::SZ => "REG_SZ".into(),
-        ValueType::EXPAND_SZ => "REG_EXPAND_SZ".into(),
-        ValueType::BINARY => "REG_BINARY".into(),
-        ValueType::DWORD => "REG_DWORD".into(),
-        ValueType::DWORD_BIG_ENDIAN => "REG_DWORD_BIG_ENDIAN".into(),
-        ValueType::LINK => "REG_LINK".into(),
-        ValueType::MULTI_SZ => "REG_MULTI_SZ".into(),
-        ValueType::QWORD => "REG_QWORD".into(),
-        ValueType::TOMBSTONE => "REG_TOMBSTONE".into(),
-        other => format!("REG(0x{:x})", other.0),
-    }
+    ty.name().map_or_else(|| format!("REG(0x{:x})", ty.0), str::to_owned)
 }
 
 /// A short keyword name (lowercase, for compact listings / JSON `type` field).
@@ -211,102 +184,64 @@ pub fn type_keyword(ty: ValueType) -> String {
 
 /// Render value data for the human view (a single concise line where possible).
 pub fn format_human(ty: ValueType, data: &[u8]) -> String {
-    match ty {
-        ValueType::SZ | ValueType::EXPAND_SZ | ValueType::LINK => {
-            format!("{:?}", decode_sz(data))
-        }
-        ValueType::DWORD => match decode_u32_le(data) {
-            Some(v) => v.to_string(),
-            None => hex(data),
-        },
-        ValueType::DWORD_BIG_ENDIAN => match decode_u32_be(data) {
-            Some(v) => v.to_string(),
-            None => hex(data),
-        },
-        ValueType::QWORD => match decode_u64_le(data) {
-            Some(v) => v.to_string(),
-            None => hex(data),
-        },
-        ValueType::MULTI_SZ => format!("[{}]", decode_multi(data).join(", ")),
-        ValueType::NONE if data.is_empty() => "(none)".into(),
-        _ => hex(data),
+    match Data::decode(ty, data) {
+        Data::Sz(s) | Data::ExpandSz(s) | Data::Link(s) => format!("{s:?}"),
+        Data::Dword(v) | Data::DwordBigEndian(v) => v.to_string(),
+        Data::Qword(v) => v.to_string(),
+        Data::MultiSz(list) => format!("[{}]", list.join(", ")),
+        Data::None => "(none)".into(),
+        Data::Binary(bytes) | Data::Raw(_, bytes) => hex(&bytes),
     }
 }
 
 /// Render value data "bare" for a single `get` — no surrounding quotes, one
 /// element per line for MULTI_SZ — so output pipes cleanly.
 pub fn format_bare(ty: ValueType, data: &[u8]) -> String {
-    match ty {
-        ValueType::SZ | ValueType::EXPAND_SZ | ValueType::LINK => decode_sz(data),
-        ValueType::DWORD => decode_u32_le(data).map_or_else(|| hex(data), |v| v.to_string()),
-        ValueType::DWORD_BIG_ENDIAN => decode_u32_be(data).map_or_else(|| hex(data), |v| v.to_string()),
-        ValueType::QWORD => decode_u64_le(data).map_or_else(|| hex(data), |v| v.to_string()),
-        ValueType::MULTI_SZ => decode_multi(data).join("\n"),
-        ValueType::NONE => String::new(),
-        _ => hex(data),
+    match Data::decode(ty, data) {
+        Data::Sz(s) | Data::ExpandSz(s) | Data::Link(s) => s,
+        Data::Dword(v) | Data::DwordBigEndian(v) => v.to_string(),
+        Data::Qword(v) => v.to_string(),
+        Data::MultiSz(list) => list.join("\n"),
+        Data::None => String::new(),
+        Data::Binary(bytes) | Data::Raw(_, bytes) => hex(&bytes),
     }
 }
 
 /// Render value data for the JSON view (typed where we can decode it).
 pub fn format_json(ty: ValueType, data: &[u8]) -> Json {
-    let value = match ty {
-        ValueType::SZ | ValueType::EXPAND_SZ | ValueType::LINK => json!(decode_sz(data)),
-        ValueType::DWORD => decode_u32_le(data).map_or_else(|| json!(hex(data)), |v| json!(v)),
-        ValueType::DWORD_BIG_ENDIAN => {
-            decode_u32_be(data).map_or_else(|| json!(hex(data)), |v| json!(v))
-        }
-        ValueType::QWORD => decode_u64_le(data).map_or_else(|| json!(hex(data)), |v| json!(v)),
-        ValueType::MULTI_SZ => json!(decode_multi(data)),
-        ValueType::NONE => Json::Null,
-        _ => json!(hex(data)),
+    let value = match Data::decode(ty, data) {
+        Data::Sz(s) | Data::ExpandSz(s) | Data::Link(s) => json!(s),
+        Data::Dword(v) | Data::DwordBigEndian(v) => json!(v),
+        Data::Qword(v) => json!(v),
+        Data::MultiSz(list) => json!(list),
+        Data::None => Json::Null,
+        Data::Binary(bytes) | Data::Raw(_, bytes) => json!(hex(&bytes)),
     };
     json!({ "type": type_keyword(ty), "data": value })
-}
-
-fn decode_sz(data: &[u8]) -> String {
-    let end = data.iter().rposition(|&b| b != 0).map_or(0, |p| p + 1);
-    String::from_utf8_lossy(&data[..end]).into_owned()
-}
-
-fn decode_multi(data: &[u8]) -> Vec<String> {
-    data.split(|&b| b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect()
-}
-
-fn decode_u32_le(d: &[u8]) -> Option<u32> {
-    (d.len() == 4).then(|| u32::from_le_bytes(d.try_into().unwrap()))
-}
-fn decode_u32_be(d: &[u8]) -> Option<u32> {
-    (d.len() == 4).then(|| u32::from_be_bytes(d.try_into().unwrap()))
-}
-fn decode_u64_le(d: &[u8]) -> Option<u64> {
-    (d.len() == 8).then(|| u64::from_le_bytes(d.try_into().unwrap()))
 }
 
 /// Encode stored `(ty, data)` back into a `type:`-prefixed literal token — the
 /// inverse of [`parse`] for the text batch format. Always explicit (never
 /// relies on inference) so re-`apply` is exact.
 pub fn to_token(ty: ValueType, data: &[u8]) -> String {
-    match ty {
-        ValueType::SZ => format!("sz:{}", decode_sz(data)),
-        ValueType::EXPAND_SZ => format!("expand:{}", decode_sz(data)),
-        ValueType::LINK => format!("link:{}", decode_sz(data)),
-        ValueType::DWORD => format!("dword:{}", decode_u32_le(data).unwrap_or(0)),
-        ValueType::DWORD_BIG_ENDIAN => format!("dword-be:{}", decode_u32_be(data).unwrap_or(0)),
-        ValueType::QWORD => format!("qword:{}", decode_u64_le(data).unwrap_or(0)),
-        ValueType::MULTI_SZ => {
-            let parts: Vec<String> = decode_multi(data)
+    match Data::decode(ty, data) {
+        Data::Sz(s) => format!("sz:{s}"),
+        Data::ExpandSz(s) => format!("expand:{s}"),
+        Data::Link(s) => format!("link:{s}"),
+        Data::Dword(v) => format!("dword:{v}"),
+        Data::DwordBigEndian(v) => format!("dword-be:{v}"),
+        Data::Qword(v) => format!("qword:{v}"),
+        Data::MultiSz(list) => {
+            let parts: Vec<String> = list
                 .into_iter()
                 .map(|e| e.replace('\\', r"\\").replace(',', r"\,"))
                 .collect();
             format!("multi:{}", parts.join(","))
         }
-        ValueType::BINARY => format!("hex:{}", hex(data)),
-        ValueType::NONE => "none:".to_string(),
-        ValueType::TOMBSTONE => "<tombstone>".to_string(),
-        other => format!("0x{:x}:{}", other.0, hex(data)),
+        Data::Binary(bytes) => format!("hex:{}", hex(&bytes)),
+        Data::None => "none:".to_string(),
+        Data::Raw(ValueType::TOMBSTONE, _) => "<tombstone>".to_string(),
+        Data::Raw(other, bytes) => format!("0x{:x}:{}", other.0, hex(&bytes)),
     }
 }
 
@@ -367,10 +302,10 @@ mod tests {
     fn multi_sz_roundtrip() {
         let (ty, bytes) = parse("multi:alpha,beta").unwrap();
         assert_eq!(ty, ValueType::MULTI_SZ);
-        assert_eq!(decode_multi(&bytes), vec!["alpha", "beta"]);
+        assert_eq!(format_bare(ty, &bytes), "alpha\nbeta");
         // escaped comma stays in one element
         let (_, b2) = parse(r"multi:a\,b,c").unwrap();
-        assert_eq!(decode_multi(&b2), vec!["a,b", "c"]);
+        assert_eq!(format_bare(ty, &b2), "a,b\nc");
     }
 
     #[test]
@@ -382,8 +317,16 @@ mod tests {
 
     #[test]
     fn sz_has_nul_terminator() {
-        let (_, bytes) = parse("sz:hi").unwrap();
+        let (ty, bytes) = parse("sz:hi").unwrap();
         assert_eq!(bytes, b"hi\0");
-        assert_eq!(decode_sz(&bytes), "hi");
+        assert_eq!(format_bare(ty, &bytes), "hi");
+    }
+
+    #[test]
+    fn bytes_that_do_not_fit_their_type_show_as_hex() {
+        assert_eq!(format_human(ValueType::SZ, b"\xff\0"), "ff00");
+        assert_eq!(format_human(ValueType::DWORD, &[1, 2, 3]), "010203");
+        assert_eq!(format_json(ValueType::SZ, b"\xff\0")["data"], "ff00");
+        assert_eq!(to_token(ValueType::DWORD, &[1, 2, 3]), "0x4:010203");
     }
 }
