@@ -128,7 +128,7 @@ keyword:
 | `qword:`     | REG_QWORD       | `42` or `0x2A`; must fit u64.                            |
 | `multi:`     | REG_MULTI_SZ    | Comma-separated; `\,` escapes a literal comma.          |
 | `hex:`/`bin:`| REG_BINARY      | Hex bytes, optional `:`/space/`-` separators ignored.    |
-| `link:`      | REG_LINK        | Absolute key path (symlink target value).                |
+| `link:`      | REG_LINK        | Absolute key path (symlink target value), stored with no NUL: LCS takes a target's length as its end and refuses a NUL in it. |
 | `none:`      | REG_NONE        | No data (token must be empty after prefix).              |
 | `dword-be:`  | REG_DWORD_BIG_ENDIAN | `42` or `0x2A`; must fit u32.                       |
 
