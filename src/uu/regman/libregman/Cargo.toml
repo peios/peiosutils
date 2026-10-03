@@ -1,0 +1,28 @@
+[package]
+name = "libregman"
+description = "regman ~ (peiosutils) reading the Peios registry manual, for regman and for programs"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/regman/libregman"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+doctest = false
+
+# Nothing of a command line: a program reading the manual takes this alone.
+[dependencies]
+thiserror = { workspace = true }
+memchr = { workspace = true }
+memmap2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

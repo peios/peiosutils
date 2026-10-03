@@ -5,23 +5,20 @@
 // under /usr/share/regman and never touches LCS or the live registry.
 //
 // See `peios/regman-design.md` for the full design.
+//
+// Reading the manual is libregman's, which programs other than this take
+// too; this is the command line and the terminal's rendering.
 
 use clap::Command;
 use uucore::error::{UResult, USimpleError};
 
+pub use libregman::{corpus, error, fold, fragment, index, pattern, query, scan};
+
 pub mod cli;
 pub mod cmd;
-pub mod corpus;
-pub mod error;
-pub mod fold;
-pub mod fragment;
-pub mod index;
 pub mod markdown;
 pub mod pager;
-pub mod pattern;
-pub mod query;
 pub mod render;
-pub mod scan;
 pub mod watch;
 
 #[uucore::main(no_signals)]

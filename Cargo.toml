@@ -367,6 +367,7 @@ members = [
   ".",
   "src/uu/*",
   "src/uu/stdbuf/src/libstdbuf",
+  "src/uu/regman/libregman",
   "src/uucore",
   "src/uucore_procs",
   "tests/uutests",

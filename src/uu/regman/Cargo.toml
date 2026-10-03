@@ -21,15 +21,10 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 uucore = { workspace = true }
-thiserror = { workspace = true }
-memchr = { workspace = true }
-memmap2 = { workspace = true }
 notify = { workspace = true }
-walkdir = { workspace = true }
+# Reading the manual, which other programs take too.
+libregman = { path = "libregman" }
 
 [[bin]]
 name = "regman"
 path = "src/main.rs"
-
-[dev-dependencies]
-tempfile = { workspace = true }
