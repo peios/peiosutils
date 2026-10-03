@@ -301,6 +301,12 @@ Type formatting on read:
 | REG_BINARY      | hex, wrapped                      | `{"type":"binary","data":"deadbeef"}` |
 | REG_LINK        | target path                       | `{"type":"link","data":"…"}`        |
 
+Data that doesn't decode as its type is shown as hex in every form, under its
+own type: a string that is not UTF-8, a number of the wrong length, `REG_NONE`
+with bytes. The decoding is `peios::registry::Data`'s, shared with every other
+client. In the text export the token is `0x<type code>:<hex>`, which `apply`
+does not take back.
+
 `-L/--layers` annotates the effective value with the layer it resolved from and
 its sequence number **[O7: decided — v1 shows winner + provenance]**:
 
