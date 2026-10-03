@@ -199,7 +199,7 @@ repeating `--layer` on every mutation.)
 |---------|---------|
 | `reg set <key> <value> <data> [--layer NAME] [-p] [--expected-seq N]` | Create/update a value. Default layer `base`. `-p/--parents` creates missing ancestor keys. `--expected-seq` is an optimistic-concurrency CAS guard (mismatch → exit on EAGAIN). |
 | `reg new <key> [--layer NAME] [-p] [--volatile]` | Create a key with no values. `--volatile` makes it RAM-only (children must also be volatile). |
-| `reg del <key> [value] [--layer NAME] [-r]` | Delete a value (if `value` given) or a key. Value deletion removes *this layer's* entry only (lower layers resurface). Key deletion requires the key be empty unless `-r/--recursive` (the tool walks and deletes children). |
+| `reg del <key> [value] [--layer NAME] [-r]` | Delete a value (if `value` given) or a key. Value deletion removes *this layer's* entry only (lower layers resurface). Key deletion requires the key be empty unless `-r/--recursive`, which deletes the key and everything under it in one transaction, all or nothing (`Key::delete_tree`). Links under it are deleted, not followed. A tree of more than 4096 keys is more than one transaction holds and fails (ENOMEM), deleting nothing. |
 
 **`-p/--parents`.** The ABI creates exactly the key it is named, so the tool
 walks the path outermost-first and creates *every* missing ancestor, not just
@@ -232,8 +232,8 @@ entry).
 
 | Command | Purpose |
 |---------|---------|
-| `reg layer ls [-l]` | List layers: name, precedence, enabled, owner SID. |
-| `reg layer new <name> [--precedence N] [--owner SID] [--disabled]` | Create a layer (writes its metadata key under `Machine\System\Registry\Layers\`). Precedence > 0 requires `SeTcbPrivilege` — the tool attempts and surfaces EPERM. |
+| `reg layer ls [-l]` | List layers: name, precedence, enabled, owner SID, and the base layer, which is always there. A layer whose metadata is malformed is marked so: the kernel goes by what it last knew of it. |
+| `reg layer new <name> [--precedence N] [--owner SID] [--disabled]` | Create a layer (writes its metadata key under `Machine\System\Registry\Layers\`, with `Precedence` and `Enabled`, in one transaction). Precedence > 0 requires `SeTcbPrivilege` — the tool attempts and surfaces EPERM. `Owner` is written as a binary SID, as LCS requires; without `--owner` the kernel takes the creator's. |
 | `reg layer set <name> [--precedence N] [--enable\|--disable] [--owner SID]` | Modify layer metadata. |
 | `reg layer del <name>` | Delete a layer (removes its metadata key; LCS tears down its entries). |
 
@@ -397,7 +397,7 @@ the tool's highest-risk parser, it carries a **normative escaping section**
 ## 8. Transactions & concurrency
 
 - Single mutations auto-commit (the underlying call is given `txn_fd = -1`).
-- `reg apply`/`reg restore` open one transaction, enlist every op, then commit;
+- `reg apply`/`reg restore` and `reg del -r` open one transaction, enlist every op, then commit;
   any failure aborts the whole batch. Hive-scoped: mixing hives → exit 4 (EXDEV).
 - `reg set --expected-seq N` performs a compare-and-swap; a mismatch surfaces
   as exit code for EAGAIN with a clear "value changed under you" message.
