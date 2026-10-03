@@ -1696,6 +1696,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libregman"
+version = "0.8.16"
+dependencies = [
+ "memchr",
+ "memmap2",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "libtty"
 version = "0.0.22"
 source = "git+https://github.com/peios/authd.git?rev=5966669b523585c2e901b4c27d8bba6547691fc8#5966669b523585c2e901b4c27d8bba6547691fc8"
@@ -3265,13 +3275,9 @@ name = "pu_regman"
 version = "0.8.16"
 dependencies = [
  "clap",
- "memchr",
- "memmap2",
+ "libregman",
  "notify",
- "tempfile",
- "thiserror 2.0.18",
  "uucore",
- "walkdir",
 ]
 
 [[package]]
