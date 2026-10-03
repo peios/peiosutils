@@ -1696,6 +1696,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libreg"
+version = "0.8.16"
+dependencies = [
+ "peios",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "libregman"
 version = "0.8.16"
 dependencies = [
@@ -3261,6 +3270,7 @@ version = "0.8.16"
 dependencies = [
  "clap",
  "libc",
+ "libreg",
  "peios",
  "peios-sys",
  "serde",

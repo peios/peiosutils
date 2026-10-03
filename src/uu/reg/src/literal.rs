@@ -169,19 +169,7 @@ pub fn type_name(ty: ValueType) -> String {
 
 /// A short keyword name (lowercase, for compact listings / JSON `type` field).
 pub fn type_keyword(ty: ValueType) -> String {
-    match ty {
-        ValueType::NONE => "none".into(),
-        ValueType::SZ => "sz".into(),
-        ValueType::EXPAND_SZ => "expand".into(),
-        ValueType::BINARY => "binary".into(),
-        ValueType::DWORD => "dword".into(),
-        ValueType::DWORD_BIG_ENDIAN => "dword-be".into(),
-        ValueType::LINK => "link".into(),
-        ValueType::MULTI_SZ => "multi".into(),
-        ValueType::QWORD => "qword".into(),
-        ValueType::TOMBSTONE => "tombstone".into(),
-        other => format!("0x{:x}", other.0),
-    }
+    libreg::keyword(ty)
 }
 
 /// Render value data for the human view (a single concise line where possible).
@@ -211,15 +199,12 @@ pub fn format_bare(ty: ValueType, data: &[u8]) -> String {
 
 /// Render value data for the JSON view (typed where we can decode it).
 pub fn format_json(ty: ValueType, data: &[u8]) -> Json {
-    let value = match Data::decode(ty, data) {
-        Data::Sz(s) | Data::ExpandSz(s) | Data::Link(s) => json!(s),
-        Data::Dword(v) | Data::DwordBigEndian(v) => json!(v),
-        Data::Qword(v) => json!(v),
-        Data::MultiSz(list) => json!(list),
-        Data::None => Json::Null,
-        Data::Binary(bytes) | Data::Raw(_, bytes) => json!(hex(&bytes)),
-    };
-    json!({ "type": type_keyword(ty), "data": value })
+    // As the batch document has it: data that doesn't fit its type goes as
+    // `hex`, its bytes exactly.
+    match libreg::data_json(ty, data) {
+        Some(value) => json!({ "type": type_keyword(ty), "data": value }),
+        None => json!({ "type": type_keyword(ty), "hex": libreg::hex(data) }),
+    }
 }
 
 /// Encode stored `(ty, data)` back into a `type:`-prefixed literal token — the
@@ -328,7 +313,7 @@ mod tests {
     fn bytes_that_do_not_fit_their_type_show_as_hex() {
         assert_eq!(format_human(ValueType::SZ, b"\xff\0"), "ff00");
         assert_eq!(format_human(ValueType::DWORD, &[1, 2, 3]), "010203");
-        assert_eq!(format_json(ValueType::SZ, b"\xff\0")["data"], "ff00");
+        assert_eq!(format_json(ValueType::SZ, b"\xff\0")["hex"], "ff00");
         assert_eq!(to_token(ValueType::DWORD, &[1, 2, 3]), "0x4:010203");
     }
 }
