@@ -304,8 +304,10 @@ Type formatting on read:
 Data that doesn't decode as its type is shown as hex in every form, under its
 own type: a string that is not UTF-8, a number of the wrong length, `REG_NONE`
 with bytes. The decoding is `peios::registry::Data`'s, shared with every other
-client. In the text export the token is `0x<type code>:<hex>`, which `apply`
-does not take back.
+client. In the JSON form it is a `hex` member in place of `data`
+(`{"type":"sz","hex":"ff00"}`), its bytes exactly, which `apply` takes back.
+In the text export the token is `0x<type code>:<hex>`, which `apply` does not
+take back.
 
 `-L/--layers` annotates the effective value with the layer it resolved from and
 its sequence number **[O7: decided — v1 shows winner + provenance]**:
@@ -353,7 +355,14 @@ stanza; comments with `#`. Draft grammar (see §13 O3):
 transaction per hive.
 
 **Both formats are supported [O3: decided].** JSON is the canonical, exact,
-serde-backed representation (`export --json`, machine-generated); the text form
+serde-backed representation (`export --json`, machine-generated): a `keys`
+array of `{path, values}`, each value `{name, type, data}` with `name` `@` for
+the default value, `type` a keyword (`sz`, `expand`, `link`, `multi`, `dword`,
+`dword-be`, `qword`, `binary`, `none`, or `0x<code>` for a type with none) and
+`data` JSON of the type. A value whose bytes JSON of its type can't hold
+exactly carries `hex` instead of `data`, so every value survives an export and
+an apply. The document, export and apply are `libreg`'s (a library beside the
+tool, which Registry Editor uses too); the text form
 above is the human-facing default for `export` and is git-diffable. `apply`
 auto-detects (leading `{`/`[` ⇒ JSON, else text). Because the text grammar is
 the tool's highest-risk parser, it carries a **normative escaping section**

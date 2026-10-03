@@ -1,0 +1,27 @@
+[package]
+name = "libreg"
+description = "reg ~ (peiosutils) the registry's batch document, for reg and for programs"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/reg/libreg"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+doctest = false
+
+# Nothing of a command line: a program exporting or applying a document takes
+# this alone. The peios revision is reg's, which it must be: a program can
+# hold only one peios-sys.
+[dependencies]
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "3cf23f68d40c4adff252e28241bb3c958fba824f" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

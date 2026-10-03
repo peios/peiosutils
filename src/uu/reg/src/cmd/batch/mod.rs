@@ -6,30 +6,20 @@
 // text *parser* is deferred until the §6.1 escaping grammar is finalised
 // (apply of text input returns a clear error pointing there); text *export*
 // is available now for human review.
+//
+// The document, its export and its apply are libreg's, which other programs
+// take too; this is the command line around them.
 
 pub mod apply;
 pub mod export;
 
-use serde::{Deserialize, Serialize};
+pub use libreg::{Document, KeyEntry, ValueEntry};
 
-/// A serialisable subtree snapshot — the JSON batch document.
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct Document {
-    #[serde(default)]
-    pub keys: Vec<KeyEntry>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct KeyEntry {
-    pub path: String,
-    #[serde(default)]
-    pub values: Vec<ValueEntry>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ValueEntry {
-    pub name: String,
-    #[serde(rename = "type")]
-    pub ty: String,
-    pub data: serde_json::Value,
+impl From<libreg::Error> for crate::error::Error {
+    fn from(e: libreg::Error) -> Self {
+        match e {
+            libreg::Error::Registry { op, path, source } => Self::from_peios(op, &path, source),
+            libreg::Error::Invalid(why) => Self::InvalidSpec(why),
+        }
+    }
 }
