@@ -56,7 +56,7 @@ os_display = "0.1.3"
 
 # Peios SD-creation flag group (`sd-control` feature) and attribute
 # preservation (`preserve` feature).
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "a32489b50fe6119551219155b2daba426421e7ae", optional = true }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "3cf23f68d40c4adff252e28241bb3c958fba824f", optional = true }
 # The ident wire format, for turning a SID into a principal name
 # (`sid-resolver`). Dependency-free apart from libc by design, because it is
 # also linked into authd itself.

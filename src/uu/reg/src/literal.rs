@@ -42,7 +42,9 @@ fn keyword(s: &str) -> Option<ValueType> {
 
 fn parse_typed(ty: ValueType, rest: &str) -> Result<(ValueType, Vec<u8>)> {
     let bytes = match ty {
-        ValueType::SZ | ValueType::EXPAND_SZ | ValueType::LINK => sz_bytes(rest),
+        ValueType::SZ => sz_bytes(rest),
+        ValueType::EXPAND_SZ => Data::ExpandSz(rest.to_owned()).encode(),
+        ValueType::LINK => Data::Link(rest.to_owned()).encode(),
         ValueType::DWORD => parse_u32(rest)?.to_le_bytes().to_vec(),
         ValueType::DWORD_BIG_ENDIAN => parse_u32(rest)?.to_be_bytes().to_vec(),
         ValueType::QWORD => parse_u64(rest)?.to_le_bytes().to_vec(),

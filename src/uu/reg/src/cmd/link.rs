@@ -1,14 +1,14 @@
 // `reg link <key> <target>` — create a symlink key.
 //
 // A symlink key carries an immutable symlink flag (set at creation) plus a
-// default REG_LINK value holding the absolute target path.
+// default REG_LINK value holding the absolute target path, with no NUL.
 
 use crate::addr::KeyPath;
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
 use clap::ArgMatches;
-use peios::registry::{CreateFlags, Key, KeyAccess, ValueType};
+use peios::registry::{CreateFlags, Data, Key, KeyAccess, ValueType};
 use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
@@ -30,9 +30,9 @@ pub fn run(m: &ArgMatches) -> Result<()> {
     )
     .map_err(|e| Error::from_peios("create symlink key", &target, e))?;
 
-    // Store the target as the default REG_LINK value (UTF-8 + NUL terminator).
-    let mut bytes = dest.as_bytes().to_vec();
-    bytes.push(0);
+    // Store the target as the default REG_LINK value: UTF-8 with no NUL, the
+    // length delimiting it, which LCS requires (TRM §5.2.4).
+    let bytes = Data::Link(dest.clone()).encode();
     let mut sv = key.set_value(&[], ValueType::LINK, &bytes);
     if let Some(l) = set.layer_arg() {
         sv.layer(l);
