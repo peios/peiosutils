@@ -5,7 +5,7 @@ use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
 use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags};
+use peios::registry::{KeyAccess, OpenFlags, Transaction};
 use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
@@ -42,8 +42,9 @@ pub fn run(m: &ArgMatches) -> Result<()> {
     }
 }
 
-/// Recursively delete `path` and everything under it. Returns the key count.
-/// Children are collected before deletion (we don't delete mid-enumeration).
+/// Delete `path` and everything under it, all or nothing, in one
+/// transaction. Links under it are deleted, not followed. Returns the key
+/// count.
 fn purge(path: &KeyPath, set: &Settings) -> Result<u64> {
     let target = path.display(set.sep);
     let key = cmd::open(
@@ -52,18 +53,12 @@ fn purge(path: &KeyPath, set: &Settings) -> Result<u64> {
         OpenFlags::empty(),
         set,
     )?;
-    let mut children = Vec::new();
-    for sk in key.subkeys(None) {
-        let sk = sk.map_err(|e| Error::from_peios("enumerate subkeys", &target, e))?;
-        children.push(String::from_utf8_lossy(&sk.name).into_owned());
-    }
-    let mut count = 0;
-    for c in children {
-        count += purge(&path.child(&c), set)?;
-    }
-    key.delete_key(set.layer_arg(), None)
+    let txn = Transaction::begin().map_err(|e| Error::from_peios("begin transaction", &target, e))?;
+    let count = key
+        .delete_tree(set.layer_arg(), Some(&txn))
         .map_err(|e| Error::from_peios("delete key", &target, e))?;
-    Ok(count + 1)
+    txn.commit().map_err(|e| Error::from_peios("commit transaction", &target, e))?;
+    Ok(count)
 }
 
 fn report(set: &Settings, json: serde_json::Value, human: &str) {
