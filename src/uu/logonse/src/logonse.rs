@@ -486,14 +486,19 @@ fn cmd_end(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
             .unwrap()
         );
     } else if ended.remaining == 0 {
-        println!("ended session {id}: {} processes ended", ended.ended);
+        println!("ended session {id}: {}", processes(ended.ended));
     } else {
         println!(
-            "session {id}: {} processes ended, {} could not be and still hold it",
-            ended.ended, ended.remaining
+            "session {id}: {} ended, {} could not be and still hold it",
+            processes(ended.ended),
+            ended.remaining
         );
     }
     if ended.remaining == 0 { Ok(()) } else { Err(format!("session {id} is still open")) }
+}
+
+fn processes(n: u32) -> String {
+    if n == 1 { "1 process".into() } else { format!("{n} processes") }
 }
 
 // ---------------------------------------------------------------------------
