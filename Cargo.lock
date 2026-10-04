@@ -1655,16 +1655,16 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libauthd"
-version = "0.0.22"
-source = "git+https://github.com/peios/authd.git?rev=4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79#4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79"
+version = "0.0.23"
+source = "git+https://github.com/peios/authd.git?rev=650bc4ac31bae0f917254f02c8e64f08ee3bbec5#650bc4ac31bae0f917254f02c8e64f08ee3bbec5"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "libauthd-client"
-version = "0.0.22"
-source = "git+https://github.com/peios/authd.git?rev=4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79#4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79"
+version = "0.0.23"
+source = "git+https://github.com/peios/authd.git?rev=650bc4ac31bae0f917254f02c8e64f08ee3bbec5#650bc4ac31bae0f917254f02c8e64f08ee3bbec5"
 dependencies = [
  "libauthd",
 ]
@@ -1724,8 +1724,8 @@ dependencies = [
 
 [[package]]
 name = "libtty"
-version = "0.0.22"
-source = "git+https://github.com/peios/authd.git?rev=4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79#4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79"
+version = "0.0.23"
+source = "git+https://github.com/peios/authd.git?rev=650bc4ac31bae0f917254f02c8e64f08ee3bbec5#650bc4ac31bae0f917254f02c8e64f08ee3bbec5"
 dependencies = [
  "libauthd",
  "libc",
@@ -3173,6 +3173,7 @@ version = "0.8.16"
 dependencies = [
  "clap",
  "libauthd",
+ "libauthd-client",
  "libtty",
  "uucore",
 ]

@@ -29,7 +29,7 @@ thiserror = { workspace = true }
 peios = { git = "https://github.com/peios/peios-rs.git", rev = "2a2a6bb022192f6e98d4e4a6a7efdbdd40d53b35" }
 # Ending a session: authd does it, asked on its logon socket. The revision
 # uucore's identity client is pinned to.
-libauthd-client = { git = "https://github.com/peios/authd.git", rev = "4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79" }
+libauthd-client = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
 
 [[bin]]
 name = "logonse"
