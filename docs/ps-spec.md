@@ -269,6 +269,15 @@ Every cross-process `/proc/<pid>/*` read is gated by the **two-check rule**: the
 `ps`'s peios surface depends on substrate that **does not yet exist**. Build order is **substrate-first**: the OS author delivers all of §13 (kernel + libpeios) before ps implementation begins. This is that checklist.
 
 ### 13.1 procfs files (pkm)
+
+> **Since PEI-1246 (2026-10-04):** the PSB getter exists, as one file:
+> `/proc/<pid>/psb` (`pip_type=… pip_trust=… mitigations=0x… process_guid=…`),
+> read under `PROCESS_QUERY_LIMITED` **without** PIP dominance, with
+> `peios_process_psb` in libpeios and `Process::psb` in peios-rs. The
+> separate `pip` and `mitigations` files below are therefore not needed;
+> render the label and codes from that file instead. `/proc/<pid>/token`
+> also now needs `TOKEN_QUERY` on the token, which Administrators have by
+> default. The token-backed files below are still unbuilt.
 Five per-process text files (+ `task/<tid>/` mirrors for the per-thread ones). Each is a new `seq_file`; mirroring into `task/<tid>/` is a second registration in `tid_base_stuff[]`. The `/proc/<pid>/token` patch is the precedent for the dual registration — but it is an **fd-handler, not a text seq_file**, so it's a *pattern* template, not a drop-in. Gate = kernel policy; `ps` is agnostic (§11).
 
 The read path is **not uniform** — there are two data sources:
