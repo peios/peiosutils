@@ -22,8 +22,8 @@ doctest = false
 clap = { workspace = true }
 libc = { workspace = true }
 uucore = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "3cf23f68d40c4adff252e28241bb3c958fba824f" }
-peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "3cf23f68d40c4adff252e28241bb3c958fba824f" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "2a2a6bb022192f6e98d4e4a6a7efdbdd40d53b35" }
+peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "2a2a6bb022192f6e98d4e4a6a7efdbdd40d53b35" }
 
 [[bin]]
 name = "feat"
