@@ -21,11 +21,13 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 uucore = { workspace = true }
-# The PGSS Logon codec, and the terminal input `login` and `lps` share — both
-# pinned to the one authd revision, since libtty reaches libauthd by path
-# inside that repository and the two must be the same crate.
-libauthd = { git = "https://github.com/peios/authd.git", rev = "4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79" }
-libtty = { git = "https://github.com/peios/authd.git", rev = "4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79" }
+# The credential-change conversation (libauthd-client, which GUI apps share),
+# the PGSS Logon types it speaks, and the terminal input `login` and `lps`
+# share — all pinned to the one authd revision, since they reach libauthd by
+# path inside that repository and must agree on one crate.
+libauthd = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
+libauthd-client = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
+libtty = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
 
 [[bin]]
 name = "passwd"

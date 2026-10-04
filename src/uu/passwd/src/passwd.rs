@@ -1,8 +1,10 @@
 // passwd ~ (peiosutils) — change your own password.
 //
-// A PGSS Logon client for the credential-change conversation (PGSS §2.20). It
-// opens /run/logon.sock with `CredentialChangeStart`, renders whatever the
-// authority asks for, and reports how the conversation ended.
+// A PGSS Logon client for the credential-change conversation (PGSS §2.20). The
+// conversation itself — opening /run/logon.sock with `CredentialChangeStart`,
+// carrying the authority's rounds and reading how it ended — is
+// libauthd-client's `credential` module, shared with the GUI apps. What is
+// here is the terminal: rendering each round, and saying how it ended.
 //
 // That is the whole of it, and deliberately so. Linux's passwd is two programs
 // in one binary — a PAM front end, and a setuid editor of /etc/shadow for
@@ -22,18 +24,11 @@
 //   that is here.
 
 use std::io;
-use std::os::unix::net::UnixStream;
 
 use clap::{Arg, ArgAction, Command};
 use libauthd::LOGON_SOCKET_PATH;
 use libauthd::Secret;
-use libauthd::transport::{recv_message_with_fd, send_message};
-use libauthd::wire::{
-    self, Answer, CredentialChangeStart, CredentialResponse, CredentialType, MSG_ACCESS_DENIED,
-    MSG_CREDENTIAL_CHANGED, MSG_CREDENTIAL_REQUEST, Message, MessageSeverity, Prompt,
-    decode_access_denied, decode_credential_changed, decode_credential_request, decode_header,
-    encode_credential_change_start, encode_credential_response,
-};
+use libauthd_client::credential::{Abandon, Collector, Credentials, MessageSeverity, Refusal, Round};
 use libtty as tty;
 use uucore::error::{UResult, USimpleError, UUsageError};
 
@@ -64,8 +59,9 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         ));
     }
 
-    let socket = connect().map_err(|reason| USimpleError::new(1, reason))?;
-    change(&socket, &mut Terminal).map_err(|reason| USimpleError::new(1, reason))?;
+    Credentials::new()
+        .change_password(&mut Terminal)
+        .map_err(|refusal| USimpleError::new(1, explain(&refusal)))?;
     println!("password changed");
     Ok(())
 }
@@ -88,29 +84,39 @@ pub fn uu_app() -> Command {
         )
 }
 
-/// Open the logon socket, saying what went wrong in terms of the authority.
-fn connect() -> Result<UnixStream, String> {
-    UnixStream::connect(LOGON_SOCKET_PATH).map_err(|error| match error.kind() {
-        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused => {
-            format!("cannot reach the authority at {LOGON_SOCKET_PATH}; is authd running?")
+/// What `passwd` says about a change that did not happen — in its own words,
+/// about a password, where the shared conversation's are about any change.
+fn explain(refusal: &Refusal) -> String {
+    match refusal {
+        Refusal::Unreachable(error) => match error.kind() {
+            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused => {
+                format!("cannot reach the authority at {LOGON_SOCKET_PATH}; is authd running?")
+            }
+            io::ErrorKind::PermissionDenied => format!(
+                "permission denied connecting to {LOGON_SOCKET_PATH}; this machine does not \
+                 let you change your own password"
+            ),
+            _ => format!("cannot reach the authority at {LOGON_SOCKET_PATH}: {error}"),
+        },
+        Refusal::Unsent(what) | Refusal::Unrenderable(what) => what.clone(),
+        // The terminal stops only when it cannot read, and says why.
+        Refusal::Abandoned { reason, .. } => reason.clone(),
+        Refusal::Unknown(what) => format!("{what}; whether the password changed is not known"),
+        Refusal::Declined {
+            code,
+            denial,
+            reason,
+        } => {
+            let reason = if !reason.is_empty() {
+                reason.clone()
+            } else if let Some(denial) = denial {
+                format!("{denial:?}")
+            } else {
+                format!("refused with denial {code}")
+            };
+            format!("{reason} The password is unchanged.")
         }
-        io::ErrorKind::PermissionDenied => format!(
-            "permission denied connecting to {LOGON_SOCKET_PATH}; this machine does not \
-             let you change your own password"
-        ),
-        _ => format!("cannot reach the authority at {LOGON_SOCKET_PATH}: {error}"),
-    })
-}
-
-/// Where prompts are answered and messages shown.
-///
-/// A seam rather than calls into `libtty`, so the conversation can be driven
-/// by a test without a terminal.
-pub trait Collector {
-    /// Collect the answer to one `Password` prompt.
-    fn password(&mut self, prompt: &Prompt) -> io::Result<Secret>;
-    /// Show one message from the authority.
-    fn show(&mut self, message: &Message);
+    }
 }
 
 /// The real terminal — or, when standard input is not one, a pipe read a line
@@ -118,283 +124,88 @@ pub trait Collector {
 struct Terminal;
 
 impl Collector for Terminal {
-    fn password(&mut self, prompt: &Prompt) -> io::Result<Secret> {
-        // Down a pipe there is nobody to show a prompt to, and a fixed-size
-        // read could swallow the lines meant for the prompts after this one.
-        if tty::stdin_is_a_terminal() {
-            tty::prompt_secret(&format!("{}: ", prompt.credential_name))
-        } else {
-            tty::read_line_secret()
-        }
-    }
-
-    fn show(&mut self, message: &Message) {
-        match message.severity {
-            MessageSeverity::Info => {
-                let _ = tty::show(&message.text);
-            }
-            MessageSeverity::Error => eprintln!("{}", message.text),
-        }
-    }
-}
-
-/// Run one credential-change conversation to its terminal message.
-///
-/// `Ok` only on `CredentialChanged`. Every `Err` says whether the password
-/// changed where that is known — and, where the authority went away before
-/// saying, that it is not.
-pub fn change(socket: &UnixStream, collector: &mut dyn Collector) -> Result<(), String> {
-    let start = encode_credential_change_start(&CredentialChangeStart {
-        // The only credential type there is, and the only one this renders.
-        supported_credential_types: vec![CredentialType::Password],
-    })
-    .map_err(|error| format!("could not encode the request: {error:?}"))?;
-    send_message(socket, &start)
-        .map_err(|error| format!("could not reach the authority: {error}"))?;
-
-    loop {
-        // With a descriptor, in case one arrives: §2.20 expects none, and one
-        // that does is closed here by being dropped rather than left behind.
-        let (message, _descriptor) = recv_message_with_fd(&wire::FRAMING, socket)
-            .map_err(|error| unknown_outcome(&format!("lost the authority: {error}")))?;
-
-        let (message_type, _) = decode_header(message.expose())
-            .map_err(|error| unknown_outcome(&format!("malformed reply: {error:?}")))?;
-
-        match message_type {
-            MSG_CREDENTIAL_REQUEST => {
-                let request = decode_credential_request(message.expose()).map_err(|error| {
-                    format!("the authority sent a request this cannot render: {error:?}")
-                })?;
-                for note in &request.messages {
-                    collector.show(note);
+    fn round(&mut self, round: &Round) -> Result<Vec<Secret>, Abandon> {
+        for message in &round.messages {
+            match message.severity {
+                MessageSeverity::Info => {
+                    let _ = tty::show(&message.text);
                 }
-
-                let mut answers = Vec::with_capacity(request.prompts.len());
-                for prompt in &request.prompts {
-                    let data = match prompt.credential_type {
-                        CredentialType::SshPublicKey => return Err("the authority requested an unsupported credential".into()),
-                        CredentialType::Password => collector
-                            .password(prompt)
-                            .map_err(|error| format!("could not read the password: {error}"))?,
-                    };
-                    answers.push(Answer {
-                        credential_ref: prompt.credential_ref,
-                        data,
-                    });
-                }
-
-                let encoded = encode_credential_response(&CredentialResponse { answers })
-                    .map_err(|error| format!("could not encode the answers: {error:?}"))?;
-                send_message(socket, encoded.expose())
-                    .map_err(|error| unknown_outcome(&format!("lost the authority: {error}")))?;
+                MessageSeverity::Error => eprintln!("{}", message.text),
             }
-
-            MSG_CREDENTIAL_CHANGED => {
-                decode_credential_changed(message.expose())
-                    .map_err(|error| unknown_outcome(&format!("malformed reply: {error:?}")))?;
-                return Ok(());
-            }
-
-            MSG_ACCESS_DENIED => {
-                let denied = decode_access_denied(message.expose())
-                    .map_err(|error| unknown_outcome(&format!("malformed denial: {error:?}")))?;
-                let reason = if denied.reason.is_empty() {
-                    format!("{:?}", denied.denial)
+        }
+        round
+            .prompts
+            .iter()
+            .map(|ask| {
+                // Down a pipe there is nobody to show a prompt to, and a
+                // fixed-size read could swallow the lines meant for the
+                // prompts after this one.
+                if tty::stdin_is_a_terminal() {
+                    tty::prompt_secret(&format!("{}: ", ask.label))
                 } else {
-                    denied.reason
-                };
-                return Err(format!("{reason} The password is unchanged."));
-            }
-
-            other => {
-                return Err(unknown_outcome(&format!(
-                    "unexpected message {other:#06x} from the authority"
-                )));
-            }
-        }
+                    tty::read_line_secret()
+                }
+                .map_err(|error| Abandon::new(format!("could not read the password: {error}")))
+            })
+            .collect()
     }
-}
-
-/// A failure after the change was asked for and before the authority said how
-/// it ended. The password may have changed; saying otherwise either way would
-/// be a guess.
-fn unknown_outcome(what: &str) -> String {
-    format!("{what}; whether the password changed is not known")
 }
 
 #[cfg(test)]
 mod tests {
+    // The conversation is tested where it lives, in libauthd-client. What is
+    // left here is what passwd says.
     use super::*;
-    use libauthd::transport::recv_message;
-    use libauthd::wire::{
-        AccessDenied, CredentialChanged, CredentialRequest, Denial, MSG_CREDENTIAL_CHANGE_START,
-        MSG_CREDENTIAL_RESPONSE, decode_credential_change_start, decode_credential_response,
-        encode_access_denied, encode_credential_changed, encode_credential_request,
-    };
-    use std::thread;
+    use libauthd::Denial;
 
-    /// Answers from a script, and remembers what it was shown.
-    struct Scripted {
-        answers: Vec<&'static [u8]>,
-        asked: Vec<String>,
-        shown: Vec<String>,
-    }
-
-    impl Scripted {
-        fn new(answers: Vec<&'static [u8]>) -> Self {
-            Self {
-                answers,
-                asked: Vec::new(),
-                shown: Vec::new(),
-            }
-        }
-    }
-
-    impl Collector for Scripted {
-        fn password(&mut self, prompt: &Prompt) -> io::Result<Secret> {
-            self.asked.push(prompt.credential_name.clone());
-            Ok(Secret::from_slice(self.answers.remove(0)))
-        }
-        fn show(&mut self, message: &Message) {
-            self.shown.push(message.text.clone());
-        }
-    }
-
-    fn prompt(credential_ref: u32, name: &str) -> Prompt {
-        Prompt {
-            parameters: Vec::new(),
-            credential_ref,
-            credential_type: CredentialType::Password,
-            credential_name: name.into(),
-        }
-    }
-
-    /// Each round's answers, as `(credential_ref, data)`.
-    type Answered = Vec<Vec<(u32, Vec<u8>)>>;
-
-    /// Play the authority's side: check the opening, then send `script`,
-    /// reading a response after each request.
-    fn authority(socket: UnixStream, script: Vec<Vec<u8>>) -> thread::JoinHandle<Answered> {
-        thread::spawn(move || {
-            let opening = recv_message(&wire::FRAMING, &socket).expect("an opening");
-            let (message_type, _) = decode_header(opening.expose()).expect("a header");
-            assert_eq!(message_type, MSG_CREDENTIAL_CHANGE_START);
-            let start = decode_credential_change_start(opening.expose()).expect("decodes");
-            assert_eq!(
-                start.supported_credential_types,
-                vec![CredentialType::Password]
-            );
-
-            let mut answered = Vec::new();
-            for message in script {
-                let (message_type, _) = decode_header(&message).expect("a header");
-                send_message(&socket, &message).expect("sends");
-                if message_type == MSG_CREDENTIAL_REQUEST {
-                    let reply = recv_message(&wire::FRAMING, &socket).expect("a response");
-                    let (message_type, _) = decode_header(reply.expose()).expect("a header");
-                    assert_eq!(message_type, MSG_CREDENTIAL_RESPONSE);
-                    let response = decode_credential_response(reply.expose()).expect("decodes");
-                    answered.push(
-                        response
-                            .answers
-                            .iter()
-                            .map(|a| (a.credential_ref, a.data.expose().to_vec()))
-                            .collect(),
-                    );
-                }
-            }
-            answered
-        })
-    }
-
-    fn request(messages: Vec<Message>, prompts: Vec<Prompt>) -> Vec<u8> {
-        encode_credential_request(&CredentialRequest { messages, prompts }).expect("encodes")
+    #[test]
+    fn a_denial_says_the_password_is_unchanged() {
+        let said = explain(&Refusal::Declined {
+            code: 4,
+            denial: Some(Denial::AuthenticationFailed),
+            reason: "Authentication failed.".into(),
+        });
+        assert_eq!(said, "Authentication failed. The password is unchanged.");
     }
 
     #[test]
-    fn a_change_renders_every_round_and_ends_on_changed() {
-        let (client, server) = UnixStream::pair().expect("socketpair");
-        let script = vec![
-            request(
-                vec![Message {
-                    severity: MessageSeverity::Info,
-                    text: "Changing the password for jack".into(),
-                }],
-                vec![prompt(1, "Current password")],
-            ),
-            request(
-                Vec::new(),
-                vec![prompt(2, "New password"), prompt(3, "Retype new password")],
-            ),
-            encode_credential_changed(&CredentialChanged).expect("encodes"),
-        ];
-        let authority = authority(server, script);
+    fn a_denial_without_words_is_named() {
+        let said = explain(&Refusal::Declined {
+            code: 6,
+            denial: Some(Denial::AccountRestricted),
+            reason: String::new(),
+        });
+        assert_eq!(said, "AccountRestricted The password is unchanged.");
+    }
 
-        let mut collector = Scripted::new(vec![b"old", b"new", b"new"]);
-        assert_eq!(change(&client, &mut collector), Ok(()));
-
-        let answered = authority.join().expect("the authority");
-        assert_eq!(answered[0], vec![(1, b"old".to_vec())]);
+    /// PGSS client obligation 4: an authority that goes away has not said how
+    /// the change ended, and passwd must not claim to know.
+    #[test]
+    fn a_lost_authority_leaves_the_outcome_unknown() {
+        let said = explain(&Refusal::Unknown("lost the authority: broken pipe".into()));
         assert_eq!(
-            answered[1],
-            vec![(2, b"new".to_vec()), (3, b"new".to_vec())],
-            "answers go back under the refs they were asked with"
+            said,
+            "lost the authority: broken pipe; whether the password changed is not known"
         );
+    }
+
+    #[test]
+    fn an_absent_authority_asks_whether_authd_is_running() {
+        let said = explain(&Refusal::Unreachable(io::ErrorKind::NotFound.into()));
         assert_eq!(
-            collector.asked,
-            ["Current password", "New password", "Retype new password"]
+            said,
+            "cannot reach the authority at /run/logon.sock; is authd running?"
         );
-        assert_eq!(collector.shown, ["Changing the password for jack"]);
+        let said = explain(&Refusal::Unreachable(io::ErrorKind::PermissionDenied.into()));
+        assert!(said.starts_with("permission denied connecting to /run/logon.sock"));
     }
 
     #[test]
-    fn a_denial_is_reported_with_its_reason() {
-        let (client, server) = UnixStream::pair().expect("socketpair");
-        let script = vec![
-            request(Vec::new(), vec![prompt(1, "Current password")]),
-            encode_access_denied(&AccessDenied {
-                denial: Denial::AuthenticationFailed,
-                reason: "Authentication failed.".into(),
-            })
-            .expect("encodes"),
-        ];
-        let authority = authority(server, script);
-
-        let outcome = change(&client, &mut Scripted::new(vec![b"guess"]));
-        authority.join().expect("the authority");
-        let reason = outcome.expect_err("a denial is a failure");
-        assert!(reason.contains("Authentication failed."), "{reason}");
-        assert!(reason.contains("unchanged"), "{reason}");
-    }
-
-    /// PGSS client obligation 4: an authority that goes away without a
-    /// terminal message has not said how the change ended, and the client must
-    /// not claim to know.
-    #[test]
-    fn an_authority_that_goes_away_leaves_the_outcome_unknown() {
-        let (client, server) = UnixStream::pair().expect("socketpair");
-        let authority = authority(
-            server,
-            vec![request(Vec::new(), vec![prompt(1, "Current password")])],
-        );
-
-        let outcome = change(&client, &mut Scripted::new(vec![b"old"]));
-        authority.join().expect("the authority");
-        let reason = outcome.expect_err("no terminal is not success");
-        assert!(reason.contains("not known"), "{reason}");
-    }
-
-    /// A logon's terminal is not a change's. Receiving one means the authority
-    /// did something this client did not ask for, and it is not success.
-    #[test]
-    fn a_grant_is_not_a_change() {
-        let (client, server) = UnixStream::pair().expect("socketpair");
-        let grant = wire::encode_access_granted(&wire::AccessGranted::default()).expect("encodes");
-        let authority = authority(server, vec![grant]);
-
-        let outcome = change(&client, &mut Scripted::new(Vec::new()));
-        authority.join().expect("the authority");
-        assert!(outcome.is_err());
+    fn a_terminal_that_cannot_read_says_so() {
+        let said = explain(&Refusal::Abandoned {
+            reason: "could not read the password: end of file".into(),
+            last_error: None,
+        });
+        assert_eq!(said, "could not read the password: end of file");
     }
 }

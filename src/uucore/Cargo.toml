@@ -61,8 +61,8 @@ peios = { git = "https://github.com/peios/peios-rs.git", rev = "2a2a6bb022192f6e
 # socket shares, for turning a SID into a principal name (`sid-resolver`).
 # Dependency-free apart from libc by design, because libauthd is also linked
 # into authd itself. Pinned to the same authd revision as passwd's.
-libauthd = { git = "https://github.com/peios/authd.git", rev = "4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79", optional = true }
-libauthd-client = { git = "https://github.com/peios/authd.git", rev = "4c2b7bddb0794731a22e1bad8ffe2f0affaf5d79", optional = true }
+libauthd = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5", optional = true }
+libauthd-client = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5", optional = true }
 filetime = { workspace = true, optional = true }
 
 # Benchmark dependencies (optional)
