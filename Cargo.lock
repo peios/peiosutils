@@ -1656,9 +1656,17 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 [[package]]
 name = "libauthd"
 version = "0.0.22"
-source = "git+https://github.com/peios/authd.git?rev=5966669b523585c2e901b4c27d8bba6547691fc8#5966669b523585c2e901b4c27d8bba6547691fc8"
+source = "git+https://github.com/peios/authd.git?rev=bef250488952820015683f3020d15c7f4adbe0d4#bef250488952820015683f3020d15c7f4adbe0d4"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "libauthd-client"
+version = "0.0.22"
+source = "git+https://github.com/peios/authd.git?rev=bef250488952820015683f3020d15c7f4adbe0d4#bef250488952820015683f3020d15c7f4adbe0d4"
+dependencies = [
+ "libauthd",
 ]
 
 [[package]]
@@ -1717,7 +1725,7 @@ dependencies = [
 [[package]]
 name = "libtty"
 version = "0.0.22"
-source = "git+https://github.com/peios/authd.git?rev=5966669b523585c2e901b4c27d8bba6547691fc8#5966669b523585c2e901b4c27d8bba6547691fc8"
+source = "git+https://github.com/peios/authd.git?rev=bef250488952820015683f3020d15c7f4adbe0d4#bef250488952820015683f3020d15c7f4adbe0d4"
 dependencies = [
  "libauthd",
  "libc",
@@ -4778,6 +4786,7 @@ dependencies = [
  "jiff",
  "jiff-icu",
  "libauthd",
+ "libauthd-client",
  "libc",
  "libloading",
  "md-5",
