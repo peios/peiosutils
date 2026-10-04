@@ -58,13 +58,11 @@
 //! lists files must not fail because a name server did not answer.
 
 use std::collections::HashMap;
-use std::io;
-use std::os::unix::net::UnixStream;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use libauthd::ident::{self, Fields, Key, Kind, Outcome};
-use libauthd::transport::{recv_message, send_message};
+use libauthd::ident::{Fields, Key, Kind};
+use libauthd_client::ident::Ident;
 use peios::security::SidRef;
 
 use crate::sid_render;
@@ -102,44 +100,28 @@ fn resolve(sid: &SidRef) -> Option<String> {
     // Held across the lookup on purpose. Two threads asking for the same SID
     // at once is not worth two round trips, and no consumer of this renders
     // SIDs from more than one thread today.
-    let answer = ask(sid).unwrap_or(None);
+    let answer = ask(sid);
     cache.insert(key, answer.clone());
     answer
 }
 
-/// One round trip. `Ok(None)` is an authoritative "no such principal";
-/// `Err` is everything else, and the caller treats them the same.
-fn ask(sid: &SidRef) -> io::Result<Option<String>> {
-    let stream = UnixStream::connect(libauthd::IDENT_SOCKET_PATH)?;
-    stream.set_read_timeout(Some(TIMEOUT))?;
-    stream.set_write_timeout(Some(TIMEOUT))?;
-
+/// One round trip, on a connection of its own, through libauthd-client.
+/// `None` is both an authoritative "no such principal" and every failure:
+/// the caller treats them the same.
+fn ask(sid: &SidRef) -> Option<String> {
     // NAME only: a renderer wants the name and nothing else, and asking for
     // fields we would discard invites the authority to withhold on a field we
     // never needed.
-    let request = ident::encode_lookup(&ident::Lookup {
-        tag: 1,
-        key: Key::Sid(sid.as_bytes().to_vec()),
-        kind: Kind::Any,
-        fields: Fields::empty(),
-    })
-    .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-
-    send_message(&stream, &request)?;
-    let received = recv_message(&libauthd::wire::FRAMING, &stream)?;
-    let reply = ident::decode_lookup_reply(received.expose())
-        .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
-
-    match reply.outcome {
-        Outcome::Found => Ok(reply
-            .record
-            .map(|record| record.qualified_name)
-            .filter(|name| !name.is_empty())),
-        // NotFound is authoritative and worth caching. Unavailable is not an
-        // absence -- but at per-process scope the distinction buys nothing: the
-        // command is over in milliseconds and would ask again next time either
-        // way, and re-asking a down authority once per file is the cost this
-        // cache exists to avoid.
-        _ => Ok(None),
-    }
+    //
+    // A failure is not an absence -- but at per-process scope the distinction
+    // buys nothing: the command is over in milliseconds and would ask again
+    // next time either way, and re-asking a down authority once per file is
+    // the cost the cache exists to avoid.
+    Ident::new()
+        .with_timeout(TIMEOUT)
+        .lookup(Key::Sid(sid.as_bytes().to_vec()), Kind::Any, Fields::empty())
+        .ok()
+        .flatten()
+        .map(|record| record.qualified_name)
+        .filter(|name| !name.is_empty())
 }
