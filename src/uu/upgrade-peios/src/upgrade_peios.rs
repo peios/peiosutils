@@ -22,6 +22,9 @@
 // Idempotent by construction: re-running after an interrupted upgrade
 // re-stages the seeds and applies whatever is still queued; a system
 // already current does nothing.
+//
+// A program drives it with --driven (driven.rs), and asks what is installed
+// with --status (status.rs).
 
 use std::fmt;
 use std::fs;
@@ -31,6 +34,9 @@ use std::process::Command;
 
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
 use uucore::error::{UResult, USimpleError};
+
+mod driven;
+mod status;
 
 /// Where the release states what it asks of the system beyond its packages.
 const RELEASE_FILE: &str = "usr/share/peios/release.toml";
@@ -67,6 +73,11 @@ pub enum Error {
         operation: &'static str,
         code: Option<i32>,
     },
+    /// peipkg's driven mode refused or failed, with its code and words.
+    Refused {
+        code: String,
+        message: String,
+    },
     Seeds(String),
     Apply(Option<i32>),
 }
@@ -76,9 +87,23 @@ impl Error {
         match self {
             Self::Usage(_) => 1,
             Self::NoRelease(_) => 2,
-            Self::Peipkg { .. } => 3,
+            Self::Peipkg { .. } | Self::Refused { .. } => 3,
             Self::Seeds(_) => 4,
             Self::Apply(_) => 5,
+        }
+    }
+
+    /// The stable code a driven caller acts on: peipkg's own for its part
+    /// (stale, busy, denied, unresolvable, untrusted…), and one for each of
+    /// upgrade-peios's.
+    pub fn code(&self) -> String {
+        match self {
+            Self::Usage(_) => "usage".into(),
+            Self::NoRelease(_) => "no-release".into(),
+            Self::Peipkg { .. } => "failed".into(),
+            Self::Refused { code, .. } => code.clone(),
+            Self::Seeds(_) => "seeds".into(),
+            Self::Apply(_) => "apply".into(),
         }
     }
 }
@@ -87,6 +112,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Usage(m) | Self::NoRelease(m) | Self::Seeds(m) => f.write_str(m),
+            Self::Refused { message, .. } => f.write_str(message),
             Self::Peipkg { operation, code } => {
                 write!(f, "peipkg {operation} failed{}", exit_suffix(*code))
             }
@@ -113,9 +139,24 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             };
         }
     };
-    match run(&matches) {
+    if !matches.get_flag("driven") {
+        return match run(&matches, false) {
+            Ok(()) => Ok(()),
+            Err(err) => Err(USimpleError::new(err.exit_code(), err.to_string())),
+        };
+    }
+    // Driven: a program that goes away mid-upgrade must not take the
+    // upgrade with it. Writing to its closed pipe then fails rather than
+    // killing upgrade-peios, and peipkg ignores it too.
+    // SAFETY: setting a signal's disposition to SIG_IGN has no preconditions.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN) };
+    match run(&matches, true) {
         Ok(()) => Ok(()),
-        Err(err) => Err(USimpleError::new(err.exit_code(), err.to_string())),
+        Err(err) => {
+            // The error event says it all; nothing more on standard error.
+            driven::error(&err);
+            Err(USimpleError::new(err.exit_code(), ""))
+        }
     }
 }
 
@@ -149,6 +190,38 @@ pub fn uu_app() -> ClapCommand {
                 .help("Skip peipkg's confirmation prompt"),
         )
         .arg(
+            Arg::new("check")
+                .long("check")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("seeds-only")
+                .help("Show what upgrading would change, and change nothing"),
+        )
+        .arg(
+            Arg::new("allow-stale")
+                .long("allow-stale")
+                .action(ArgAction::SetTrue)
+                .help("Pass --allow-stale to peipkg: carry on with a repository's out-of-date information"),
+        )
+        .arg(
+            Arg::new("status")
+                .long("status")
+                .action(ArgAction::SetTrue)
+                .help("Show the installed release, the seeds waiting for the next boot, and whether you may upgrade"),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .action(ArgAction::SetTrue)
+                .requires("status")
+                .help("With --status, answer in JSON, for a program to read"),
+        )
+        .arg(
+            Arg::new("driven")
+                .long("driven")
+                .action(ArgAction::SetTrue)
+                .help("Report the upgrade as JSON Lines events and take peipkg's answers on standard input, for a program driving upgrade-peios"),
+        )
+        .arg(
             Arg::new("root")
                 .long("root")
                 .value_name("DIR")
@@ -157,63 +230,117 @@ pub fn uu_app() -> ClapCommand {
         )
 }
 
-fn run(m: &ArgMatches) -> Result<()> {
+/// What upgrade-peios says it is doing: a line for a person, a message
+/// event when driven.
+fn say(driven: bool, line: &str) {
+    if driven {
+        driven::message(line);
+    } else {
+        writeln!(io::stdout().lock(), "upgrade-peios: {line}").ok();
+    }
+}
+
+fn run(m: &ArgMatches, driven: bool) -> Result<()> {
     let root = PathBuf::from(m.get_one::<String>("root").map_or("/", String::as_str));
     let live = root == Path::new("/");
+    if m.get_flag("status") {
+        if driven {
+            return Err(Error::Usage("--driven reports an upgrade; --status answers a program with --json".into()));
+        }
+        return status::show(&root, live, m.get_flag("json"));
+    }
+    if driven && m.get_flag("yes") {
+        return Err(Error::Usage("--yes is refused with --driven: the program driving upgrade-peios answers peipkg's questions".into()));
+    }
     let on_reboot = m.get_flag("on-reboot") || !live;
-    let mut out = io::stdout().lock();
+    let check = m.get_flag("check");
 
     let edition = edition(&root)?;
 
     if !m.get_flag("seeds-only") {
-        writeln!(out, "upgrade-peios: upgrading {edition}").ok();
-        let mut cmd = peipkg_command(&root, live, &edition);
+        say(driven, &format!("{} {edition}", if check { "checking" } else { "upgrading" }));
+        let mut cmd = peipkg_command(&root, live, &edition, driven);
         if m.get_flag("yes") {
             cmd.arg("--yes");
         }
-        let status = cmd
-            .status()
-            .map_err(|e| Error::Usage(format!("cannot run peipkg: {e}")))?;
-        if !status.success() {
-            return Err(Error::Peipkg {
-                operation: "upgrade",
-                code: status.code(),
-            });
+        if m.get_flag("allow-stale") {
+            cmd.arg("--allow-stale");
+        }
+        if check {
+            cmd.arg("--dry-run");
+        }
+        if driven {
+            match driven::peipkg(cmd)? {
+                driven::Ended::Cancelled(reason) => {
+                    driven::event(&serde_json::json!({"event": "cancelled", "reason": reason}));
+                    return Ok(());
+                }
+                driven::Ended::Done(summary) if check => {
+                    driven::event(&serde_json::json!({"event": "done", "summary": summary, "edition": edition}));
+                    return Ok(());
+                }
+                driven::Ended::Done(_) => {}
+            }
+        } else {
+            let status = cmd
+                .status()
+                .map_err(|e| Error::Usage(format!("cannot run peipkg: {e}")))?;
+            if !status.success() {
+                return Err(Error::Peipkg {
+                    operation: "upgrade",
+                    code: status.code(),
+                });
+            }
+        }
+        if check {
+            return Ok(());
         }
     }
 
+    let steps = if on_reboot { 1 } else { 2 };
+    if driven {
+        driven::progress("release-stage", 1, steps);
+    }
     let seeds = release_seeds(&root)?;
     let staged = stage_seeds(&root, &seeds)?;
     for name in &staged {
-        writeln!(out, "upgrade-peios: staged seed {name}").ok();
+        say(driven, &format!("staged seed {name}"));
     }
 
+    let finished = |summary: String| {
+        if driven {
+            driven::event(&serde_json::json!({"event": "done", "summary": summary,
+                "edition": edition, "seeds_queued": on_reboot && !staged.is_empty()}));
+        }
+    };
     if on_reboot {
-        writeln!(
-            out,
-            "upgrade-peios: {} seed(s) queued; they apply on the next boot",
-            staged.len()
-        )
-        .ok();
+        let line = format!("{} seed(s) queued; they apply on the next boot", staged.len());
+        say(driven, &line);
+        finished(line);
         return Ok(());
     }
     if staged.is_empty() {
+        finished("the release names no seeds".into());
         return Ok(());
     }
-    writeln!(out, "upgrade-peios: applying {} seed(s)", staged.len()).ok();
-    let status = Command::new("reg")
-        .args([
-            "apply",
-            "--dir",
-            &format!("/{AUTOAPPLY_DIR}"),
-            "--once-delete",
-            "--yes",
-        ])
-        .status()
+    say(driven, &format!("applying {} seed(s)", staged.len()));
+    if driven {
+        driven::progress("release-apply", 2, steps);
+    }
+    let mut apply = Command::new("reg");
+    apply.args([
+        "apply",
+        "--dir",
+        &format!("/{AUTOAPPLY_DIR}"),
+        "--once-delete",
+        "--yes",
+    ]);
+    let status = if driven { driven::relayed(apply) } else { apply.status() }
         .map_err(|e| Error::Usage(format!("cannot run reg: {e}")))?;
     if !status.success() {
         return Err(Error::Apply(status.code()));
     }
+    finished(format!("applied {} seed(s)", staged.len()));
     Ok(())
 }
 
@@ -250,8 +377,11 @@ fn edition_of(text: &str, source: &Path) -> Result<String> {
     }
 }
 
-fn peipkg_command(root: &Path, live: bool, edition: &str) -> Command {
+fn peipkg_command(root: &Path, live: bool, edition: &str, driven: bool) -> Command {
     let mut cmd = Command::new("peipkg");
+    if driven {
+        cmd.arg("--driven");
+    }
     add_root_args(&mut cmd, root, live);
     cmd.arg("upgrade").arg(edition);
     cmd.arg("--bypass-alternate-upgrade");
@@ -283,6 +413,7 @@ mod tests {
             Path::new("/mnt/system"),
             false,
             "dev.peios.peios-experimental",
+            false,
         );
         assert_eq!(command.get_program(), OsStr::new("peipkg"));
         assert_eq!(
@@ -299,7 +430,7 @@ mod tests {
 
     #[test]
     fn qualified_edition_uses_a_concrete_named_upgrade_for_the_live_root() {
-        let command = peipkg_command(Path::new("/"), true, "dev.peios.peios-experimental");
+        let command = peipkg_command(Path::new("/"), true, "dev.peios.peios-experimental", false);
         assert_eq!(
             command_args(&command),
             [
@@ -308,6 +439,29 @@ mod tests {
                 "--bypass-alternate-upgrade",
             ]
         );
+    }
+
+    #[test]
+    fn driven_runs_peipkg_driven() {
+        let command = peipkg_command(Path::new("/"), true, "dev.peios.peios-experimental", true);
+        assert_eq!(
+            command_args(&command),
+            [
+                "--driven",
+                "upgrade",
+                "dev.peios.peios-experimental",
+                "--bypass-alternate-upgrade",
+            ]
+        );
+    }
+
+    #[test]
+    fn each_failure_has_a_stable_code() {
+        assert_eq!(Error::NoRelease(String::new()).code(), "no-release");
+        assert_eq!(Error::Seeds(String::new()).code(), "seeds");
+        assert_eq!(Error::Apply(Some(1)).code(), "apply");
+        let refused = Error::Refused { code: "stale".into(), message: "x".into() };
+        assert_eq!((refused.code().as_str(), refused.exit_code()), ("stale", 3));
     }
 
     #[test]
