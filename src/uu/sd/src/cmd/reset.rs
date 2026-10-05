@@ -1,14 +1,14 @@
 // `sd reset <path>` — drop local explicit DACL ACEs and SE_DACL_PROTECTED,
-// then re-inherit from parent via libp_sd::reinherit. Supports --recursive
-// (each target's parent path is computed independently).
+// then re-inherit from parent as KACS creates (reinherit_with). Supports
+// --recursive (each target's parent path is computed independently).
 
 use crate::cmd::{OutputMode, parse_output_mode, parse_path_target};
 use crate::error::{Error, Result};
 use crate::target::PathTarget;
 use crate::walk;
 use clap::ArgMatches;
-use peios::file::{SecInfo, get_sd, set_sd};
-use peios::security::reinherit;
+use peios::file::{File, SecInfo, get_sd, set_sd};
+use peios::security::{AclBuilder, Control, SdBuilder, SdView, reinherit_with};
 use serde_json::json;
 
 pub fn run(matches: &ArgMatches) -> Result<()> {
@@ -60,15 +60,28 @@ fn apply_one(target: &PathTarget) -> Result<()> {
         parent_target.at_flags(),
     )
     .map_err(Error::from)?;
-    let child_sd = get_sd(target.dirfd(), target.as_path(), SecInfo::DACL, target.at_flags())
+    let child_sd = get_sd(target.dirfd(), target.as_path(), SecInfo::DACL | SecInfo::OWNER | SecInfo::GROUP, target.at_flags())
         .map_err(Error::from)?;
-    let child_bytes = child_sd.as_bytes();
-    if child_bytes.is_empty() {
+    if child_sd.as_bytes().is_empty() {
         return Err(Error::Invalid(format!(
             "{}: no SD recorded; nothing to reset",
             target.path
         )));
     }
+    // Its owner and group, which CREATOR OWNER and CREATOR GROUP resolve
+    // to, an empty DACL, and no protection: what is inherited is all it has.
+    let view = SdView::parse(child_sd.as_bytes()).map_err(Error::from)?;
+    let mut bare = SdBuilder::new();
+    if let Some(owner) = view.owner() {
+        bare.owner(owner);
+    }
+    if let Some(group) = view.group() {
+        bare.group(group);
+    }
+    bare.dacl(&AclBuilder::new().build().map_err(Error::from)?);
+    bare.control(Control::empty(), Control::DACL_PROTECTED);
+    let bare = bare.build().map_err(Error::from)?;
+    let child_bytes = bare.as_bytes();
     let empty;
     let parent_for_inherit: &[u8] = if parent_sd.as_bytes().is_empty() {
         empty = crate::cmd::empty_self_relative_sd();
@@ -76,8 +89,9 @@ fn apply_one(target: &PathTarget) -> Result<()> {
     } else {
         parent_sd.as_bytes()
     };
-    let new_sd =
-        reinherit(parent_for_inherit, child_bytes, child_is_container).map_err(Error::from)?;
+    let mapping = File::generic_mapping();
+    let new_sd = reinherit_with(parent_for_inherit, child_bytes, child_is_container, Some(&mapping), SecInfo::DACL)
+        .map_err(Error::from)?;
     set_sd(
         target.dirfd(),
         target.as_path(),
