@@ -3785,7 +3785,9 @@ name = "pu_upgrade_peios"
 version = "0.8.16"
 dependencies = [
  "clap",
+ "libc",
  "serde",
+ "serde_json",
  "toml",
  "uucore",
 ]
