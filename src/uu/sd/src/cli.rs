@@ -148,12 +148,6 @@ pub fn build() -> Command {
             Command::new("propagate")
                 .about("Push inheritance to descendants")
                 .arg(path_arg())
-                .arg(
-                    Arg::new("sacl")
-                        .long("sacl")
-                        .help("Also push the SACL down (needs SeSecurityPrivilege)")
-                        .action(ArgAction::SetTrue),
-                )
                 .arg(no_follow_flag())
                 .arg(json_flag()),
         )
