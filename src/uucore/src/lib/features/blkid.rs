@@ -46,6 +46,11 @@ use libloading::{Library, Symbol};
 /// every current caller needs.
 const SUBLKS_FLAGS: c_int = (1 << 1) | (1 << 3) | (1 << 5) | (1 << 8);
 
+/// `BLKID_PARTS_ENTRY_DETAILS`: without it the partition chain finds the
+/// table but leaves out the entry a partition is, so `PART_ENTRY_TYPE`,
+/// `_NAME` and `_UUID` are never set.
+const PARTS_FLAGS: c_int = 1 << 2;
+
 /// Source-tag prefixes that require a libblkid lookup rather than being a path.
 pub const TAG_PREFIXES: &[&[u8]] = &[b"UUID=", b"LABEL=", b"PARTUUID=", b"PARTLABEL="];
 
@@ -161,6 +166,8 @@ pub fn probe_with(device: &[u8], chains: Chains) -> Result<BlkidInfo, BlkidError
             sym(lib, b"blkid_probe_set_superblocks_flags\0")?;
         let enable_parts: Symbol<unsafe extern "C" fn(*mut c_void, c_int) -> c_int> =
             sym(lib, b"blkid_probe_enable_partitions\0")?;
+        let set_parts_flags: Symbol<unsafe extern "C" fn(*mut c_void, c_int) -> c_int> =
+            sym(lib, b"blkid_probe_set_partitions_flags\0")?;
         let safeprobe: Symbol<unsafe extern "C" fn(*mut c_void) -> c_int> =
             sym(lib, b"blkid_do_safeprobe\0")?;
         let free_probe: Symbol<unsafe extern "C" fn(*mut c_void)> =
@@ -177,6 +184,7 @@ pub fn probe_with(device: &[u8], chains: Chains) -> Result<BlkidInfo, BlkidError
             enable_super(pr, 1);
             set_flags(pr, SUBLKS_FLAGS);
             enable_parts(pr, 1);
+            set_parts_flags(pr, PARTS_FLAGS);
         }
 
         // blkid_do_safeprobe: 0 success, 1 nothing found, -2 ambiguous.
