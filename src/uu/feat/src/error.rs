@@ -44,6 +44,20 @@ impl Error {
         }
     }
 
+    /// The stable code a driven caller acts on (`feat --driven`): one per
+    /// exit bucket, except that a failed script is told apart from any other
+    /// failure, since its output says why.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Error::Usage(_) => "usage",
+            Error::NotFound(_) => "not-found",
+            Error::Denied { .. } => "denied",
+            Error::State(_) => "state",
+            Error::Script { .. } => "script",
+            Error::Io { .. } | Error::Registry { .. } => "failed",
+        }
+    }
+
     /// Funnel a `peios::Error` from registry op `op` into the right bucket so the
     /// errno -> exit-code policy lives in one place (mirrors reg's `from_peios`).
     pub fn from_peios(op: impl Into<String>, e: peios::Error) -> Error {

@@ -2771,6 +2771,8 @@ dependencies = [
  "libc",
  "peios",
  "peios-sys",
+ "serde_json",
+ "toml",
  "uucore",
 ]
 

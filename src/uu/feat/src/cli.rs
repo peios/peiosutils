@@ -1,6 +1,6 @@
 // Clap surface for `feat`.
 
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 
 pub fn build() -> Command {
     let name_arg = || {
@@ -8,13 +8,35 @@ pub fn build() -> Command {
             .required(true)
             .help("Feature name (a directory under /libexec/features/)")
     };
+    let json_arg = || {
+        Arg::new("json")
+            .long("json")
+            .action(ArgAction::SetTrue)
+            .help("Answer in JSON, for a program to read")
+    };
 
     Command::new("feat")
         .version(uucore::crate_version!())
         .about("Install and enable Peios features — the imperative layer above packages")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(Command::new("list").about("List available features and their state"))
+        .arg(
+            Arg::new("driven")
+                .long("driven")
+                .action(ArgAction::SetTrue)
+                .help("Report a change as JSON Lines events, for a program driving feat"),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List available features and their state")
+                .arg(json_arg()),
+        )
+        .subcommand(
+            Command::new("info")
+                .about("Show what a feature is and its state")
+                .arg(name_arg())
+                .arg(json_arg()),
+        )
         .subcommand(
             Command::new("install")
                 .about("Run a feature's install.sh (does not enable it)")
