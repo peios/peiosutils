@@ -21,6 +21,8 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 libc = { workspace = true }
+serde_json = "1"
+toml = "0.8"
 uucore = { workspace = true }
 peios = { git = "https://github.com/peios/peios-rs.git", rev = "2a2a6bb022192f6e98d4e4a6a7efdbdd40d53b35" }
 peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "2a2a6bb022192f6e98d4e4a6a7efdbdd40d53b35" }

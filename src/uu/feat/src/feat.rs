@@ -27,6 +27,9 @@ pub mod cmd;
 pub mod error;
 pub mod feature;
 pub mod registry;
+pub mod report;
+
+use report::Report;
 
 #[uucore::main(no_signals)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
@@ -43,9 +46,24 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             };
         }
     };
-    match cmd::dispatch(&matches) {
+    if !matches.get_flag("driven") {
+        return match cmd::dispatch(&matches, Report::Terminal) {
+            Ok(()) => Ok(()),
+            Err(err) => Err(USimpleError::new(err.exit_code(), err.to_string())),
+        };
+    }
+    // Driven: a program that goes away mid-change must not take the change
+    // with it. Writing to its closed pipe then fails rather than killing
+    // feat, and the scripts run to the end.
+    // SAFETY: setting a signal's disposition to SIG_IGN has no preconditions.
+    unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN) };
+    match cmd::dispatch(&matches, Report::Driven) {
         Ok(()) => Ok(()),
-        Err(err) => Err(USimpleError::new(err.exit_code(), err.to_string())),
+        Err(err) => {
+            // The error event says it all; nothing more on standard error.
+            Report::Driven.error(&err);
+            Err(USimpleError::new(err.exit_code(), ""))
+        }
     }
 }
 

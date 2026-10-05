@@ -117,15 +117,65 @@ pub fn write_state(name: &str, state: State) -> Result<()> {
 
 /// Open-or-create `Machine\System\Features\<name>`. `Key::create` does not
 /// materialise intermediate keys, so the `Features` container is created first
-/// (its parent `Machine\System` is provisioned by peinit at boot).
+/// (its parent `Machine\System` is provisioned by peinit at boot). Each key is
+/// asked for only what is done with it — a subkey made in the container, a
+/// value set on the feature's key — which is what [`may_change`] asks.
 fn ensure_feature_key(name: &str) -> Result<Key> {
-    let access = KeyAccess::WRITE | KeyAccess::SET_VALUE;
-    Key::create(None, FEATURES_KEY, access, CreateFlags::empty(), None, None)
+    Key::create(None, FEATURES_KEY, KeyAccess::CREATE_SUB_KEY, CreateFlags::empty(), None, None)
         .map_err(|e| Error::from_peios(format!("create {FEATURES_KEY}"), e))?;
     let path = feature_key_path(name);
-    let (key, _disposition) = Key::create(None, &path, access, CreateFlags::empty(), None, None)
+    let (key, _disposition) = Key::create(None, &path, KeyAccess::SET_VALUE, CreateFlags::empty(), None, None)
         .map_err(|e| Error::from_peios(format!("create {path}"), e))?;
     Ok(key)
+}
+
+/// The features the registry holds a state for, sorted. That includes any
+/// whose definition has since gone — its package removed while it was set up
+/// — which the definition directory alone would never show.
+pub fn recorded() -> Result<Vec<String>> {
+    let key = match Key::open(None, FEATURES_KEY, KeyAccess::ENUMERATE_SUB_KEYS, OpenFlags::default()) {
+        Ok(key) => key,
+        Err(e) if Error::is_enoent(&e) => return Ok(Vec::new()),
+        Err(e) => return Err(Error::from_peios(format!("open {FEATURES_KEY}"), e)),
+    };
+    let mut names = Vec::new();
+    for subkey in key.subkeys(None) {
+        let subkey = subkey.map_err(|e| Error::from_peios(format!("list {FEATURES_KEY}"), e))?;
+        if let Ok(name) = String::from_utf8(subkey.name) {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+/// Whether the caller may change a feature's state, asked of the registry
+/// itself by opening, for writing, the key a change would write: the
+/// feature's own key, or where it does not exist yet, the key it would be
+/// made in. Nothing is written. Whether the feature's scripts may do what
+/// they do is theirs to find out when they run.
+pub fn may_change(name: &str) -> Result<bool> {
+    let path = feature_key_path(name);
+    let candidates = [
+        (path.as_str(), KeyAccess::SET_VALUE),
+        (FEATURES_KEY, KeyAccess::CREATE_SUB_KEY),
+        (r"Machine\System", KeyAccess::CREATE_SUB_KEY),
+    ];
+    for (path, access) in candidates {
+        let opened = Key::open(None, path, access, OpenFlags::default());
+        match opened {
+            Ok(_) => return Ok(true),
+            Err(e) if !Error::is_enoent(&e) => {
+                return match Error::from_peios(format!("open {path}"), e) {
+                    Error::Denied { .. } => Ok(false),
+                    other => Err(other),
+                };
+            }
+            // Not made yet: ask of the key it would be made in.
+            Err(_) => {}
+        }
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
