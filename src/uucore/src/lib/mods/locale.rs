@@ -414,8 +414,11 @@ pub fn get_message_with_args(id: &str, ftl_args: FluentArgs) -> String {
 
 /// Function to detect system locale from environment variables
 fn detect_system_locale() -> Result<LanguageIdentifier, LocalizationError> {
+    // An empty LANG is unset, as POSIX has it, not a locale named "".
     let locale_str = std::env::var("LANG")
-        .unwrap_or_else(|_| DEFAULT_LOCALE.to_string())
+        .ok()
+        .filter(|lang| !lang.is_empty())
+        .unwrap_or_else(|| DEFAULT_LOCALE.to_string())
         .split('.')
         .next()
         .unwrap_or(DEFAULT_LOCALE)
