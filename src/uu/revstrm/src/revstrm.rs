@@ -49,6 +49,9 @@ use uucore::{format_usage, translate};
 use peios::event::{Event, EventReader, OriginClass};
 use peios::msgpack::{Reader, Type};
 
+mod schema;
+use schema::Schema;
+
 mod options {
     pub const TYPE: &str = "type";
     pub const ORIGIN: &str = "origin";
@@ -76,6 +79,8 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let printer = Arc::new(Printer {
         filter: Filter::from_matches(&matches)?,
         pretty: matches.get_flag(options::PRETTY),
+        // Formatting follows the event catalogue when one is installed.
+        schema: Schema::load(),
     });
 
     if matches.get_flag(options::SNAPSHOT) {
@@ -224,6 +229,7 @@ fn attach() -> UResult<Vec<(u16, SendReader)>> {
 struct Printer {
     filter: Filter,
     pretty: bool,
+    schema: Schema,
 }
 
 impl Printer {
@@ -244,13 +250,13 @@ impl Printer {
                 out,
                 "{}  cpu{cpu:<2} #{seq:<8} {:>4}  {ty}",
                 fmt_time(ts_ns),
-                origin_label(origin),
+                origin_label(origin, &self.schema),
             )?;
             if self.pretty {
                 writeln!(out)?;
-                render_payload_pretty(&mut out, payload, 4)
+                render_payload_pretty_with(&mut out, payload, 4, &self.schema)
             } else {
-                writeln!(out, "  {}", render_payload_inline(payload))
+                writeln!(out, "  {}", render_payload_inline(payload, &self.schema))
             }
         })();
 
@@ -371,14 +377,18 @@ fn parse_origin(s: &str) -> UResult<u8> {
     Ok(origin_raw(o))
 }
 
-/// Short, fixed-width-friendly label for an origin class.
-fn origin_label(origin: u8) -> String {
+/// Short, fixed-width-friendly label for an origin class. A class this build
+/// does not know is named by the catalogue's `emitter.class` enumeration when it
+/// lists it (`4 ntfe` -> `NTFE`), else shown as `c<N>`.
+fn origin_label(origin: u8, schema: &Schema) -> String {
     match origin_from_raw(origin) {
         OriginClass::Userspace => "USR".to_string(),
         OriginClass::Kmes => "KMES".to_string(),
         OriginClass::Kacs => "KACS".to_string(),
         OriginClass::Lcs => "LCS".to_string(),
-        OriginClass::Other(o) => format!("c{o}"),
+        OriginClass::Other(o) => schema
+            .emitter_class_name(o)
+            .map_or_else(|| format!("c{o}"), |n| n.to_ascii_uppercase()),
     }
 }
 
@@ -409,13 +419,14 @@ fn fmt_time(ts_ns: u64) -> String {
 
 /// One-line, compact rendering of a msgpack payload, truncated to
 /// [`PAYLOAD_INLINE_CAP`]. Falls back to a hex preview if it won't decode.
-fn render_payload_inline(payload: &[u8]) -> String {
+fn render_payload_inline(payload: &[u8], schema: &Schema) -> String {
     if payload.is_empty() {
         return "(empty)".to_string();
     }
+    let ctx = Ctx::new(schema, payload);
     let mut reader = Reader::new(payload);
     let mut s = String::new();
-    match compact(&mut reader, &mut s) {
+    match compact_in(&mut reader, &mut s, &ctx, "") {
         Ok(()) => {
             let rest = reader.remaining();
             if rest != 0 {
@@ -431,10 +442,81 @@ fn render_payload_inline(payload: &[u8]) -> String {
     }
 }
 
+/// What a value is formatted against: the catalogue, and the `object.kind` the
+/// record names (an access mask is decoded against that kind's table).
+struct Ctx<'a> {
+    schema: &'a Schema,
+    kind: Option<String>,
+}
+
+impl<'a> Ctx<'a> {
+    fn new(schema: &'a Schema, payload: &[u8]) -> Self {
+        Self {
+            schema,
+            kind: find_str(&mut Reader::new(payload), "", "object.kind"),
+        }
+    }
+}
+
+/// `parent.key`, or just `key` at the top level. Nested maps flatten to the
+/// dotted paths the catalogue is keyed by; a key that is itself dotted joins
+/// the same way.
+fn join_path(parent: &str, key: &str) -> String {
+    if parent.is_empty() {
+        key.to_string()
+    } else {
+        format!("{parent}.{key}")
+    }
+}
+
+/// Find the string value at the flattened `target` path, consuming the value at
+/// `reader`. A decode error just ends the search.
+fn find_str(reader: &mut Reader, path: &str, target: &str) -> Option<String> {
+    match reader.peek()? {
+        Type::Map => {
+            let n = reader.read_map().ok()?;
+            for _ in 0..n {
+                if reader.peek() != Some(Type::Str) {
+                    return None;
+                }
+                let key = reader.read_str().ok()?.to_string();
+                let child = join_path(path, &key);
+                if child == target && reader.peek() == Some(Type::Str) {
+                    return reader.read_str().ok().map(str::to_string);
+                }
+                if let Some(found) = find_str(reader, &child, target) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        Type::Array => {
+            let n = reader.read_array().ok()?;
+            for _ in 0..n {
+                if let Some(found) = find_str(reader, path, target) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        // A scalar: skip it.
+        _ => {
+            compact(reader, &mut String::new()).ok()?;
+            None
+        }
+    }
+}
+
+/// [`compact_in`] with no catalogue and no path: the suffix heuristics only.
+fn compact(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
+    let schema = Schema::none();
+    compact_in(reader, buf, &Ctx { schema: &schema, kind: None }, "")
+}
+
 /// Compact recursive rendering of the value at `reader`'s cursor into `buf`,
 /// consuming exactly that one value. Arrays and maps stay on one line; the
-/// caller truncates the result.
-fn compact(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
+/// caller truncates the result. `path` is the value's flattened dotted path.
+fn compact_in(reader: &mut Reader, buf: &mut String, ctx: &Ctx, path: &str) -> peios::Result<()> {
     match reader.peek() {
         None => {
             // No valid lead byte where a value was expected: force the error.
@@ -476,7 +558,7 @@ fn compact(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
                 if i > 0 {
                     buf.push_str(", ");
                 }
-                compact(reader, buf)?;
+                compact_in(reader, buf, ctx, path)?;
             }
             buf.push(']');
         }
@@ -487,7 +569,7 @@ fn compact(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
                 if i > 0 {
                     buf.push_str(", ");
                 }
-                compact_pair(reader, buf)?;
+                compact_pair(reader, buf, ctx, path)?;
             }
             buf.push('}');
         }
@@ -495,24 +577,143 @@ fn compact(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
     Ok(())
 }
 
-/// Render one map key/value pair compactly as `key: value`, applying the
-/// key-driven SID/access special rendering to the value when the key is a
-/// string with a recognised suffix.
-fn compact_pair(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
+/// Render one map key/value pair compactly as `key: value`. The value is
+/// formatted by the type the catalogue declares for its path, or by the key's
+/// suffix when the path is unknown (see [`render_typed`]). `path` is the map's.
+fn compact_pair(reader: &mut Reader, buf: &mut String, ctx: &Ctx, path: &str) -> peios::Result<()> {
     if reader.peek() == Some(Type::Str) {
         let key = reader.read_str()?.to_string();
+        let child = join_path(path, &key);
         let _ = write!(buf, "{key:?}: ");
-        match render_special_value(reader, &key)? {
+        match render_typed(reader, ctx, &child, &key)? {
             Some(rendered) => buf.push_str(&rendered),
-            None => compact(reader, buf)?,
+            None => compact_in(reader, buf, ctx, &child)?,
         }
     } else {
         // Non-string key: render key then value plainly.
-        compact(reader, buf)?;
+        compact_in(reader, buf, ctx, path)?;
         buf.push_str(": ");
-        compact(reader, buf)?;
+        compact_in(reader, buf, ctx, path)?;
     }
     Ok(())
+}
+
+/// Format the value at `reader` by its path. If the catalogue declares the
+/// path, its type decides (and a value of the wrong shape is left to plain
+/// rendering); only an undeclared path falls back to the key-suffix heuristics,
+/// so third-party and old events still render. Returns `Ok(None)` **without
+/// consuming** when the value should be rendered normally.
+fn render_typed(
+    reader: &mut Reader,
+    ctx: &Ctx,
+    path: &str,
+    key: &str,
+) -> peios::Result<Option<String>> {
+    match ctx.schema.spec(path) {
+        Some(spec) => render_by_spec(reader, ctx, path, spec),
+        None => render_special_value(reader, key),
+    }
+}
+
+/// The types [`render_scalar`] knows how to format. Anything else is plain.
+fn is_typed(base: &str) -> bool {
+    matches!(
+        base,
+        "bin.sid"
+            | "bin.guid"
+            | "uint.time"
+            | "uint.duration"
+            | "uint.bytes"
+            | "uint.mask"
+            | "uint.access-mask"
+            | "uint.flags"
+            | "uint.enum"
+            | "uint.luid"
+            | "uint.integrity"
+            | "int.errno"
+    )
+}
+
+/// Format the value at `reader` by a declared type, element by element for an
+/// array type (`bin.sid[]`). `Ok(None)`, nothing consumed, if the type is one
+/// with no special form or the value is not the shape the type needs.
+fn render_by_spec(
+    reader: &mut Reader,
+    ctx: &Ctx,
+    path: &str,
+    spec: schema::Spec<'_>,
+) -> peios::Result<Option<String>> {
+    match spec.ty.strip_suffix("[]") {
+        Some(base) => {
+            if !is_typed(base) || reader.peek() != Some(Type::Array) {
+                return Ok(None);
+            }
+            let n = reader.read_array()?;
+            let mut parts = Vec::with_capacity(n);
+            for _ in 0..n {
+                match render_scalar(reader, ctx, base, spec.values)? {
+                    Some(s) => parts.push(s),
+                    None => {
+                        let mut s = String::new();
+                        compact_in(reader, &mut s, ctx, path)?;
+                        parts.push(s);
+                    }
+                }
+            }
+            Ok(Some(format!("[{}]", parts.join(", "))))
+        }
+        None => render_scalar(reader, ctx, spec.ty, spec.values),
+    }
+}
+
+/// Format one scalar by declared base type. `Ok(None)`, nothing consumed, when
+/// the type has no special form or the wire value is the wrong shape.
+fn render_scalar(
+    reader: &mut Reader,
+    ctx: &Ctx,
+    base: &str,
+    values: Option<&str>,
+) -> peios::Result<Option<String>> {
+    if !is_typed(base) {
+        return Ok(None);
+    }
+    match (base, reader.peek()) {
+        ("bin.sid", Some(Type::Bin)) => {
+            let b = reader.read_bin()?;
+            Ok(Some(sid_to_string(b).unwrap_or_else(|| hex_preview(b))))
+        }
+        ("bin.guid", Some(Type::Bin)) => {
+            let b = reader.read_bin()?;
+            Ok(Some(schema::format_guid(b).unwrap_or_else(|| hex_preview(b))))
+        }
+        (_, Some(Type::Int)) => {
+            // A non-negative integer reads as unsigned; a negative one only as
+            // signed, and no unsigned type can hold it, so it prints as is.
+            let Ok(u) = reader.read_uint() else {
+                let i = reader.read_int()?;
+                return Ok(Some(if base == "int.errno" {
+                    schema::format_errno(i)
+                } else {
+                    i.to_string()
+                }));
+            };
+            Ok(Some(match base {
+                "uint.time" => schema::format_time(u),
+                "uint.duration" => schema::format_duration(u),
+                "uint.bytes" => schema::format_bytes(u),
+                "uint.mask" | "uint.access-mask" => match u32::try_from(u) {
+                    Ok(m) => decode_access_mask_for(m, ctx.kind.as_deref()),
+                    Err(_) => u.to_string(),
+                },
+                "uint.flags" => schema::format_flags(values, u),
+                "uint.enum" => schema::format_enum(values, u),
+                "uint.luid" => format!("0x{u:x}"),
+                "uint.integrity" => schema::format_integrity(u),
+                _ => u.to_string(),
+            }))
+        }
+        _ => Ok(None),
+    }
 }
 
 /// Render an integer node, preferring the unsigned reading so values above
@@ -649,12 +850,27 @@ fn compact_int_into(
 /// Decode an access mask into `|`-joined right names. Any bits without a known
 /// name are appended as a single `0x…` remainder, so nothing is hidden.
 fn decode_access_mask(mask: u32) -> String {
+    decode_access_mask_for(mask, None)
+}
+
+/// Decode an access mask against the table for `kind` (`object.kind`). The
+/// object-specific low 16 bits mean different things for each kind (`0x1` is
+/// `FILE_READ_DATA` on a file and `PROCESS_TERMINATE` on a process), and only the
+/// file table is known here, so for any other kind those bits are left as a hex
+/// remainder rather than misnamed. The standard and generic rights are the same
+/// for every kind. No kind (an event with no `object.kind`) decodes as a file,
+/// as `revstrm` always has.
+fn decode_access_mask_for(mask: u32, kind: Option<&str>) -> String {
     if mask == 0 {
         return "0 (none)".to_string();
     }
+    let file = matches!(kind, None | Some("file"));
     let mut parts: Vec<&str> = Vec::new();
     let mut remaining = mask;
     for (bit, name) in ACCESS_FLAGS {
+        if !file && *bit <= 0xffff {
+            continue;
+        }
         if remaining & bit != 0 {
             parts.push(name);
             remaining &= !bit;
@@ -714,13 +930,25 @@ enum Pretty {
 /// given indent. The old `msgpack::Value::render` used `println!`, which would
 /// deadlock against the stdout lock the caller already holds; this targets our
 /// writer instead.
+#[cfg(test)]
 fn render_payload_pretty(out: &mut impl Write, payload: &[u8], indent: usize) -> io::Result<()> {
+    render_payload_pretty_with(out, payload, indent, &Schema::none())
+}
+
+/// [`render_payload_pretty`], formatting values by `schema`.
+fn render_payload_pretty_with(
+    out: &mut impl Write,
+    payload: &[u8],
+    indent: usize,
+    schema: &Schema,
+) -> io::Result<()> {
     let pad = " ".repeat(indent);
     if payload.is_empty() {
         return writeln!(out, "{pad}(empty)");
     }
+    let ctx = Ctx::new(schema, payload);
     let mut reader = Reader::new(payload);
-    match render_value(&mut reader, indent) {
+    match render_value(&mut reader, indent, &ctx, "") {
         Ok(rendered) => {
             match rendered {
                 Pretty::Inline(s) => writeln!(out, "{pad}{s}")?,
@@ -743,13 +971,18 @@ fn render_payload_pretty(out: &mut impl Write, payload: &[u8], indent: usize) ->
 
 /// Render the value at `reader`'s cursor in pretty form at `indent`, consuming
 /// it. Maps and arrays recurse; scalars render inline via [`compact`].
-fn render_value(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
+fn render_value(
+    reader: &mut Reader,
+    indent: usize,
+    ctx: &Ctx,
+    path: &str,
+) -> peios::Result<Pretty> {
     match reader.peek() {
-        Some(Type::Map) => render_map(reader, indent),
-        Some(Type::Array) => render_array(reader, indent),
+        Some(Type::Map) => render_map(reader, indent, ctx, path),
+        Some(Type::Array) => render_array(reader, indent, ctx, path),
         _ => {
             let mut s = String::new();
-            compact(reader, &mut s)?;
+            compact_in(reader, &mut s, ctx, path)?;
             Ok(Pretty::Inline(s))
         }
     }
@@ -759,7 +992,12 @@ fn render_value(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
 /// `key   value` block with bare (unquoted) keys, scalar values column-aligned,
 /// nested maps/arrays expanded beneath their key, and SID-/access-suffixed keys
 /// rendered inline. No `map(N)`/type-name noise.
-fn render_map(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
+fn render_map(
+    reader: &mut Reader,
+    indent: usize,
+    ctx: &Ctx,
+    path: &str,
+) -> peios::Result<Pretty> {
     let pad = " ".repeat(indent);
     let n = reader.read_map()?;
     if n == 0 {
@@ -775,9 +1013,10 @@ fn render_map(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
         width = width.max(key.len());
         // SID-/access-suffixed string keys render their value inline regardless
         // of its shape; otherwise recurse on the value.
-        let value = match render_special_value(reader, &key)? {
+        let child = join_path(path, &key);
+        let value = match render_typed(reader, ctx, &child, &key)? {
             Some(rendered) => Pretty::Inline(rendered),
-            None => render_value(reader, indent + 2)?,
+            None => render_value(reader, indent + 2, ctx, &child)?,
         };
         rows.push((key, value));
     }
@@ -801,7 +1040,12 @@ fn render_map(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
 /// Pretty-render an array: an empty array is inline `[]`; a scalar-only array is
 /// inline `[e0, e1, …]`; an array holding any container becomes an indexed
 /// block, one element per entry.
-fn render_array(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
+fn render_array(
+    reader: &mut Reader,
+    indent: usize,
+    ctx: &Ctx,
+    path: &str,
+) -> peios::Result<Pretty> {
     let pad = " ".repeat(indent);
     let n = reader.read_array()?;
     if n == 0 {
@@ -813,7 +1057,7 @@ fn render_array(reader: &mut Reader, indent: usize) -> peios::Result<Pretty> {
     let mut elems: Vec<Pretty> = Vec::with_capacity(n);
     let mut any_block = false;
     for _ in 0..n {
-        let p = render_value(reader, indent + 2)?;
+        let p = render_value(reader, indent + 2, ctx, path)?;
         any_block |= matches!(p, Pretty::Block(_));
         elems.push(p);
     }
@@ -1106,6 +1350,298 @@ mod tests {
             w.write_array(3).write_uint(1).write_uint(2).write_uint(3);
         });
         assert_eq!(compact_bytes(&buf), "[1, 2, 3]");
+    }
+
+    // --- catalogue-driven formatting --------------------------------------
+
+    use super::{render_payload_inline, render_payload_pretty_with, schema::Schema};
+
+    /// A small catalogue with one field of each type class. `subject.token.owner`
+    /// is a SID whose name no suffix rule would catch; `note.misleading-sid` is
+    /// text whose name looks like a SID.
+    const FIXTURE: &str = "\
+--- field subject.token.sid
+type: bin.sid
+
+A SID.
+
+--- field subject.token.owner
+type: bin.sid
+
+A SID that no suffix rule catches.
+
+--- field subject.token.groups
+type: bin.sid[]
+
+Group SIDs.
+
+--- field subject.token.integrity
+type: uint.integrity
+
+The integrity RID.
+
+--- field access.requested
+type: uint.mask
+
+What was asked for.
+
+--- field access.granted
+type: uint.mask
+
+What was allowed.
+
+--- field object.kind
+type: str.enum
+values: file | process
+
+The sort of object.
+
+--- field object.file.path
+type: str.path
+
+The file.
+
+--- field op.id
+type: bin.guid
+
+The operation.
+
+--- field op.started
+type: uint.time
+
+When it began.
+
+--- field op.took
+type: uint.duration
+
+How long it took.
+
+--- field op.moved
+type: uint.bytes
+
+How much it moved.
+
+--- field op.error
+type: int.errno
+
+Why it failed.
+
+--- field op.proto
+type: uint.enum
+values: 6 TCP | 17 UDP
+
+The protocol.
+
+--- field op.prot
+type: uint.flags
+values: 0x1 PROT_READ | 0x2 PROT_WRITE
+
+The protection.
+
+--- field op.handle
+type: uint.luid
+
+The handle.
+
+--- field note.misleading-sid
+type: str
+
+Not a SID, whatever its name says.
+
+--- field emitter.class
+type: uint.enum
+values: 0 userspace | 1 kmes | 2 kacs | 3 lcs | 4 ntfe
+closed: false
+
+The emission path.
+";
+
+    fn fixture_schema() -> (tempfile::TempDir, Schema) {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("kernel.evman"), FIXTURE).unwrap();
+        let schema = Schema::load_dir(dir.path());
+        (dir, schema)
+    }
+
+    /// The payload map `{a: {b: value}}` for a dotted two-level path.
+    fn nested(outer: &str, inner: &str, value: impl FnOnce(&mut Writer)) -> Vec<u8> {
+        encode(|w| {
+            w.write_map(1).write_str(outer).write_map(1).write_str(inner);
+            value(w);
+        })
+    }
+
+    #[test]
+    fn catalogue_types_drive_sid_and_guid() {
+        let (_dir, schema) = fixture_schema();
+        // `owner` has no SID suffix; only the declared type finds it.
+        let buf = encode(|w| {
+            w.write_map(1).write_str("subject").write_map(1).write_str("token");
+            w.write_map(2)
+                .write_str("owner")
+                .write_bin(&sid(5, &[18]))
+                .write_str("groups")
+                .write_array(2)
+                .write_bin(&sid(1, &[0]))
+                .write_bin(&sid(5, &[32, 544]));
+        });
+        let out = render_payload_inline(&buf, &schema);
+        assert!(out.contains("\"owner\": ") && out.contains("S-1-5-18"), "{out}");
+        assert!(!out.contains("\"owner\": 0x"), "{out}");
+        assert!(out.contains("S-1-1-0") && out.contains("S-1-5-32-544"), "{out}");
+        assert!(out.contains("\"groups\": ["), "{out}");
+
+        let guid: Vec<u8> = (1..=16).collect();
+        let buf = nested("op", "id", |w| {
+            w.write_bin(&guid);
+        });
+        let out = render_payload_inline(&buf, &schema);
+        assert!(out.contains("04030201-0605-0807-090a-0b0c0d0e0f10"), "{out}");
+    }
+
+    #[test]
+    fn catalogue_types_drive_numbers() {
+        let (_dir, schema) = fixture_schema();
+        let one = |outer: &str, inner: &str, f: &dyn Fn(&mut Writer)| {
+            render_payload_inline(&nested(outer, inner, |w| f(w)), &schema)
+        };
+        let out = one("op", "started", &|w| {
+            w.write_uint(1_709_251_198_500_000_000);
+        });
+        assert!(out.contains("2024-02-29T23:59:58.500000000Z"), "{out}");
+        let out = one("op", "took", &|w| {
+            w.write_uint(1_500_000);
+        });
+        assert!(out.contains("(1.5ms)"), "{out}");
+        let out = one("op", "moved", &|w| {
+            w.write_uint(8192);
+        });
+        assert!(out.contains("8192 (8KiB)"), "{out}");
+        let out = one("op", "error", &|w| {
+            w.write_int(-13);
+        });
+        assert!(out.contains("-13 (Permission denied)"), "{out}");
+        let out = one("op", "proto", &|w| {
+            w.write_uint(17);
+        });
+        assert!(out.contains("UDP (17)"), "{out}");
+        let out = one("op", "prot", &|w| {
+            w.write_uint(3);
+        });
+        assert!(out.contains("PROT_READ|PROT_WRITE"), "{out}");
+        let out = one("op", "handle", &|w| {
+            w.write_uint(0x2a);
+        });
+        assert!(out.contains("0x2a"), "{out}");
+    }
+
+    #[test]
+    fn catalogue_masks_decode_against_object_kind() {
+        let (_dir, schema) = fixture_schema();
+        let payload = |kind: &str| {
+            encode(|w| {
+                w.write_map(2)
+                    .write_str("object")
+                    .write_map(1)
+                    .write_str("kind")
+                    .write_str(kind)
+                    .write_str("access")
+                    .write_map(1)
+                    .write_str("granted")
+                    .write_uint(0x0012_0001);
+            })
+        };
+        let file = render_payload_inline(&payload("file"), &schema);
+        assert!(file.contains("FILE_READ_DATA|READ_CONTROL|SYNCHRONIZE"), "{file}");
+        // The low bits mean something else on a process: not named as FILE_*.
+        let process = render_payload_inline(&payload("process"), &schema);
+        assert!(process.contains("READ_CONTROL|SYNCHRONIZE|0x00000001"), "{process}");
+        assert!(!process.contains("FILE_READ_DATA"), "{process}");
+    }
+
+    #[test]
+    fn declared_type_overrides_the_key_suffix() {
+        let (_dir, schema) = fixture_schema();
+        // Declared `str`, so not a SID despite the name; the bytes are not
+        // touched by the SID heuristic.
+        let buf = nested("note", "misleading-sid", |w| {
+            w.write_str("hello");
+        });
+        let out = render_payload_inline(&buf, &schema);
+        assert!(out.contains("\"misleading-sid\": \"hello\""), "{out}");
+        // A value of the wrong shape for its declared type renders plainly.
+        let buf = nested("access", "granted", |w| {
+            w.write_str("lots");
+        });
+        let out = render_payload_inline(&buf, &schema);
+        assert!(out.contains("\"granted\": \"lots\""), "{out}");
+    }
+
+    #[test]
+    fn unknown_paths_fall_back_to_suffix_heuristics() {
+        let (_dir, schema) = fixture_schema();
+        let buf = encode(|w| {
+            w.write_map(2)
+                .write_str("legacy")
+                .write_map(1)
+                .write_str("user_sid")
+                .write_bin(&sid(5, &[18]))
+                .write_str("granted_access")
+                .write_uint(0x80);
+        });
+        let out = render_payload_inline(&buf, &schema);
+        assert!(out.contains("S-1-5-18"), "{out}");
+        assert!(out.contains("FILE_READ_ATTRIBUTES"), "{out}");
+    }
+
+    #[test]
+    fn no_catalogue_keeps_old_behaviour() {
+        // A missing directory is no catalogue; so is an empty one.
+        let none = Schema::load_dir(std::path::Path::new("/nonexistent/evman"));
+        let empty = tempfile::tempdir().unwrap();
+        let empty = Schema::load_dir(empty.path());
+        let buf = nested("subject", "user_sid", |w| {
+            w.write_bin(&sid(5, &[18]));
+        });
+        for s in [&none, &empty] {
+            let out = render_payload_inline(&buf, s);
+            assert!(out.contains("S-1-5-18"), "{out}");
+        }
+        // Without the catalogue `access.granted` is a bare number, as before.
+        let buf = nested("access", "granted", |w| {
+            w.write_uint(0x80);
+        });
+        assert!(render_payload_inline(&buf, &none).contains("\"granted\": 128"));
+    }
+
+    #[test]
+    fn pretty_output_uses_the_same_types_and_nesting() {
+        let (_dir, schema) = fixture_schema();
+        let buf = encode(|w| {
+            w.write_map(1).write_str("subject").write_map(1).write_str("token");
+            w.write_map(2)
+                .write_str("owner")
+                .write_bin(&sid(5, &[18]))
+                .write_str("integrity")
+                .write_uint(0x3000);
+        });
+        let mut out: Vec<u8> = Vec::new();
+        render_payload_pretty_with(&mut out, &buf, 0, &schema).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        assert!(s.contains("subject:"), "{s}");
+        assert!(s.contains("token:"), "{s}");
+        assert!(s.contains("S-1-5-18"), "{s}");
+        assert!(s.contains("high (0x3000)"), "{s}");
+    }
+
+    #[test]
+    fn header_class_is_named_by_the_catalogue() {
+        use super::origin_label;
+        let (_dir, schema) = fixture_schema();
+        assert_eq!(origin_label(4, &schema), "NTFE");
+        assert_eq!(origin_label(4, &Schema::none()), "c4");
+        assert_eq!(origin_label(2, &schema), "KACS");
+        assert_eq!(origin_label(9, &schema), "c9");
     }
 
     /// Sanity-check the peek/read contract the renderer relies on.

@@ -3329,7 +3329,9 @@ dependencies = [
  "fluent",
  "glob",
  "libc",
+ "libevman",
  "peios",
+ "tempfile",
  "uucore",
 ]
 
