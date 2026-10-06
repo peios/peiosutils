@@ -15,7 +15,10 @@
 
 use std::fmt;
 
-use peios::registry::{CreateFlags, Data, Key, KeyAccess, OpenFlags, Transaction, ValueType};
+use peios::registry::{
+    CreateFlags, Data, Key, KeyAccess, OpenFlags, SecInfo, Transaction, ValueType,
+};
+use peios::security::{SecurityDescriptor, sddl};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value as Json, json};
 
@@ -26,11 +29,65 @@ pub struct Document {
     pub keys: Vec<KeyEntry>,
 }
 
+/// One key of a document.
+///
+/// Unknown fields are refused rather than ignored: a field this version
+/// does not know is one it would otherwise drop while reporting success,
+/// as versions before `descriptor` silently dropped that.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct KeyEntry {
     pub path: String,
     #[serde(default)]
     pub values: Vec<ValueEntry>,
+    /// Security descriptor parts to set on the key, as SDDL. Only the parts
+    /// the SDDL gives are set (`S:` alone sets the SACL and leaves the
+    /// inherited owner, group and DACL as they are). `export` never fills
+    /// it: reading a SACL needs a privilege an export should not demand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor: Option<String>,
+}
+
+/// The parts of `sddl` to set, and the descriptor holding them: owner,
+/// group, DACL and SACL, each where the SDDL gives it. An SDDL that gives
+/// none is refused, since applying it would change nothing while looking
+/// as though it had.
+pub fn descriptor_parts(sddl: &str) -> Result<(SecInfo, SecurityDescriptor), Error> {
+    let invalid = |why: String| Error::Invalid(format!("descriptor {sddl:?}: {why}"));
+    let sd = sddl::parse(sddl).map_err(|e| invalid(e.to_string()))?;
+    let view = sd.view().map_err(|e| invalid(e.to_string()))?;
+    let mut parts = SecInfo::empty();
+    if view.owner().is_some() {
+        parts |= SecInfo::OWNER;
+    }
+    if view.group().is_some() {
+        parts |= SecInfo::GROUP;
+    }
+    if view.dacl().is_some() {
+        parts |= SecInfo::DACL;
+    }
+    if view.sacl().is_some() {
+        parts |= SecInfo::SACL;
+    }
+    if parts.is_empty() {
+        return Err(invalid("it gives no owner, group, DACL or SACL".into()));
+    }
+    Ok((parts, sd))
+}
+
+/// The rights a handle needs to set `parts` of a key's descriptor.
+pub fn descriptor_access(parts: SecInfo) -> KeyAccess {
+    let mut access = KeyAccess::empty();
+    if parts.intersects(SecInfo::OWNER | SecInfo::GROUP) {
+        access |= KeyAccess::WRITE_OWNER;
+    }
+    if parts.intersects(SecInfo::DACL | SecInfo::LABEL) {
+        access |= KeyAccess::WRITE_DAC;
+    }
+    if parts.contains(SecInfo::SACL) {
+        access |= KeyAccess::ACCESS_SYSTEM_SECURITY;
+    }
+    access
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -146,6 +203,7 @@ fn collect(path: &str, doc: &mut Document) -> Result<(), Error> {
     doc.keys.push(KeyEntry {
         path: path.to_string(),
         values,
+        descriptor: None,
     });
     let children = key
         .subkeys(None)
@@ -160,10 +218,12 @@ fn collect(path: &str, doc: &mut Document) -> Result<(), Error> {
 
 /// Writes `doc` in one transaction, into `layer` (`None`: the base layer),
 /// all or nothing: each key is created if it isn't there, parents first,
-/// and each value set. Every key is created inside the transaction, so no
-/// open waits behind its own writes (PEI-1241). Says how many keys.
+/// each value set, and then the parts of its `descriptor` the SDDL gives.
+/// Every key is created inside the transaction, so no open waits behind its
+/// own writes (PEI-1241). A descriptor's SACL needs SeSecurityPrivilege
+/// enabled, as `reg sd --sacl` does. Says how many keys.
 pub fn apply(doc: &Document, layer: Option<&str>) -> Result<usize, Error> {
-    // Every value checked before anything is written.
+    // Every value and descriptor checked before anything is written.
     let entries = doc
         .keys
         .iter()
@@ -175,23 +235,26 @@ pub fn apply(doc: &Document, layer: Option<&str>) -> Result<usize, Error> {
                     .iter()
                     .map(ValueEntry::bytes)
                     .collect::<Result<Vec<_>, Error>>()?,
+                entry
+                    .descriptor
+                    .as_deref()
+                    .map(descriptor_parts)
+                    .transpose()?,
             ))
         })
         .collect::<Result<Vec<_>, Error>>()?;
     let txn = Transaction::begin().map_err(registry("begin a transaction for", ""))?;
     // Held open until the commit, so what is enlisted stays valid.
     let mut keys = Vec::new();
-    for (entry, values) in entries {
+    for (entry, values, descriptor) in entries {
         let path = entry.path.replace('/', "\\");
-        let (key, _) = Key::create(
-            None,
-            &path,
-            KeyAccess::WRITE | KeyAccess::SET_VALUE,
-            CreateFlags::empty(),
-            layer,
-            Some(&txn),
-        )
-        .map_err(registry("create key", &entry.path))?;
+        let access = KeyAccess::WRITE
+            | KeyAccess::SET_VALUE
+            | descriptor
+                .as_ref()
+                .map_or(KeyAccess::empty(), |(parts, _)| descriptor_access(*parts));
+        let (key, _) = Key::create(None, &path, access, CreateFlags::empty(), layer, Some(&txn))
+            .map_err(registry("create key", &entry.path))?;
         for (name, ty, bytes) in values {
             let mut write = key.set_value(&name, ty, &bytes);
             if let Some(layer) = layer {
@@ -201,6 +264,12 @@ pub fn apply(doc: &Document, layer: Option<&str>) -> Result<usize, Error> {
                 .in_txn(&txn)
                 .call()
                 .map_err(registry("set a value of", &entry.path))?;
+        }
+        // On the key this handle names, in the same transaction: the
+        // descriptor commits with the values or not at all.
+        if let Some((parts, sd)) = &descriptor {
+            key.set_security(*parts, sd, Some(&txn))
+                .map_err(registry("set the descriptor of", &entry.path))?;
         }
         keys.push(key);
     }
@@ -400,6 +469,53 @@ mod tests {
             (b"N".to_vec(), ValueType::DWORD, 5u32.to_le_bytes().to_vec())
         );
         assert_eq!(values[1], (Vec::new(), ValueType::NONE, Vec::new()));
+    }
+
+    #[test]
+    fn a_key_carries_a_descriptor_only_when_given_one() {
+        let doc: Document = serde_json::from_str(
+            r#"{"keys":[{"path":"Machine\\Generic"},{"path":"Machine\\Generic\\Events","descriptor":"S:(AL;CI;0x10002;;;WD)"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(doc.keys[0].descriptor, None);
+        assert_eq!(
+            doc.keys[1].descriptor.as_deref(),
+            Some("S:(AL;CI;0x10002;;;WD)")
+        );
+        // An export, which never fills it, writes no field at all.
+        assert_eq!(
+            serde_json::to_string(&doc.keys[0]).unwrap(),
+            r#"{"path":"Machine\\Generic","values":[]}"#
+        );
+    }
+
+    #[test]
+    fn an_unknown_key_field_is_refused_not_dropped() {
+        let typo = serde_json::from_str::<Document>(
+            r#"{"keys":[{"path":"Machine\\App","descripter":"S:(AL;CI;0x10002;;;WD)"}]}"#,
+        );
+        assert!(typo.unwrap_err().to_string().contains("descripter"));
+        // The document's own top level still takes a comment.
+        assert!(serde_json::from_str::<Document>(r#"{"_comment":["x"],"keys":[]}"#).is_ok());
+    }
+
+    #[test]
+    fn only_the_descriptor_parts_given_are_set() {
+        let (parts, _) = descriptor_parts("S:(AL;CI;0x10002;;;WD)").unwrap();
+        assert_eq!(parts, SecInfo::SACL);
+        assert_eq!(descriptor_access(parts), KeyAccess::ACCESS_SYSTEM_SECURITY);
+        let (parts, _) = descriptor_parts("O:SYD:(A;;KA;;;SY)").unwrap();
+        assert_eq!(parts, SecInfo::OWNER | SecInfo::DACL);
+        assert_eq!(
+            descriptor_access(parts),
+            KeyAccess::WRITE_OWNER | KeyAccess::WRITE_DAC
+        );
+    }
+
+    #[test]
+    fn a_descriptor_that_sets_nothing_or_does_not_parse_is_refused() {
+        assert!(descriptor_parts("").is_err());
+        assert!(descriptor_parts("S:(nonsense)").is_err());
     }
 
     #[test]
