@@ -28,6 +28,15 @@ pub enum UEncoding {
 // This ensures real locales like "en-US" won't match
 const DEFAULT_LOCALE: Locale = locale!("und");
 
+/// The first of LC_ALL, `locale_name` and LANG that has a value. An empty
+/// variable counts as unset, as POSIX and glibc have it: a session that
+/// exports `LC_ALL=""` still uses its `LANG`.
+fn locale_var_from(locale_name: &str, get: impl Fn(&str) -> Option<String>) -> Option<String> {
+    ["LC_ALL", locale_name, "LANG"]
+        .iter()
+        .find_map(|&key| get(key).filter(|value| !value.is_empty()))
+}
+
 /// Look at 3 environment variables in the following order
 ///
 /// 1. LC_ALL
@@ -36,9 +45,7 @@ const DEFAULT_LOCALE: Locale = locale!("und");
 ///
 /// Or fallback on Posix locale, with ASCII encoding.
 pub fn get_locale_from_env(locale_name: &str) -> (Locale, UEncoding) {
-    let locale_var = ["LC_ALL", locale_name, "LANG"]
-        .iter()
-        .find_map(|&key| std::env::var(key).ok());
+    let locale_var = locale_var_from(locale_name, |key| std::env::var(key).ok());
 
     if let Some(locale_var_str) = locale_var {
         let mut split = locale_var_str.split(&['.', '@']);
@@ -91,4 +98,49 @@ pub fn get_numeric_locale() -> &'static (Locale, UEncoding) {
 /// Return the encoding deduced from the locale environment variable.
 pub fn get_locale_encoding() -> UEncoding {
     get_collating_locale().1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::locale_var_from;
+    use std::collections::HashMap;
+
+    fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let map: HashMap<String, String> = pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect();
+        move |key| map.get(key).cloned()
+    }
+
+    #[test]
+    fn an_empty_lc_all_falls_through_to_lang() {
+        // What a GXWI session exports: every LC_* empty, LANG the person's.
+        let get = env(&[("LC_ALL", ""), ("LC_TIME", ""), ("LANG", "de_DE.UTF-8")]);
+        assert_eq!(
+            locale_var_from("LC_TIME", get),
+            Some("de_DE.UTF-8".to_string())
+        );
+    }
+
+    #[test]
+    fn a_set_variable_still_wins_in_order() {
+        let get = env(&[
+            ("LC_ALL", ""),
+            ("LC_TIME", "fr_FR.UTF-8"),
+            ("LANG", "de_DE.UTF-8"),
+        ]);
+        assert_eq!(
+            locale_var_from("LC_TIME", get),
+            Some("fr_FR.UTF-8".to_string())
+        );
+        let get = env(&[("LC_ALL", "C"), ("LANG", "de_DE.UTF-8")]);
+        assert_eq!(locale_var_from("LC_TIME", get), Some("C".to_string()));
+    }
+
+    #[test]
+    fn all_empty_is_no_locale() {
+        let get = env(&[("LC_ALL", ""), ("LC_TIME", ""), ("LANG", "")]);
+        assert_eq!(locale_var_from("LC_TIME", get), None);
+    }
 }
