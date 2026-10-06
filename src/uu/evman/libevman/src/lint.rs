@@ -65,9 +65,9 @@ pub const DOMAINS: [&str; 9] = [
 pub const COMMON_THINGS: [&str; 5] = ["token", "process", "file", "key", "session"];
 
 /// The platform roots of §6.A; each is owned by the fragment of that name.
-pub const PLATFORM_ROOTS: [&str; 15] = [
-    "kacs", "lcs", "kmes", "stratafs", "ntfe", "peinit", "peipkg", "eventd", "authd", "netd",
-    "resolvd", "timed", "trustd", "ud", "loregd",
+pub const PLATFORM_ROOTS: [&str; 16] = [
+    "kacs", "lcs", "kmes", "stratafs", "ntfe", "peinit", "peipkg", "eventd", "authd", "lpsd",
+    "netd", "resolvd", "timed", "trustd", "ud", "loregd",
 ];
 /// The platform fragment, which owns the generic roots and no event root.
 pub const PLATFORM_FRAGMENT: &str = "kernel";
