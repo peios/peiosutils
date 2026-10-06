@@ -26,7 +26,7 @@ jiff = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "02c87cb643c30eef6b74cd1d9d8b0ae067bed69a" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "f8c84930f2b71763bcf0550df0b1420a0f63b21e" }
 # Ending a session: authd does it, asked on its logon socket. The revision
 # uucore's identity client is pinned to.
 libauthd-client = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }

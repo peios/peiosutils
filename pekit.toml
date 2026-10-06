@@ -14,7 +14,7 @@ name = "dev.peios.peiosutils-source"
 command = '''
 set -eu
 
-PEIOS_RS_REV=3dffee949a457509078ffc2f423613de330b5401
+PEIOS_RS_REV=f8c84930f2b71763bcf0550df0b1420a0f63b21e
 export CARGO_HOME=/tmp/cargo-peiosutils-vendor
 mkdir -p "$CARGO_HOME" "$PEKIT_OUT"
 
@@ -359,11 +359,11 @@ rm -rf "$SMOKE"
 "org.sourceware.debugedit" = "*"
 "org.llvm.clang-devel"     = ">= 22.1.8"
 "org.pkgconf.pkgconf"      = "*"
-"dev.peios.libpeios-devel" = ">= 0.5.0"
+"dev.peios.libpeios-devel" = ">= 0.5.8"
 
 [test.dependencies.apt]
-"dev.peios.libpeios"       = ">= 0.5.0"
-"dev.peios.libpeios-devel" = ">= 0.5.0"
+"dev.peios.libpeios"       = ">= 0.5.8"
+"dev.peios.libpeios-devel" = ">= 0.5.8"
 "dev.peios.kernel-headers" = "*"
 "dev.peios.packaging-tools" = "*"
 dash           = "*"
@@ -393,14 +393,14 @@ pkgconf        = "*"
 "org.llvm.clang-devel"     = ">= 22.1.8"
 "org.pkgconf.pkgconf"      = "*"
 "org.gnu.gzip"             = "*"
-"dev.peios.libpeios-devel" = ">= 0.5.0"
+"dev.peios.libpeios-devel" = ">= 0.5.8"
 "dev.peios.packaging-tools" = "*"
 
 [build.main.dependencies.apt]
 # The libpeios SDK and PKM UAPI headers come from the signed catalogue
 # (pkgs/_debroot_); Debian has no Peios ABI packages.
-"dev.peios.libpeios"       = ">= 0.5.0"
-"dev.peios.libpeios-devel" = ">= 0.5.0"
+"dev.peios.libpeios"       = ">= 0.5.8"
+"dev.peios.libpeios-devel" = ">= 0.5.8"
 "dev.peios.kernel-headers" = "*"
 dash           = "*"
 coreutils      = "*"
