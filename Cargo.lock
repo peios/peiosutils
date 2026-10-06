@@ -1676,6 +1676,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 
 [[package]]
+name = "libevman"
+version = "0.8.16"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2166,6 +2174,7 @@ dependencies = [
  "pu_du",
  "pu_echo",
  "pu_env",
+ "pu_evman",
  "pu_expand",
  "pu_expr",
  "pu_factor",
@@ -2711,6 +2720,15 @@ dependencies = [
  "nix",
  "rust-ini",
  "thiserror 2.0.18",
+ "uucore",
+]
+
+[[package]]
+name = "pu_evman"
+version = "0.8.16"
+dependencies = [
+ "clap",
+ "libevman",
  "uucore",
 ]
 

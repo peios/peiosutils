@@ -99,6 +99,7 @@ feat_common_core = [
   "du",
   "echo",
   "env",
+  "evman",
   "expand",
   "expr",
   "factor",
@@ -368,6 +369,7 @@ members = [
   "src/uu/*",
   "src/uu/stdbuf/src/libstdbuf",
   "src/uu/regman/libregman",
+  "src/uu/evman/libevman",
   "src/uu/reg/libreg",
   "src/uucore",
   "src/uucore_procs",
@@ -605,6 +607,7 @@ dirname = { optional = true, version = "0.8.0", package = "pu_dirname", path = "
 du = { optional = true, version = "0.8.0", package = "pu_du", path = "src/uu/du" }
 echo = { optional = true, version = "0.8.0", package = "pu_echo", path = "src/uu/echo" }
 env = { optional = true, version = "0.8.0", package = "pu_env", path = "src/uu/env" }
+evman = { optional = true, version = "0.8.0", package = "pu_evman", path = "src/uu/evman" }
 expand = { optional = true, version = "0.8.0", package = "pu_expand", path = "src/uu/expand" }
 expr = { optional = true, version = "0.8.0", package = "pu_expr", path = "src/uu/expr" }
 factor = { optional = true, version = "0.8.0", package = "pu_factor", path = "src/uu/factor" }
