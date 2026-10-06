@@ -356,7 +356,9 @@ transaction per hive.
 
 **Both formats are supported [O3: decided].** JSON is the canonical, exact,
 serde-backed representation (`export --json`, machine-generated): a `keys`
-array of `{path, values}`, each value `{name, type, data}` with `name` `@` for
+array of `{path, values, descriptor}` (`descriptor` optional SDDL whose
+given parts `apply` sets with `set_security` in the same transaction; an
+unknown key member is refused), each value `{name, type, data}` with `name` `@` for
 the default value, `type` a keyword (`sz`, `expand`, `link`, `multi`, `dword`,
 `dword-be`, `qword`, `binary`, `none`, or `0x<code>` for a type with none) and
 `data` JSON of the type. A value whose bytes JSON of its type can't hold
