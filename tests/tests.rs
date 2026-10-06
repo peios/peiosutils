@@ -130,6 +130,10 @@ mod test_echo;
 #[path = "by-util/test_env.rs"]
 mod test_env;
 
+#[cfg(feature = "evman")]
+#[path = "by-util/test_evman.rs"]
+mod test_evman;
+
 #[cfg(feature = "expand")]
 #[path = "by-util/test_expand.rs"]
 mod test_expand;

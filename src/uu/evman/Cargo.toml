@@ -1,0 +1,29 @@
+[package]
+name = "pu_evman"
+description = "evman ~ (peiosutils) the Peios event manual"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/evman"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/evman.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+# Reading the catalogue, which other programs take too.
+libevman = { path = "libevman" }
+
+[[bin]]
+name = "evman"
+path = "src/main.rs"

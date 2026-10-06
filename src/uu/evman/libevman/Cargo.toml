@@ -1,0 +1,26 @@
+[package]
+name = "libevman"
+description = "evman ~ (peiosutils) reading the Peios event catalogue, for evman and for programs"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/evman/libevman"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+doctest = false
+
+# Nothing of a command line: a program reading the catalogue takes this alone.
+[dependencies]
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
