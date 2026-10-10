@@ -318,12 +318,12 @@ fn copy_direntry(
         )
     {
         if preserve_hard_links {
-            if !source_is_symlink {
-                return Err(err);
+            match err {
+                // Keep walking after an intentional, non-failing symlink skip.
+                // A dangling target does not make a symlink copy error harmless.
+                CpError::Skipped(false) if source_is_symlink => {}
+                e => return Err(e),
             }
-            // silent the error with a symlink
-            // In case we do --archive, we might copy the symlink
-            // before the file itself
         } else {
             // At this point, `path` is just a plain old file.
             // Terminate this function immediately if there is any
@@ -616,4 +616,167 @@ fn build_dir(
     builder.recursive(recursive);
     builder.create(path)?;
     Ok(())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use crate::Attributes;
+    use std::os::unix::fs::{MetadataExt, symlink};
+
+    #[derive(Default)]
+    struct CopyState {
+        symlinked_files: HashSet<FileInformation>,
+        copied_files: HashMap<FileInformation, PathBuf>,
+        created_parent_dirs: HashSet<PathBuf>,
+    }
+
+    impl CopyState {
+        fn copy(&mut self, source: &Path, dest: &Path) -> CopyResult<bool> {
+            let options = Options {
+                recursive: true,
+                attributes: Attributes::LINKS,
+                ..Options::default()
+            };
+            self.copy_with_options(source, dest, &options)
+        }
+
+        fn copy_with_options(
+            &mut self,
+            source: &Path,
+            dest: &Path,
+            options: &Options,
+        ) -> CopyResult<bool> {
+            let entry = Entry {
+                source_absolute: source.to_path_buf(),
+                source_relative: source.to_path_buf(),
+                local_to_target: dest.to_path_buf(),
+                target_is_file: false,
+            };
+            copy_direntry(
+                None,
+                &entry,
+                source.is_symlink(),
+                source.symlink_metadata().unwrap().is_dir(),
+                options,
+                &mut self.symlinked_files,
+                options.preserve_hard_links(),
+                &HashSet::new(),
+                &mut self.copied_files,
+                &mut self.created_parent_dirs,
+            )
+        }
+    }
+
+    #[test]
+    fn preserve_links_reports_symlink_creation_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        symlink("target", &source).unwrap();
+        let dest = tmp.path().join("missing-parent/link");
+
+        let result = CopyState::default().copy(&source, &dest);
+
+        assert!(matches!(result, Err(CpError::IoErrContext(ref e, _))
+            if e.kind() == io::ErrorKind::NotFound));
+        assert!(!dest.is_symlink());
+    }
+
+    #[test]
+    fn preserve_links_reports_hardlinked_symlink_creation_failure() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let second_source = tmp.path().join("second-source");
+        symlink("target", &source).unwrap();
+        fs::hard_link(&source, &second_source).unwrap();
+        let first_dest = tmp.path().join("first-dest");
+        let second_dest = tmp.path().join("missing-parent/second-dest");
+        let mut state = CopyState::default();
+        state.copy(&source, &first_dest).unwrap();
+
+        let result = state.copy(&second_source, &second_dest);
+
+        assert!(matches!(result, Err(CpError::IoErr(ref e))
+            if e.kind() == io::ErrorKind::NotFound));
+        assert_eq!(fs::read_link(&first_dest).unwrap(), Path::new("target"));
+        assert!(!second_dest.is_symlink());
+    }
+
+    #[test]
+    fn preserve_links_keeps_non_failing_symlink_skips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let dest = tmp.path().join("dest");
+        symlink("absent", &source).unwrap();
+        fs::write(&dest, b"keep me").unwrap();
+        for options in [
+            Options {
+                recursive: true,
+                attributes: Attributes::LINKS,
+                update: crate::UpdateMode::None,
+                ..Options::default()
+            },
+            Options {
+                recursive: true,
+                attributes: Attributes::LINKS,
+                overwrite: crate::OverwriteMode::NoClobber,
+                ..Options::default()
+            },
+        ] {
+            let mut state = CopyState::default();
+            // Ok(false) tells the walker to continue without creating a directory.
+            assert!(matches!(
+                state.copy_with_options(&source, &dest, &options),
+                Ok(false)
+            ));
+            assert_eq!(fs::read(&dest).unwrap(), b"keep me");
+            assert!(state.copied_files.is_empty());
+        }
+    }
+
+    #[test]
+    fn preserve_links_copies_symlinks_before_their_targets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source");
+        let dest = tmp.path().join("dest");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&dest).unwrap();
+        fs::write(source.join("target"), b"contents").unwrap();
+        symlink("target", source.join("link")).unwrap();
+        fs::hard_link(source.join("link"), source.join("linked-link")).unwrap();
+        fs::hard_link(source.join("target"), source.join("linked-target")).unwrap();
+        symlink("absent", source.join("dangling")).unwrap();
+        let mut state = CopyState::default();
+
+        // Force the traversal order the old error suppression claimed to need.
+        for name in ["link", "linked-link", "dangling"] {
+            state.copy(&source.join(name), &dest.join(name)).unwrap();
+            assert!(dest.join(name).is_symlink());
+        }
+        assert!(!dest.join("target").exists());
+        assert_eq!(
+            fs::read_link(dest.join("link")).unwrap(),
+            Path::new("target")
+        );
+        assert_eq!(
+            fs::read_link(dest.join("dangling")).unwrap(),
+            Path::new("absent")
+        );
+        assert_eq!(
+            fs::symlink_metadata(dest.join("link")).unwrap().ino(),
+            fs::symlink_metadata(dest.join("linked-link"))
+                .unwrap()
+                .ino(),
+        );
+
+        for name in ["target", "linked-target"] {
+            state.copy(&source.join(name), &dest.join(name)).unwrap();
+        }
+        assert_eq!(fs::read(dest.join("link")).unwrap(), b"contents");
+        assert_eq!(
+            fs::metadata(dest.join("target")).unwrap().ino(),
+            fs::metadata(dest.join("linked-target")).unwrap().ino(),
+        );
+        assert!(!dest.join("dangling").exists());
+    }
 }
