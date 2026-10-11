@@ -22,6 +22,86 @@ fn test_realpath_current_directory() {
 }
 
 #[test]
+fn test_realpath_quiet_missing_fails() {
+    let scene = TestScenario::new(util_name!());
+    for quiet in ["-q", "--quiet"] {
+        scene
+            .ucmd()
+            .args(&[quiet, "-e", "missing"])
+            .fails()
+            .code_is(1)
+            .stdout_is("")
+            .stderr_is("");
+    }
+}
+
+#[test]
+fn test_realpath_quiet_continues_after_failure() {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    at.touch("first");
+    at.touch("last");
+    let expect = format!(
+        "{}\n{}\n",
+        path_concat!(at.root_dir_resolved(), "first"),
+        path_concat!(at.root_dir_resolved(), "last"),
+    );
+
+    for quiet in ["-q", "--quiet"] {
+        for paths in [
+            ["missing", "first", "last"],
+            ["first", "missing", "last"],
+            ["first", "last", "missing"],
+        ] {
+            scene
+                .ucmd()
+                .args(&[quiet, "-e"])
+                .args(&paths)
+                .fails()
+                .code_is(1)
+                .stdout_is(&expect)
+                .stderr_is("");
+        }
+    }
+}
+
+#[test]
+fn test_realpath_quiet_success() {
+    let scene = TestScenario::new(util_name!());
+    let expect = scene.fixtures.root_dir_resolved() + "\n";
+    for quiet in ["-q", "--quiet"] {
+        scene
+            .ucmd()
+            .args(&[quiet, "-e", "."])
+            .succeeds()
+            .stdout_only(&expect);
+    }
+}
+
+#[test]
+fn test_realpath_quiet_keeps_option_errors() {
+    let scene = TestScenario::new(util_name!());
+    for quiet in ["-q", "--quiet"] {
+        scene
+            .ucmd()
+            .args(&[quiet, ""])
+            .fails()
+            .code_is(1)
+            .stdout_is("")
+            .stderr_contains("invalid value for one of the arguments");
+        for relative in ["--relative-to=missing", "--relative-base=missing"] {
+            scene
+                .ucmd()
+                .args(&[quiet, "-e", relative, "."])
+                .fails()
+                .code_is(1)
+                .stdout_is("")
+                .stderr_contains("missing");
+        }
+    }
+}
+
+#[test]
 fn test_realpath_long_redirection_to_current_dir() {
     let (at, mut ucmd) = at_and_ucmd!();
     // Create a 256-character path to current directory
