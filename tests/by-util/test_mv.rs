@@ -1819,6 +1819,123 @@ fn test_mv_file_into_dir_where_both_are_files() {
         .stderr_contains("mv: failed to access 'b/': Not a directory");
 }
 
+#[rstest]
+#[case::update_none("--update=none", 2)]
+#[case::no_clobber("-n", 2)]
+#[case::update_older("--update=older", 2)]
+#[case::update_equal("--update=older", 1)]
+fn test_mv_skip_tracking_existing_destination(
+    #[case] option: &str,
+    #[case] destination_seconds: i64,
+) {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    for directory in ["a", "b", "c"] {
+        at.mkdir(directory);
+    }
+    at.write("a/f", "first source");
+    at.write("b/f", "second source");
+    at.write("c/f", "existing destination");
+    at.write("a/g", "later source");
+    for (path, seconds) in [("a/f", 1), ("b/f", 1), ("c/f", destination_seconds)] {
+        let stamp = FileTime::from_unix_time(seconds, 0);
+        filetime::set_file_times(at.plus(path), stamp, stamp).unwrap();
+    }
+
+    scene
+        .ucmd()
+        .args(&[option, "a/f", "b/f", "a/g", "c"])
+        .succeeds()
+        .no_output();
+
+    assert_eq!(at.read("a/f"), "first source");
+    assert_eq!(at.read("b/f"), "second source");
+    assert_eq!(at.read("c/f"), "existing destination");
+    assert_eq!(at.read("c/g"), "later source");
+    assert!(!at.file_exists("a/g"));
+}
+
+#[rstest]
+#[case::update_all("--update=all")]
+#[case::update_none("--update=none")]
+#[case::no_clobber("-n")]
+#[case::update_older("--update=older")]
+fn test_mv_skip_tracking_created_destination_still_protected(#[case] option: &str) {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    for directory in ["a", "b", "c"] {
+        at.mkdir(directory);
+    }
+    at.write("a/f", "first source");
+    at.write("b/f", "second source");
+    at.write("b/g", "later source");
+
+    scene
+        .ucmd()
+        .args(&[option, "a/f", "b/f", "b/g", "c"])
+        .fails_with_code(1)
+        .stderr_contains("will not overwrite just-created")
+        .no_stdout();
+
+    assert!(!at.file_exists("a/f"));
+    assert_eq!(at.read("b/f"), "second source");
+    assert_eq!(at.read("c/f"), "first source");
+    assert_eq!(at.read("c/g"), "later source");
+    assert!(!at.file_exists("b/g"));
+}
+
+#[test]
+fn test_mv_skip_tracking_skips_do_not_clear_failure() {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    for directory in ["a", "b", "c"] {
+        at.mkdir(directory);
+    }
+    at.write("a/f", "first source");
+    at.write("b/f", "second source");
+    at.write("c/f", "existing destination");
+    at.write("a/g", "later source");
+
+    scene
+        .ucmd()
+        .args(&["--update=none", "missing", "a/f", "b/f", "a/g", "c"])
+        .fails_with_code(1)
+        .stderr_is("mv: cannot stat 'missing': No such file or directory\n")
+        .no_stdout();
+
+    assert_eq!(at.read("a/f"), "first source");
+    assert_eq!(at.read("b/f"), "second source");
+    assert_eq!(at.read("c/f"), "existing destination");
+    assert_eq!(at.read("c/g"), "later source");
+    assert!(!at.file_exists("a/g"));
+}
+
+#[test]
+fn test_mv_skip_tracking_older_skip_allows_later_move() {
+    let scene = TestScenario::new(util_name!());
+    let at = &scene.fixtures;
+    for directory in ["a", "b", "c"] {
+        at.mkdir(directory);
+    }
+    at.write("a/f", "older source");
+    at.write("b/f", "newer source");
+    at.write("c/f", "existing destination");
+    for (path, seconds) in [("a/f", 1), ("c/f", 2), ("b/f", 3)] {
+        let stamp = FileTime::from_unix_time(seconds, 0);
+        filetime::set_file_times(at.plus(path), stamp, stamp).unwrap();
+    }
+
+    scene
+        .ucmd()
+        .args(&["--update=older", "a/f", "b/f", "c"])
+        .succeeds()
+        .no_output();
+
+    assert_eq!(at.read("a/f"), "older source");
+    assert!(!at.file_exists("b/f"));
+    assert_eq!(at.read("c/f"), "newer source");
+}
+
 #[test]
 fn test_mv_seen_file() {
     let ts = TestScenario::new(util_name!());
