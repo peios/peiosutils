@@ -18,7 +18,7 @@ use uucore::fs::make_path_relative_to;
 use uucore::translate;
 use uucore::{
     display::{Quotable, print_verbatim},
-    error::{FromIo, UResult},
+    error::{FromIo, UResult, set_exit_code},
     format_usage,
     fs::{MissingHandling, ResolveMode, canonicalize},
     line_ending::LineEnding,
@@ -117,11 +117,12 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         );
         if !quiet {
             show_if_err!(result.map_err_context(|| path.maybe_quote().to_string()));
+        } else if result.is_err() {
+            set_exit_code(1);
         }
     }
-    // Although we return `Ok`, it is possible that a call to
-    // `show!()` above has set the exit code for the program to a
-    // non-zero integer.
+    // Both quiet and non-quiet errors set the exit code while allowing
+    // the remaining paths to be processed.
     Ok(())
 }
 
