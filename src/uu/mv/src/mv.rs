@@ -944,12 +944,17 @@ fn rename_fifo_fallback(from: &Path, to: &Path, attributes: Attributes) -> io::R
 
 /// Move the given symlink to the given destination.
 fn rename_symlink_fallback(from: &Path, to: &Path, attributes: Attributes) -> io::Result<()> {
+    copy_symlink(from, to, attributes)?;
+    fs::remove_file(from)
+}
+
+/// Copy a symlink without removing it from a source tree that may need rollback.
+fn copy_symlink(from: &Path, to: &Path, attributes: Attributes) -> io::Result<()> {
     let path_symlink_points_to = fs::read_link(from)?;
     unix::fs::symlink(path_symlink_points_to, to)?;
     apply_attributes(from, to, attributes).inspect_err(|_| {
         let _ = fs::remove_file(to);
-    })?;
-    fs::remove_file(from)
+    })
 }
 
 fn rename_dir_fallback(
@@ -1166,8 +1171,8 @@ fn copy_file_with_hardlinks_helper(
 
     if from.is_symlink() {
         // Copy a symlink file (no-follow).
-        // rename_symlink_fallback already applies attributes and removes the source.
-        rename_symlink_fallback(from, to, attributes)?;
+        // Keep the source intact until the whole directory copy has succeeded.
+        copy_symlink(from, to, attributes)?;
     } else if from.symlink_metadata()?.file_type().is_fifo() {
         make_fifo(to)?;
         apply_attributes(from, to, attributes).inspect_err(|_| {
@@ -1263,4 +1268,112 @@ fn prompt_overwrite(to: &Path, cached_mode: Option<u32>) -> io::Result<()> {
         return Err(io::Error::other(""));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_copy_dir_symlink_keeps_source_until_move_commits() {
+        for target in ["file", "missing"] {
+            let fixture = tempdir().unwrap();
+            let source = fixture.path().join("source");
+            let destination = fixture.path().join("destination");
+            fs::create_dir(&source).unwrap();
+            fs::write(source.join("file"), "contents").unwrap();
+            unix::fs::symlink(target, source.join("link")).unwrap();
+            let (mut tracker, scanner) = create_hardlink_context();
+
+            copy_dir_contents(
+                &source,
+                &destination,
+                Attributes::NONE,
+                Some(&mut tracker),
+                Some(&scanner),
+                false,
+                None,
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(
+                fs::read_link(source.join("link")).unwrap(),
+                Path::new(target)
+            );
+            assert_eq!(
+                fs::read_link(destination.join("link")).unwrap(),
+                Path::new(target)
+            );
+            assert_eq!(fs::read_to_string(source.join("file")).unwrap(), "contents");
+            assert_eq!(
+                fs::read_to_string(destination.join("file")).unwrap(),
+                "contents"
+            );
+        }
+    }
+
+    #[test]
+    fn test_copy_symlink_survives_later_copy_failure_and_rollback() {
+        let fixture = tempdir().unwrap();
+        let source = fixture.path().join("source");
+        let destination = fixture.path().join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&destination).unwrap();
+        unix::fs::symlink("missing", source.join("link")).unwrap();
+        fs::write(source.join("file"), "contents").unwrap();
+        fs::create_dir(destination.join("file")).unwrap();
+        let (mut tracker, scanner) = create_hardlink_context();
+
+        // Stage the copies explicitly so the failure always follows the link,
+        // independently of filesystem directory iteration order.
+        copy_file_with_hardlinks_helper(
+            &source.join("link"),
+            &destination.join("link"),
+            Attributes::NONE,
+            &mut tracker,
+            &scanner,
+        )
+        .unwrap();
+        assert!(
+            copy_file_with_hardlinks_helper(
+                &source.join("file"),
+                &destination.join("file"),
+                Attributes::NONE,
+                &mut tracker,
+                &scanner,
+            )
+            .is_err()
+        );
+
+        // Match rename_dir_fallback's cleanup of a partially copied tree.
+        fs::remove_dir_all(&destination).unwrap();
+        assert_eq!(
+            fs::read_link(source.join("link")).unwrap(),
+            Path::new("missing")
+        );
+        assert_eq!(fs::read_to_string(source.join("file")).unwrap(), "contents");
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn test_rename_symlink_fallback_removes_source_on_success() {
+        for target in ["file", "missing"] {
+            let fixture = tempdir().unwrap();
+            let source = fixture.path().join("source");
+            let destination = fixture.path().join("destination");
+            fs::write(fixture.path().join("file"), "contents").unwrap();
+            unix::fs::symlink(target, &source).unwrap();
+
+            rename_symlink_fallback(&source, &destination, Attributes::NONE).unwrap();
+
+            assert!(source.symlink_metadata().is_err());
+            assert_eq!(fs::read_link(destination).unwrap(), Path::new(target));
+            assert_eq!(
+                fs::read_to_string(fixture.path().join("file")).unwrap(),
+                "contents"
+            );
+        }
+    }
 }
