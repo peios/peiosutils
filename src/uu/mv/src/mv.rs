@@ -466,6 +466,7 @@ fn handle_two_paths(source: &Path, target: &Path, opts: &Options) -> UResult<()>
                     hardlink_params.0,
                     hardlink_params.1,
                 )
+                .map(|_| ())
                 .map_err_context(|| {
                     translate!("mv-error-cannot-move", "source" => source.quote(), "target" => target.quote())
                 })
@@ -504,6 +505,7 @@ fn handle_two_paths(source: &Path, target: &Path, opts: &Options) -> UResult<()>
             hardlink_params.0,
             hardlink_params.1,
         )
+        .map(|_| ())
         .map_err(|e| USimpleError::new(1, format!("{e}")))
     }
 }
@@ -701,14 +703,16 @@ fn move_files_into_dir(files: &[PathBuf], target_dir: &Path, options: &Options) 
 
         let hardlink_params = (Some(&mut hardlink_tracker), Some(&hardlink_scanner));
 
-        match rename(
+        let result = rename(
             sourcepath,
             &targetpath,
             options,
             display_manager.as_ref(),
             hardlink_params.0,
             hardlink_params.1,
-        ) {
+        );
+        let skipped = matches!(&result, Ok(MoveOutcome::Skipped));
+        match result {
             Err(e) if e.to_string().is_empty() => set_exit_code(1),
             Err(e) => {
                 let e = e.map_err_context(|| {
@@ -720,14 +724,23 @@ fn move_files_into_dir(files: &[PathBuf], target_dir: &Path, options: &Options) 
                     show!(e);
                 }
             }
-            Ok(()) => (),
+            Ok(_) => (),
         }
         if let Some(ref pb) = count_progress {
             pb.inc(1);
         }
-        moved_destinations.insert(targetpath.clone());
+        // Skips did not create a destination. Keep the existing conservative
+        // protection after errors, which may have left a partial destination.
+        if !skipped {
+            moved_destinations.insert(targetpath.clone());
+        }
     }
     Ok(())
+}
+
+enum MoveOutcome {
+    Moved,
+    Skipped,
 }
 
 fn rename(
@@ -737,7 +750,7 @@ fn rename(
     display_manager: Option<&MultiProgress>,
     hardlink_tracker: Option<&mut HardlinkTracker>,
     hardlink_scanner: Option<&HardlinkGroupScanner>,
-) -> io::Result<()> {
+) -> io::Result<MoveOutcome> {
     let mut backup_path = None;
 
     if to.exists() {
@@ -745,13 +758,13 @@ fn rename(
             if opts.debug {
                 println!("{}", translate!("mv-debug-skipped", "target" => to.quote()));
             }
-            return Ok(());
+            return Ok(MoveOutcome::Skipped);
         }
 
         if (opts.update == UpdateMode::IfOlder)
             && fs::metadata(from)?.modified()? <= fs::metadata(to)?.modified()?
         {
-            return Ok(());
+            return Ok(MoveOutcome::Skipped);
         }
 
         if opts.update == UpdateMode::NoneFail {
@@ -764,7 +777,7 @@ fn rename(
                 if opts.debug {
                     println!("{}", translate!("mv-debug-skipped", "target" => to.quote()));
                 }
-                return Ok(());
+                return Ok(MoveOutcome::Skipped);
             }
             OverwriteMode::Interactive => prompt_overwrite(to, None)?,
             OverwriteMode::Force => {}
@@ -830,7 +843,7 @@ fn rename(
             None => println!("{message}"),
         }
     }
-    Ok(())
+    Ok(MoveOutcome::Moved)
 }
 
 /// Apply the chosen preservation `attributes` to `to` after it has been
