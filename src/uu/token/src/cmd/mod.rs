@@ -10,6 +10,7 @@ use clap::ArgMatches;
 
 pub mod accessors;
 pub mod adjust;
+pub mod compare;
 pub mod create;
 pub mod dup;
 pub mod imp;
@@ -17,6 +18,7 @@ pub mod link;
 pub mod query;
 pub mod restrict;
 pub mod show;
+pub mod threads;
 
 /// Top-level dispatch. Returns the rendered output (or an `Error`).
 pub fn dispatch(matches: &ArgMatches) -> Result<()> {
@@ -31,6 +33,12 @@ pub fn dispatch(matches: &ArgMatches) -> Result<()> {
 
     match name {
         "show" => run_show(sub, false),
+        "compare" => compare::run(sub, parse_sid_style(sub), parse_output_mode(sub)),
+        "threads" => threads::run(
+            *sub.get_one::<i32>("process").expect("required PID"),
+            parse_sid_style(sub),
+            parse_output_mode(sub),
+        ),
         "query" => query::run(sub, parse_target(sub)?, parse_output_mode(sub)),
         "user" => accessors::user(
             sub,

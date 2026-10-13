@@ -19,6 +19,8 @@ pub fn build() -> Command {
         .subcommand_required(false)
         // Phase 2: read-only inspection.
         .subcommand(show_subcommand())
+        .subcommand(compare_subcommand())
+        .subcommand(threads_subcommand())
         .subcommand(query_subcommand())
         .subcommand(accessor_subcommand("user", "User SID"))
         .subcommand(accessor_subcommand("owner", "Owner SID"))
@@ -88,6 +90,30 @@ fn show_subcommand() -> Command {
                 .help("Dump every query class")
                 .action(ArgAction::SetTrue),
         )
+}
+
+fn compare_subcommand() -> Command {
+    Command::new("compare")
+        .about("Compare user, integrity, session, groups and privileges of two tokens")
+        .arg(Arg::new("left").required(true).value_name("PID|self"))
+        .arg(Arg::new("right").value_name("PID|self"))
+        .args(target_args())
+        .args(sid_style_args())
+        .arg(json_arg())
+        .after_help("Target flags select the right-hand token instead of RIGHT. Examples: token compare 1482 1500; token compare 1482 --pid 1482 --tid 1509; token compare self --real")
+}
+
+fn threads_subcommand() -> Command {
+    Command::new("threads")
+        .about("List each thread's effective token identity and impersonation state")
+        .arg(
+            Arg::new("process")
+                .required(true)
+                .value_name("PID")
+                .value_parser(clap::value_parser!(i32).range(1..)),
+        )
+        .args(sid_style_args())
+        .arg(json_arg())
 }
 
 fn query_subcommand() -> Command {
@@ -358,7 +384,7 @@ fn target_args() -> Vec<Arg> {
         Arg::new("tid")
             .long("tid")
             .value_name("TID")
-            .help("Open the impersonation token of thread TID (requires --pid)")
+            .help("Open the effective token of thread TID (requires --pid)")
             .value_parser(clap::value_parser!(i32)),
         Arg::new("peer")
             .long("peer")
