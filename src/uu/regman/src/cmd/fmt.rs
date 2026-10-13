@@ -45,7 +45,15 @@ pub fn bake(text: &str) -> (String, Vec<ParseIssue>) {
         .map(|r| {
             let line_end = text[r.fence_offset..]
                 .find('\n')
-                .map_or(text.len(), |i| r.fence_offset + i);
+                .map_or(text.len(), |i| {
+                    let end = r.fence_offset + i;
+                    // Replace the fence content, preserving its LF or CRLF.
+                    if i > 0 && text.as_bytes()[end - 1] == b'\r' {
+                        end - 1
+                    } else {
+                        end
+                    }
+                });
             (r.fence_offset, line_end, format!("--- {}", r.expected_anchor()))
         })
         .collect();
@@ -108,5 +116,28 @@ value body
         let (out, _) = bake(text);
         assert!(out.contains("--- machine\\system\\kmes\n"));
         assert!(out.contains("--- machine\\system\\kmes buffercapacity\n"));
+    }
+
+    #[test]
+    fn preserves_mixed_endings_and_utf8_bodies() {
+        let text = "Preamble: café\r\n--- x\r\ncanonical: Machine\\System\\Café\r\n\r\nRésumé: λ🙂\r\n\r\n--- y\ncanonical: Machine\\System\\Other\n\nBody: unchanged\n--- z\r\ncanonical: Machine\\System\\Last";
+        let expected = text
+            .replace("--- x\r\n", "--- machine\\system\\café\r\n")
+            .replace("--- y\n", "--- machine\\system\\other\n")
+            .replace("--- z\r\n", "--- machine\\system\\last\r\n");
+        let (baked, issues) = bake(text);
+        assert!(issues.is_empty(), "{issues:?}");
+        assert_eq!(baked, expected);
+        let (again, issues) = bake(&baked);
+        assert!(issues.is_empty());
+        assert_eq!(again, baked);
+    }
+
+    #[test]
+    fn correct_crlf_input_is_unchanged() {
+        let text = "--- a\\b\r\ncanonical: A\\B\r\n\r\nBody.\r\n";
+        let (baked, issues) = bake(text);
+        assert!(issues.is_empty());
+        assert_eq!(baked, text);
     }
 }
