@@ -67,6 +67,9 @@ fn evman(dir: &Path, args: &[&str]) -> Output {
         .arg("evman")
         .args(args)
         .env("EVMAN_DIR", dir)
+        // These assertions check complete prose, not wrapping or truncation.
+        // Keep enough room for the fixture regardless of the caller's terminal.
+        .env("COLUMNS", "120")
         .env_remove("PAGER")
         .output()
         .unwrap()
