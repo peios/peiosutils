@@ -19,7 +19,7 @@ use serde_json::json;
 const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
 
 /// Decode a SID-valued query class, matching the old typed `*_sid` accessors.
-fn query_sid(tok: &Token, class: TokenClass) -> Result<Sid> {
+pub(super) fn query_sid(tok: &Token, class: TokenClass) -> Result<Sid> {
     let buf = tok.query(class)?;
     SidRef::from_bytes(&buf)
         .map(SidRef::to_sid)
