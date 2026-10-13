@@ -149,6 +149,39 @@ fn works_with_a_built_index() {
     assert!(!tmp.path().join(".index").exists());
 }
 
+#[test]
+fn crlf_records_match_lf_with_and_without_an_index() {
+    let lf = corpus();
+    let crlf = tempfile::tempdir().unwrap();
+    let path = crlf.path().join("kmes.regman");
+    let text = format!("Preamble: café\r\n{}", KMES_FRAGMENT.replace('\n', "\r\n"));
+    std::fs::write(&path, &text).unwrap();
+
+    for indexed in [false, true] {
+        if indexed {
+            assert!(regman(lf.path(), &["index"]).status.success());
+            assert!(regman(crlf.path(), &["index"]).status.success());
+        }
+        for args in [
+            vec!["Machine\\System\\KMES"],
+            vec!["Machine\\System\\KMES", "MaxEventSize"],
+            vec!["Machine\\System\\KMES", "MaxEmitRatePerProcess"],
+            vec!["-k", "nesting"],
+        ] {
+            let expected = regman(lf.path(), &args);
+            let actual = regman(crlf.path(), &args);
+            assert!(expected.status.success(), "{expected:?}");
+            assert!(actual.status.success(), "{actual:?}");
+            assert_eq!(actual.stdout, expected.stdout);
+            assert_eq!(actual.stderr, expected.stderr);
+        }
+    }
+    let file = path.to_str().unwrap();
+    assert!(regman(crlf.path(), &["lint", file]).status.success());
+    assert!(regman(crlf.path(), &["fmt", file]).status.success());
+    assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+}
+
 /// A fragment documenting a family of keys through a `<…>` component, as
 /// peinit's service definitions and netd's per-interface records do.
 const WILDCARD_FRAGMENT: &str = "\
