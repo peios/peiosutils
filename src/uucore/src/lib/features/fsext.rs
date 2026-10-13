@@ -1157,16 +1157,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(info.mount_dir, r"/mnt/f\ 	oo");
+    }
 
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    fn test_mountinfo_rejects_legacy_mtab() {
+        // Peios reads the kernel's mountinfo, not a userspace mtab file.
         let info = MountInfo::new(
-            LINUX_MTAB,
+            "/etc/mtab",
             &br"/dev/loop0 /mnt/f\134\040\011oo ext4 rw,relatime 0 0"
                 .split(|c| *c == b' ')
                 .collect::<Vec<_>>(),
-        )
-        .unwrap();
+        );
 
-        assert_eq!(info.mount_dir, r"/mnt/f\ 	oo");
+        assert!(info.is_none());
     }
 
     #[test]
