@@ -182,11 +182,12 @@ pub fn fence_anchor(line: &str) -> Option<&str> {
     if anchor.is_empty() { None } else { Some(anchor) }
 }
 
-/// Iterate (1-based line number, line text without trailing '\n').
+/// Iterate (1-based line number, line text without trailing '\n'). Keep a
+/// trailing '\r': callers use the raw length to compute source byte offsets.
 fn line_spans(text: &str) -> impl Iterator<Item = (usize, &str)> {
     text.split('\n')
         .enumerate()
-        .map(|(i, l)| (i + 1, l.strip_suffix('\r').unwrap_or(l)))
+        .map(|(i, l)| (i + 1, l))
 }
 
 /// Split the post-fence block into (header, body) at the first blank line.
@@ -295,6 +296,34 @@ Per-CPU ring buffer capacity, in bytes.
         assert_eq!(recs[1].fence_offset, KEY_DOC.len());
         // Round-trip: the byte offset really points at the second fence.
         assert!(text[recs[1].fence_offset..].starts_with("--- machine\\system\\kmes buffercapacity"));
+    }
+
+    #[test]
+    fn mixed_line_endings_keep_exact_utf8_record_offsets() {
+        for first_ending in ["\n", "\r\n"] {
+            for second_ending in ["\n", "\r\n"] {
+                let preamble = "Comment: café\r\n";
+                let first = KEY_DOC.replace('\n', first_ending);
+                let second = VALUE_DOC.replace('\n', second_ending);
+                let third = "--- machine\\system\\café\r\ncanonical: Machine\\System\\Café\r\n\r\nRésumé: λ🙂";
+                let text = format!("{preamble}{first}{second}{third}");
+                let (records, issues) = parse(&text);
+                assert!(issues.is_empty(), "{issues:?}");
+                assert_eq!(records.len(), 3);
+                let offsets = [preamble.len(), preamble.len() + first.len(), preamble.len() + first.len() + second.len()];
+                for (record, offset) in records.iter().zip(offsets) {
+                    assert_eq!(record.fence_offset, offset);
+                    assert!(text[offset..].starts_with("--- "));
+                }
+                assert_eq!(records[0].canonical, "Machine\\System\\KMES");
+                assert_eq!(records[1].canonical, "Machine\\System\\KMES BufferCapacity");
+                assert_eq!(records[2].canonical, "Machine\\System\\Café");
+                assert_eq!(records[2].body, "Résumé: λ🙂");
+                assert!(records[0].body.contains("KMES reads"));
+                assert!(!records[0].body.contains("---"));
+                assert!(!records[1].body.contains("---"));
+            }
+        }
     }
 
     #[test]
