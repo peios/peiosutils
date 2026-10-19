@@ -1,0 +1,14 @@
+{
+    "format": 1,
+    "component": "peiosutils",
+    "origin": {
+        "repository": "https://github.com/peios/integration-tests.git",
+        "commit": "a9aeaa2d6255bf59034ac5d90bee871a0d4829be"
+    },
+    "files": {
+        "tests/peiosutils/lsblk-partitions.test.lua": "tests/peiosutils/lsblk-partitions.test.lua"
+    },
+    "tests": [
+        "tests/peiosutils/lsblk-partitions.test.lua"
+    ]
+}
