@@ -7,14 +7,14 @@
 
 use std::error::Error;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
 use notify::{RecursiveMode, Watcher};
-
 use clap::{Arg, ArgAction, Command};
+
 use uucore::error::{UResult, USimpleError};
 
 const PE_OFFSET_PTR: usize = 0x3c;
@@ -378,12 +378,7 @@ fn run(cfg: &Config) -> Result<(), Box<dyn Error>> {
         fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
 
-    let tmp = temp_path(&cfg.out);
-    if let Err(e) = fs::write(&tmp, &image).map_err(|e| format!("{}: {e}", tmp.display())) {
-        let _ = fs::remove_file(&tmp);
-        return Err(e.into());
-    }
-    fs::rename(&tmp, &cfg.out).map_err(|e| format!("{}: {e}", cfg.out.display()))?;
+    write_image(&cfg.out, &image)?;
     eprintln!("mkuki: wrote {} ({} bytes)", cfg.out.display(), image.len());
     Ok(())
 }
@@ -740,15 +735,49 @@ fn align_u32(value: u32, align: u32) -> Result<u32, Box<dyn Error>> {
     Ok(bumped / align * align)
 }
 
-fn temp_path(out: &Path) -> PathBuf {
-    let mut name = out.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".mkuki-tmp-{}", std::process::id()));
-    out.with_file_name(name)
+fn write_image(out: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = out
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+    temporary.write_all(bytes)?;
+    temporary.persist(out).map_err(|error| error.error)?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn staging_symlink_cannot_overwrite_an_unrelated_file() {
+        let temporary = tempfile::tempdir().unwrap();
+        let output = temporary.path().join("image.efi");
+        let victim = temporary.path().join("unrelated");
+        fs::write(&victim, b"must survive").unwrap();
+        let staging = temporary
+            .path()
+            .join(format!("image.efi.mkuki-tmp-{}", std::process::id()));
+        std::os::unix::fs::symlink(&victim, staging).unwrap();
+        write_image(&output, b"image").unwrap();
+        assert_eq!(fs::read(victim).unwrap(), b"must survive");
+        assert_eq!(fs::read(output).unwrap(), b"image");
+    }
+
+    #[test]
+    fn failed_install_removes_the_staging_file() {
+        let temporary = tempfile::tempdir().unwrap();
+        let output = temporary.path().join("existing-directory");
+        fs::create_dir(&output).unwrap();
+        assert!(write_image(&output, b"image").is_err());
+        let paths: Vec<_> = fs::read_dir(temporary.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(paths, [output]);
+    }
 
     #[test]
     fn verifies_clap_config() {

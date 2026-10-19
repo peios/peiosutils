@@ -29,5 +29,4 @@ clap = { workspace = true }
 uucore = { workspace = true }
 notify = { workspace = true }
 
-[dev-dependencies]
 tempfile = { workspace = true }
