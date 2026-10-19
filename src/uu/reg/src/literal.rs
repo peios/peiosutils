@@ -149,6 +149,11 @@ fn parse_hex(s: &str) -> Result<Vec<u8>> {
             "hex: needs an even number of digits".into(),
         ));
     }
+    if !cleaned.is_ascii() {
+        return Err(Error::InvalidSpec(
+            "hex: digits must be ASCII hexadecimal characters".into(),
+        ));
+    }
     (0..cleaned.len())
         .step_by(2)
         .map(|i| {
@@ -262,6 +267,16 @@ mod tests {
     fn rt(token: &str) -> (String, String) {
         let (ty, bytes) = parse(token).unwrap();
         (type_keyword(ty), format_human(ty, &bytes))
+    }
+
+    #[test]
+    fn malformed_unicode_hex_returns_an_error() {
+        for token in ["hex:0€", "hex:€0", "hex:😀", "hex:aéa", "bin:0€", "hex:é"] {
+            assert!(
+                matches!(parse(token), Err(Error::InvalidSpec(_))),
+                "{token}"
+            );
+        }
     }
 
     #[test]
