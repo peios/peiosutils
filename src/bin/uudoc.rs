@@ -23,7 +23,7 @@ use fluent_syntax::{
     },
     parser,
 };
-use jiff::Zoned;
+use jiff::{Timestamp, Zoned};
 use regex::Regex;
 use textwrap::{fill, indent, termwidth};
 use zip::ZipArchive;
@@ -126,6 +126,91 @@ fn gen_peiosutils_app<T: Args>(util_map: &UtilityMap<T>) -> Command {
     command
 }
 
+/// Use a declared build timestamp in UTC, or today's date for interactive generation.
+fn manual_date(epoch: Option<OsString>) -> Result<String, String> {
+    let Some(epoch) = epoch else {
+        return Ok(Zoned::now().strftime("%Y-%m-%d").to_string());
+    };
+    let seconds = epoch
+        .to_str()
+        .and_then(|text| text.parse::<i64>().ok())
+        .filter(|seconds| *seconds >= 0)
+        .ok_or_else(|| "SOURCE_DATE_EPOCH must be non-negative whole seconds".to_owned())?;
+    let timestamp = Timestamp::from_second(seconds)
+        .map_err(|error| format!("invalid SOURCE_DATE_EPOCH: {error}"))?;
+    Ok(timestamp.strftime("%Y-%m-%d").to_string())
+}
+
+/// Render one installed page, including the interfaces of its visible subcommands.
+fn render_manual(mut command: Command, multicall_index: bool) -> io::Result<String> {
+    command.build();
+    let mut bytes = Vec::new();
+    Man::new(command.clone()).render(&mut bytes)?;
+    let mut page = String::from_utf8(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let name = command.get_display_name().unwrap_or(command.get_name());
+
+    // clap_mangen assumes a separate installed page for each subcommand.
+    // Applets have those pages; ordinary nested commands are documented here.
+    for child in command
+        .get_subcommands()
+        .filter(|child| !child.is_hide_set())
+    {
+        let generated_name = format!("{name}-{}(1)", child.get_name()).replace('-', r"\-");
+        let reference = if multicall_index && child.get_name() != "help" {
+            format!("{}(1)", child.get_name()).replace('-', r"\-")
+        } else {
+            format!(r"\fB{name} {}\fR", child.get_name()).replace('-', r"\-")
+        };
+        page = page.replace(
+            &format!("\n{generated_name}\n"),
+            &format!("\n{reference}\n"),
+        );
+    }
+
+    if !multicall_index && command.has_subcommands() {
+        page.push_str(".SH \"COMMAND DETAILS\"\n");
+        render_subcommand_details(&command, command.get_name(), &mut page)?;
+    }
+    Ok(page)
+}
+
+/// Keep all levels on the parent's installed page, with each command's full path.
+fn render_subcommand_details(command: &Command, prefix: &str, page: &mut String) -> io::Result<()> {
+    for child in command
+        .get_subcommands()
+        .filter(|child| !child.is_hide_set())
+    {
+        let path = format!("{prefix} {}", child.get_name());
+        let named = child
+            .clone()
+            .bin_name(path.clone())
+            .display_name(path.clone());
+        let man = Man::new(named);
+        let mut bytes = Vec::new();
+        man.render_synopsis_section(&mut bytes)?;
+        man.render_description_section(&mut bytes)?;
+        man.render_options_section(&mut bytes)?;
+        if child.get_after_help().is_some() || child.get_after_long_help().is_some() {
+            man.render_extra_section(&mut bytes)?;
+        }
+        let sections = String::from_utf8(bytes)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        let heading = path.replace('\\', r"\e").replace('"', r"\(dq");
+        page.push_str(&format!(".SS \"{heading}\"\n"));
+        for line in sections.lines() {
+            if let Some(heading) = line.strip_prefix(".SH ") {
+                page.push_str(&format!(".PP\n.B {heading}\n.PP\n"));
+            } else {
+                page.push_str(line);
+                page.push('\n');
+            }
+        }
+        render_subcommand_details(child, &path, page)?;
+    }
+    Ok(())
+}
+
 /// Generate the manpage for the utility in the first parameter
 fn gen_manpage<T: Args>(
     tldr: &mut Option<ZipArchive<File>>,
@@ -160,16 +245,17 @@ fn gen_manpage<T: Args>(
         cmd
     };
 
-    // Generate the manpage to a buffer first so we can post-process it
-    let mut buffer = Vec::new();
-    let man = Man::new(command);
-    man.render(&mut buffer).expect("Man page generation failed");
-
-    // Convert to string for processing
-    let manpage = String::from_utf8(buffer).expect("Invalid UTF-8 in manpage");
+    let manpage =
+        render_manual(command, utility == "peiosutils").expect("Man page generation failed");
 
     // Post-process the manpage to fix mandoc lint issues
-    let date = Zoned::now().strftime("%Y-%m-%d").to_string();
+    let date = match manual_date(std::env::var_os("SOURCE_DATE_EPOCH")) {
+        Ok(date) => date,
+        Err(error) => {
+            eprintln!("uudoc: {error}");
+            process::exit(1);
+        }
+    };
     let processed_manpage = post_process_manpage(manpage, &date);
 
     // Write the processed manpage to stdout

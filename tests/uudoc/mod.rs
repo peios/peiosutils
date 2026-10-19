@@ -64,7 +64,10 @@ fn test_manpage_peiosutils() {
     let output_str = String::from_utf8_lossy(&output.stdout);
     assert!(output_str.contains("\n.TH PEIOSUTILS"), "{output_str}");
     assert!(output_str.contains("peiosutils"), "{output_str}");
-    assert!(output_str.contains("\n.SH NAME\npeiosutils"), "{output_str}");
+    assert!(
+        output_str.contains("\n.SH NAME\npeiosutils"),
+        "{output_str}"
+    );
 }
 
 #[test]
@@ -173,4 +176,74 @@ fn test_markdown_header_format() {
             );
         }
     }
+}
+
+#[test]
+fn test_manpage_reproducible_date() {
+    for timezone in ["Pacific/Honolulu", "Asia/Tokyo"] {
+        let output = get_uudoc_command()
+            .args(["manpage", "cat"])
+            .env("SOURCE_DATE_EPOCH", "946684800")
+            .env("TZ", timezone)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output.stderr);
+        assert!(
+            String::from_utf8(output.stdout)
+                .unwrap()
+                .contains(".TH CAT 1 \"2000-01-01\"")
+        );
+    }
+}
+
+#[test]
+fn test_manpage_rejects_invalid_build_date() {
+    for epoch in ["invalid", "-1", "9223372036854775807"] {
+        let output = get_uudoc_command()
+            .args(["manpage", "cat"])
+            .env("SOURCE_DATE_EPOCH", epoch)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("SOURCE_DATE_EPOCH")
+        );
+    }
+}
+
+#[test]
+fn test_manpage_includes_nested_command_options() {
+    let output = get_uudoc_command()
+        .args(["manpage", "reg"])
+        .env("LANG", "C")
+        .env("SOURCE_DATE_EPOCH", "946684800")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let page = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(page.matches(".TH ").count(), 1, "{page}");
+    assert!(page.contains(".TH REG 1 \"2000-01-01\""), "{page}");
+    assert!(page.contains(".SS \"reg layer new\""), "{page}");
+    let create_layer = page.split(".SS \"reg layer new\"").nth(1).unwrap();
+    let create_layer = create_layer.split("\n.SS ").next().unwrap();
+    assert!(create_layer.contains(r"\-\-precedence"), "{create_layer}");
+    assert!(create_layer.contains(r"\-\-owner"), "{create_layer}");
+    assert!(!page.contains(r"reg\-layer(1)"), "{page}");
+}
+
+#[test]
+fn test_manpage_multicall_links_to_installed_applets() {
+    let output = get_uudoc_command()
+        .args(["manpage", "peiosutils"])
+        .env("LANG", "C")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output.stderr);
+    let page = String::from_utf8(output.stdout).unwrap();
+    assert!(page.contains("\ncat(1)\n"), "{page}");
+    assert!(!page.contains(r"peiosutils\-cat(1)"), "{page}");
+    assert!(!page.contains("COMMAND DETAILS"), "{page}");
 }

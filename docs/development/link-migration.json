@@ -1,0 +1,447 @@
+{
+    "schema": 1,
+    "publication_context": "panorama/docs/trail.toml",
+    "entries": [
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/500--output-and-evaluation.topic/1100--test.md",
+            "target": "~peios/access-decisions/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/300--access-decisions.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/500--output-and-evaluation.topic/1100--test.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/500--output-and-evaluation.topic/1300--tee.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1000--registry-tools.topic/300--regman.md",
+            "target": "~peios/registry-administration/lcs-and-sources",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/400--the-registry.shelf/400--registry-administration.topic/300--lcs-and-sources.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1000--registry-tools.topic/300--regman.md",
+            "target": "~peios/registry-concepts/configuration-and-meaning",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/400--the-registry.shelf/100--registry-concepts.topic/300--configuration-and-meaning.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1000--registry-tools.topic/300--regman.md",
+            "target": "~peios/registry-concepts/keys-values-and-types",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/400--the-registry.shelf/100--registry-concepts.topic/200--keys-values-and-types.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1000--registry-tools.topic/200--reg.md",
+            "target": "~peios/registry-concepts/keys-values-and-types",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/400--the-registry.shelf/100--registry-concepts.topic/200--keys-values-and-types.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1000--registry-tools.topic/200--reg.md",
+            "target": "~peios/registry-concepts/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/400--the-registry.shelf/100--registry-concepts.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1000--registry-tools.topic/200--reg.md",
+            "target": "~peios/registry-layers/layers",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/400--the-registry.shelf/200--registry-layers.topic/100--layers.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1100--event-tools.topic/100--evman.md",
+            "target": "~peios/documenting-events/writing-evman-pages",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/4--developing-for-peios.antho/200--shipping-software.shelf/150--documenting-events.topic/100--writing-evman-pages.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1100--event-tools.topic/100--evman.md",
+            "target": "~peios/logs-and-events/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/100--fundamentals.shelf/800--logs-and-events.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/1100--event-tools.topic/100--evman.md",
+            "target": "~peios/pgss/events/the-catalogue",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/3--advanced-peios.antho/200--pcsa.shelf/200--pgss.book/6--events/10--the-catalogue.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/200--mount.md",
+            "target": "~peios/mount-policies/managing-mounts",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/400--managing-mounts.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/200--mount.md",
+            "target": "~peios/mount-policies/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/200--mount.md",
+            "target": "~peios/mount-policies/policy-classes",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/200--policy-classes.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/200--mount.md",
+            "target": "~peios/mount-policies/sd-storage-by-filesystem",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/300--sd-storage-by-filesystem.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/400--lsblk.md",
+            "target": "~peios/mount-policies/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/300--umount.md",
+            "target": "~peios/mount-policies/managing-mounts",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/400--managing-mounts.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/800--disks-and-mounts.topic/300--umount.md",
+            "target": "~peios/mount-policies/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/0--using-peios.antho/200--files.shelf/100--mount-policies.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/900--boot-images.topic/300--mkuki.md",
+            "target": "~peios/boot-and-trust-establishment/initramfs-stage",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/500--boot-and-trust-establishment.topic/300--initramfs-stage.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/900--boot-images.topic/300--mkuki.md",
+            "target": "~peios/boot-and-trust-establishment/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/500--boot-and-trust-establishment.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/900--boot-images.topic/200--mkirf.md",
+            "target": "~peios/boot-and-trust-establishment/initramfs-stage",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/500--boot-and-trust-establishment.topic/300--initramfs-stage.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/900--boot-images.topic/200--mkirf.md",
+            "target": "~peios/boot-and-trust-establishment/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/500--boot-and-trust-establishment.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/900--boot-images.topic/200--mkirf.md",
+            "target": "~peios/writing-boot-hooks/writing-a-boot-hook",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/4--developing-for-peios.antho/200--shipping-software.shelf/450--writing-boot-hooks.topic/100--writing-a-boot-hook.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2100--groups.md",
+            "target": "~peios/authentication/resolving-names",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/400--authentication.topic/400--resolving-names.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/500--nohup.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2200--logname.md",
+            "target": "~peios/logon-sessions/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/300--logon-sessions.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2000--id.md",
+            "target": "~peios/identity/sids",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/100--identity.topic/200--sids.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2300--token.md",
+            "target": "~peios/impersonation/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/600--impersonation.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2300--token.md",
+            "target": "~peios/tokens/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/200--tokens.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2300--token.md",
+            "target": "~peios/tokens/restricted-tokens",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/200--tokens.topic/400--restricted-tokens.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/2300--token.md",
+            "target": "~peios/tokens/token-types",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/200--tokens.topic/200--token-types.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/1000--hostname.md",
+            "target": "~peios/privileges/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/200--privileges.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/1900--whoami.md",
+            "target": "~peios/identity/sids",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/100--identity.shelf/100--identity.topic/200--sids.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/1800--chroot.md",
+            "target": "~peios/privileges/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/200--privileges.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/700--system-and-processes.topic/200--date.md",
+            "target": "~peios/privileges/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/200--privileges.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/200--listing-and-paths.topic/100--overview.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/200--listing-and-paths.topic/400--stat.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/200--listing-and-paths.topic/200--ls.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/300--viewing-and-joining-text.topic/1400--od.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/100--overview.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/300--mv.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/1200--shred.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/600--mkdir.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/1800--sd.md",
+            "target": "~peios/security-descriptors/acls-and-aces",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/200--acls-and-aces.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/1800--sd.md",
+            "target": "~peios/security-descriptors/inheritance",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/500--inheritance.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/1800--sd.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/1800--sd.md",
+            "target": "~peios/security-descriptors/ownership",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/400--ownership.md"
+            ]
+        },
+        {
+            "article": "peios.product/0--using-peios.antho/500--applets.shelf/100--peiosutils.antho/100--files-and-directories.topic/1900--mkexec.md",
+            "target": "~peios/security-descriptors/overview",
+            "action": "Remove unavailable related link; retain relevant explanation in the article.",
+            "reason": "Cross-cutting source remains in Learn-staging and is not in the current Panorama publication context.",
+            "staging_sources": [
+                "peios.product/1--security-fundamentals.antho/200--access-control.shelf/100--security-descriptors.topic/100--overview.md"
+            ]
+        }
+    ]
+}

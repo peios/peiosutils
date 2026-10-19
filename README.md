@@ -1,57 +1,46 @@
-# peiosutils
+# Peiosutils
 
-Peios core userspace utilities. A hard fork of
-[uutils/coreutils](https://github.com/uutils/coreutils), being peiosified
-one command at a time.
+Peiosutils provides command-line utilities for files, text, accounts, security,
+registry data, disks, and system administration. It is a maintained hard fork
+of uutils/coreutils for Peios. Its identity and permission commands use the
+Peios security model.
 
-## What this is
+The `peiosutils` executable dispatches by its first argument or by the name
+of an applet symlink. Applet implementations live under `src/uu/`; shared
+internal code lives in `src/uucore/` and `crates/`.
 
-Peios doesn't use the GNU coreutils. It doesn't use POSIX permissions,
-doesn't expose UIDs/GIDs as security primitives, and uses KACS
-(Kernel Access Control Subsystem) for authorisation. Most of what
-coreutils does — text processing, file I/O, hashing — is the same on
-any kernel. A handful of commands (`ls -l`, `stat`, `chown`, `install`)
-need real rewrites against KACS instead of POSIX. A few more (`chmod`,
-`chgrp`, `chcon`, `newgrp`) don't translate at all and get deleted.
+## Build and check
 
-uutils gave us a clean, MIT-licensed, modular Rust starting point with
-all the boring stuff already working. We're forking it (hard fork — no
-auto-sync from upstream) and walking through every command alphabetically,
-peiosifying as we go.
-
-## Peiosification status
-
-Each command lives in its own crate under `src/uu/<name>/`.
-
-- `uu_<name>` — pristine from uutils, not yet reviewed.
-- `pu_<name>` — peiosified (reviewed, kept-or-rewritten, KACS-aware
-  where it needs to be).
-
-At any time, `ls src/uu/` is a rough progress bar for the peiosification
-pass. Commands that don't translate to Peios get deleted entirely; their
-absence is the same signal as a removed crate.
-
-See [`UPSTREAM.md`](UPSTREAM.md) for upstream-sync policy.
-See [`NOTICE`](NOTICE) for attribution.
-
-## Building
+Bazel compiles native Rust targets and assembles PPK blobs and manifests.
+Prepare a development SDK as described in
+[Building Peiosutils](docs/development/building.md), then run:
 
 ```sh
-cargo build --release            # multiplexed peiosutils binary
-cargo build --release -p uu_cat  # individual command (still uu_* prefixed)
+export PEIOS_SDK=/absolute/path/to/development-sdk
+./bazel build //:peiosutils //:packages
+./bazel test //...
 ```
 
-The multiplexed binary supports busybox-style symlink dispatch: a symlink
-named `cat → peiosutils` invokes the `cat` command. Individual builds are
-also supported.
+`tools/check` also checks PSC formatting and runs Clippy through Bazel.
+Development builds run on Linux x86_64. They do not qualify Peios kernel
+operations or establish release readiness.
 
-## Origin
+## Documentation and libraries
 
-Forked from `uutils/coreutils` at SHA `873a7c752` (May 2026). The original
-remote is preserved as `uutils-upstream` (fetch-only). All git history
-prior to the fork is the original uutils history, retained for
-attribution and for selective cherry-picks of upstream security fixes.
+- [User and developer guides](docs/learn/) form part of Learn Peios.
+- Installed applet manuals describe command options and exit behavior.
+- [Library manuals](docs/man/) document `libreg`, `libregman`, and `libevman`.
+- [Development guide](docs/development/building.md) covers SDK inputs,
+  packages, generated targets, and validation.
+- [Style adoption](docs/development/style.md) records compatibility exceptions.
 
-## License
+The three public libraries ship shared objects and C headers. Their safe
+Rust wrappers are `peios-reg`, `peios-regman`, and `peios-evman`. Their release
+versions follow Peiosutils; the shared-library ABI major is 1.
 
-MIT, same as uutils. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+## Origin and license
+
+The fork preserves upstream history through
+`873a7c75207e866ff9d67f16e0d204085f6412c6`. Upstream fixes are reviewed and
+ported selectively; the project does not periodically merge upstream.
+See [Upstream policy](UPSTREAM.md), [NOTICE](NOTICE), and [LICENSE](LICENSE).

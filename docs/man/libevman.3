@@ -1,0 +1,118 @@
+.TH LIBEVMAN 3 2026-10-19 "Peios peiosutils 0.8.18"
+.SH NAME
+libevman \- event catalog parsing and lookup library
+.SH SYNOPSIS
+.nf
+.B #include <peios/evman.h>
+
+.B "uint32_t peios_evman_abi_version(void);"
+.B "peios_evman_catalog *peios_evman_load(peios_evman_bytes directory);"
+.B "peios_evman_catalog *peios_evman_parse(const peios_evman_source *, size_t count);"
+.B "peios_evman_matches *peios_evman_query(const peios_evman_catalog *, uint32_t mode, peios_evman_bytes text);"
+.B "void peios_evman_catalog_free(peios_evman_catalog *);"
+.B "int32_t peios_evman_catalog_error(const peios_evman_catalog *);"
+.B "peios_evman_bytes peios_evman_catalog_message(const peios_evman_catalog *);"
+.B "void peios_evman_matches_free(peios_evman_matches *);"
+.B "int32_t peios_evman_matches_error(const peios_evman_matches *);"
+.B "peios_evman_bytes peios_evman_matches_message(const peios_evman_matches *);"
+.B "size_t peios_evman_finding_count(const peios_evman_catalog *);"
+.B "int32_t peios_evman_finding(const peios_evman_catalog *, size_t index, peios_evman_finding_view *);"
+.B "size_t peios_evman_record_count(const peios_evman_matches *);"
+.B "uint32_t peios_evman_match_kind(const peios_evman_matches *);"
+.B "int32_t peios_evman_record(const peios_evman_matches *, size_t index, peios_evman_record_view *);"
+.B "peios_evman_bytes peios_evman_qualifier(const peios_evman_matches *);"
+.B "peios_evman_bytes peios_evman_attribute(const peios_evman_matches *);"
+.B "peios_evman_bytes peios_evman_prefix(const peios_evman_matches *);"
+.B "size_t peios_evman_header_count(const peios_evman_matches *, size_t record);"
+.B "int32_t peios_evman_header(const peios_evman_matches *, size_t record, size_t index, peios_evman_header_view *);"
+.B "size_t peios_evman_include_count(const peios_evman_matches *, size_t record);"
+.B "int32_t peios_evman_include(const peios_evman_matches *, size_t record, size_t index, peios_evman_line_view *);"
+.B "size_t peios_evman_line_count(const peios_evman_matches *, size_t record);"
+.B "int32_t peios_evman_line(const peios_evman_matches *, size_t record, size_t index, peios_evman_line_view *);"
+.fi
+.SH DESCRIPTION
+.B libevman
+loads or parses event catalog sources, validates them together, and queries
+the resulting catalog.
+Source paths identify providers; source text is UTF-8.
+Filesystem paths retain their raw Unix bytes.
+.PP
+Format and cross-source validation findings accompany a usable catalog.
+They are separate from operation errors.
+A finding reports its source, one-based line, rule number, and message;
+rule zero denotes a format issue.
+.PP
+Query modes are PEIOS_EVMAN_LOOKUP, PEIOS_EVMAN_SEARCH, and PEIOS_EVMAN_ALL.
+Search splits text on whitespace.
+Each query result owns copies of its records and can outlive its catalog.
+Record getters expose event, field, or group identity, source, provider,
+body, headers, included groups, and field lines.
+Match metadata distinguishes event, field, variant, attribute, index,
+search, and all-entry results.
+.PP
+Record kinds use FIELD=1, GROUP=2, and EVENT=3.
+Field-line kinds use FIELD=1 and INCLUDE=2.
+The group-include getter returns absent presence, values, and closed fields.
+Event field and include lines have present, possibly empty, presence text
+and optional values and closed text.
+Event lines also expose their indented Markdown explanation as gloss text,
+with surrounding blank lines removed; an empty explanation is present and empty.
+Group includes have an absent gloss.
+An absent optional field differs from a present empty field.
+Indexed getters return a POSIX code and leave output untouched on failure.
+.SH RETURN VALUE
+Operations return an owned handle on success and on failure.
+Check the matching error accessor before reading results; zero means success
+and a nonzero value is a POSIX error number, independent of errno.
+A diagnostic message is borrowed from a failed handle.
+A null handle has error EINVAL and no message.
+.PP
+Free every handle exactly once with its matching free function, including
+handles describing failed operations.
+Freeing null is harmless.
+Returned byte spans and record views remain valid only while their owning
+handle remains alive.
+Counts return zero for failed or null handles; check the error first.
+.PP
+Input byte spans are borrowed for the duration of the call.
+A null pointer with zero length denotes absence; a non-null zero-length span
+is an explicitly empty value.
+Lengths exceeding the addressable Rust slice range and null pointers with
+nonzero lengths are rejected.
+Other non-null pointers must identify valid, readable allocations.
+Output pointers and arrays must have the alignment required by their C type.
+Text spans contain UTF-8 without a required terminating null byte.
+.PP
+Read-only access can occur concurrently.
+Destruction requires exclusive ownership and ends all borrowed views.
+Allocation exhaustion follows the Rust allocator's process-abort policy;
+it is not reported as a recoverable ENOMEM result.
+.SH ERRORS
+.TP
+.B EINVAL
+Invalid spans, invalid UTF-8 text, an unknown query mode, a null required
+handle or output pointer, or an invalid source array.
+.TP
+.B ERANGE
+An indexed getter requested an entry outside the available range.
+.TP
+.B ENOENT
+A lookup did not find the requested event, field, or other catalog entry.
+.TP
+.B EIO
+Reading the catalog directory failed.
+.SH ENVIRONMENT
+.TP
+.B EVMAN_DIR
+Catalog directory used when no explicit directory is supplied.
+.SH FILES
+.TP
+.I /usr/share/evman
+Default event catalog directory.
+.SH NOTES
+The runtime SONAME is libevman.so.1 and the ABI version function returns 1.
+Use the evman pkg-config module for compiler and linker options.
+The Rust wrapper is the peios-evman crate.
+.SH SEE ALSO
+.BR evman (1),
+.BR libregman (3)

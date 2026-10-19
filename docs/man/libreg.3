@@ -1,0 +1,81 @@
+.TH LIBREG 3 2026-10-19 "Peios peiosutils 0.8.18"
+.SH NAME
+libreg \- registry batch document library
+.SH SYNOPSIS
+.nf
+.B #include <peios/reg.h>
+
+.B "uint32_t peios_reg_abi_version(void);"
+.B "peios_reg_document *peios_reg_document_parse(peios_reg_bytes json);"
+.B "peios_reg_document *peios_reg_document_export(peios_reg_bytes path);"
+.B "peios_reg_apply *peios_reg_document_apply(const peios_reg_document *, peios_reg_bytes layer);"
+.B "peios_reg_bytes peios_reg_document_json(const peios_reg_document *);"
+.B "void peios_reg_document_free(peios_reg_document *);"
+.B "int32_t peios_reg_document_error(const peios_reg_document *);"
+.B "peios_reg_bytes peios_reg_document_message(const peios_reg_document *);"
+.B "size_t peios_reg_apply_count(const peios_reg_apply *);"
+.B "void peios_reg_apply_free(peios_reg_apply *);"
+.B "int32_t peios_reg_apply_error(const peios_reg_apply *);"
+.B "peios_reg_bytes peios_reg_apply_message(const peios_reg_apply *);"
+.fi
+.SH DESCRIPTION
+.B libreg
+parses JSON batch documents, exports live registry subtrees, and applies
+batches in one registry transaction.
+Parsing owns the document and its normalized JSON representation.
+It does not perform the value, path, or access validation required by apply.
+.PP
+.B peios_reg_document_apply
+accepts an absent layer to select the existing default layer.
+A non-null empty layer is an explicitly empty layer name.
+The separate apply handle reports the number of keys applied on success.
+Do not use that count before checking the apply error.
+.SH SECURITY
+Export and apply use the caller's existing registry authority through libpeios.
+They do not create an elevated token or bypass registry access checks.
+Errors from the registry are retained in the returned handle.
+.SH RETURN VALUE
+Operations return an owned handle on success and on failure.
+Check the matching error accessor before reading results; zero means success
+and a nonzero value is a POSIX error number, independent of errno.
+A diagnostic message is borrowed from a failed handle.
+A null handle has error EINVAL and no message.
+.PP
+Free every handle exactly once with its matching free function, including
+handles describing failed operations.
+Freeing null is harmless.
+Returned byte spans and record views remain valid only while their owning
+handle remains alive.
+Counts return zero for failed or null handles; check the error first.
+.PP
+Input byte spans are borrowed for the duration of the call.
+A null pointer with zero length denotes absence; a non-null zero-length span
+is an explicitly empty value.
+Lengths exceeding the addressable Rust slice range and null pointers with
+nonzero lengths are rejected.
+Other non-null pointers must identify valid, readable allocations.
+Output pointers and arrays must have the alignment required by their C type.
+Text spans contain UTF-8 without a required terminating null byte.
+.PP
+Read-only access can occur concurrently.
+Destruction requires exclusive ownership and ends all borrowed views.
+Allocation exhaustion follows the Rust allocator's process-abort policy;
+it is not reported as a recoverable ENOMEM result.
+.SH ERRORS
+.TP
+.B EINVAL
+Invalid spans, invalid UTF-8, malformed JSON, invalid document contents,
+or an invalid input handle.
+Some document validity checks occur only when applying the document.
+.TP
+.B EIO
+A registry operation failed without an available numeric OS error.
+.PP
+Other registry OS error numbers are returned unchanged.
+.SH NOTES
+The runtime SONAME is libreg.so.1 and the ABI version function returns 1.
+Use the reg pkg-config module to obtain compiler and linker options.
+The Rust wrapper is the peios-reg crate.
+.SH SEE ALSO
+.BR reg (1),
+.BR libregman (3)
