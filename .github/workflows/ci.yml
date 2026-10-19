@@ -1,102 +1,69 @@
-# CI for peiosutils.
-#
-# The workspace links libpeios: the Peios-native applets (token, sd, reg,
-# logonse, mount, feat) bind its C ABI through peios-sys, whose build
-# script needs the library, its headers and the PKM UAPI headers. Without
-# them `cargo check --workspace` fails in the build script before a line
-# of peiosutils compiles — which is what this workflow did on every run
-# from June to September 2026 while two releases were cut underneath it.
-#
-# The library is built here from the released revision named below. The
-# pin used to be read out of the packaging recipe (pekit.toml), which
-# vendored libpeios itself; since 56c012012 the recipe takes libpeios from
-# the package catalogue and names no revision, and this workflow went on
-# reading one that was no longer there — so it failed before building
-# anything, on every push, while 0.8.13 to 0.8.15 were cut underneath it.
-# The pin is this workflow's own now; move it when the tree needs a newer
-# libpeios.
-#
-# Building libpeios materialises the pkm checkout its lockfile pins in
-# Cargo's git cache, which is where the UAPI headers come from, so the
-# pkm revision is read from that lockfile and there is still one pin.
-# Nothing here is a substitute for the recipe's own test run inside the
-# packaging build; it is the gate that runs on every push.
-
-name: ci
+name: peiosutils build and tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    pull_request:
+    push:
+    workflow_dispatch:
 
-env:
-  # libpeios v0.5.4.
-  LIBPEIOS_REV: 953081d2c54a30fe14068551e51a5b9ee036314e
+permissions:
+    contents: read
+
+concurrency:
+    group: peiosutils-check-${{ github.ref }}
+    cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            libpeios
-
-      # bindgen (peios-sys) needs libclang; the freestanding headers
-      # (stddef.h, stdint.h) come from gcc's own include dir, which
-      # libclang does not find on its own.
-      - name: Install bindgen prerequisites
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q libclang-dev
-
-      - name: Build libpeios at the pinned revision
-        run: |
-          set -eu
-          # Not `git clone`: rust-cache above restores libpeios/target from
-          # the last run, and clone refuses a directory that is not empty.
-          # That made every run after a green one fail here, since a green
-          # run is what saves the cache.
-          git init -q libpeios
-          git -C libpeios fetch -q --depth 1 https://github.com/peios/libpeios.git "$LIBPEIOS_REV"
-          git -C libpeios checkout -q --detach FETCH_HEAD
-          test "$(git -C libpeios rev-parse HEAD)" = "$LIBPEIOS_REV"
-          # Exactly one pkm revision, or the lockfile is not what this
-          # step takes it for.
-          PKM_REV=$(sed -n 's|^source = "git+https://github.com/peios/pkm.git?rev=\([0-9a-f]\{40\}\)#.*|\1|p' libpeios/Cargo.lock | sort -u)
-          test "$(printf '%s\n' "$PKM_REV" | grep -c .)" = 1
-          cargo build --locked --manifest-path libpeios/Cargo.toml
-          # The soname is libpeios.so.0; cargo writes only libpeios.so.
-          ln -sf libpeios.so libpeios/target/debug/libpeios.so.0
-          test -f libpeios/target/debug/libpeios.so.0
-
-          # The UAPI headers: the pkm checkout libpeios's lockfile pinned,
-          # which the build above just materialised.
-          PKM_SHORT=$(printf %.7s "$PKM_REV")
-          PKM_ROOT=
-          for candidate in "$HOME"/.cargo/git/checkouts/pkm-*/"$PKM_SHORT"; do
-            [ -d "$candidate/uapi/pkm" ] || continue
-            PKM_ROOT=$candidate
-          done
-          test -n "$PKM_ROOT" || { echo "no pkm checkout at $PKM_REV in Cargo's git cache" >&2; exit 1; }
-          test -f "$PKM_ROOT/uapi/pkm/pkm.h"
-
-          {
-            echo "PEIOS_LIB_DIR=$PWD/libpeios/target/debug"
-            echo "PEIOS_INCLUDE=$PWD/libpeios/include"
-            echo "PKM_UAPI=$PKM_ROOT/uapi"
-            echo "BINDGEN_EXTRA_CLANG_ARGS=-isystem $(gcc -print-file-name=include)"
-            # A dependency's rpath does not reach the multicall binary the
-            # integration tests spawn; it has to find libpeios.so.0 at run time.
-            echo "LD_LIBRARY_PATH=$PWD/libpeios/target/debug"
-          } >> "$GITHUB_ENV"
-
-      - name: cargo check (workspace, locked)
-        run: cargo check --workspace --locked
-
-      - name: cargo test (workspace, exclude GNU conformance)
-        run: cargo test --workspace --locked --exclude uucore --no-fail-fast -- --skip gnu
+    check:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 90
+        steps:
+            - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  persist-credentials: false
+            - name: Install Linux development tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential libclang-dev pkg-config python3 python3-venv binutils nodejs npm zstd gettext
+                  rustup toolchain install 1.98.1 --profile minimal --component rustfmt --component clippy
+            - name: Select the shared JavaScript runtime
+              uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+              with:
+                  node-version: "22.22.1"
+            - name: Prepare pinned PSC style tools
+              run: python3 tools/prepare-style-tools.py "$RUNNER_TEMP/peiosutils-style"
+            - name: Check out the consolidated C SDK
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  repository: peios/peios-sdk
+                  ref: 76f350f231c715e22585f9bff8509c2f657496c4
+                  path: .ci-sdk/peios-sdk
+                  persist-credentials: false
+            - name: Check out the authentication SDK
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  repository: peios/authd
+                  ref: a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa
+                  path: .ci-sdk/authd
+                  persist-credentials: false
+            - name: Prepare the development SDK
+              run: python3 tools/prepare-dev-sdk.py .ci-sdk/peios-sdk "$RUNNER_TEMP/peios-sdk" --auth-source .ci-sdk/authd
+            - name: Check style, build, tests and packages
+              env:
+                  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+                  PEIOS_SDK: ${{ runner.temp }}/peios-sdk
+                  PEIOS_STYLE_BIN: ${{ runner.temp }}/peiosutils-style/bin
+              run: tools/check
+            - name: Check out the documentation compiler
+              uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+              with:
+                  repository: peios/trail
+                  ref: 1d662e98cbcbdd5c51c01533afcab7f5723a2eff
+                  path: .ci-sdk/trail
+                  persist-credentials: false
+            - name: Build the pinned documentation compiler
+              working-directory: .ci-sdk/trail
+              run: tools/bazel build //:trail
+            - name: Check documentation
+              env:
+                  TRAIL: ${{ github.workspace }}/.ci-sdk/trail/bazel-bin/trail
+              run: tools/check-docs

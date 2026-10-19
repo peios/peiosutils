@@ -1,0 +1,11 @@
+exports_files(["Cargo.toml"])
+
+filegroup(
+    name = "sources",
+    srcs = [
+        "BUILD.bazel",
+        "Cargo.toml",
+        "lib.rs",
+    ],
+    visibility = ["//visibility:public"],
+)

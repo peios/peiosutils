@@ -1,7 +1,6 @@
 target/
 coverage/
 /src/*/gen_table
-/build/
 /tmp/
 *~
 .*.swp
@@ -24,5 +23,11 @@ lib*.a
 # Local planning scratch — util-linux/base-userland expansion inventory
 commands.md
 
-# pekit build output
+# Historical build output
 /out/
+
+/bazel-*
+/.ci-sdk/
+/docs/learn/dist/
+**/__pycache__/
+**/.ruff_cache/

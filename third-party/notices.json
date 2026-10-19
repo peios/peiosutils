@@ -1,0 +1,77 @@
+[
+    {
+        "name": "base64-simd",
+        "version": "0.8.0",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "revision": "d74c030d9dc4f3cae02146d1f497ff62726ef09a",
+        "notices": [
+            {
+                "path": "third-party/Nugine-simd/LICENSE",
+                "url": "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE",
+                "sha256": "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d"
+            }
+        ]
+    },
+    {
+        "name": "vsimd",
+        "version": "0.8.0",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "revision": "d74c030d9dc4f3cae02146d1f497ff62726ef09a",
+        "notices": [
+            {
+                "path": "third-party/Nugine-simd/LICENSE",
+                "url": "https://raw.githubusercontent.com/Nugine/simd/d74c030d9dc4f3cae02146d1f497ff62726ef09a/LICENSE",
+                "sha256": "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d"
+            }
+        ]
+    },
+    {
+        "name": "fluent-langneg",
+        "version": "0.13.1",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "revision": "7fdc590466ea63ca2367ac10fb1b881fe561f1a8",
+        "notices": [
+            {
+                "path": "third-party/projectfluent-fluent-langneg-rs/LICENSE-APACHE",
+                "url": "https://raw.githubusercontent.com/projectfluent/fluent-langneg-rs/7fdc590466ea63ca2367ac10fb1b881fe561f1a8/LICENSE-APACHE",
+                "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+            },
+            {
+                "path": "third-party/projectfluent-fluent-langneg-rs/LICENSE-MIT",
+                "url": "https://raw.githubusercontent.com/projectfluent/fluent-langneg-rs/7fdc590466ea63ca2367ac10fb1b881fe561f1a8/LICENSE-MIT",
+                "sha256": "016fcc02048817d628b04b140c54db290fd9d29a5e8a55b77871194e810716ac"
+            }
+        ]
+    },
+    {
+        "name": "intl_pluralrules",
+        "version": "7.0.2",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "revision": "d0715d5b7cca72e228d6e6c4de154bd30dfdd06a",
+        "notices": [
+            {
+                "path": "third-party/zbraniecki-pluralrules/LICENSE-APACHE",
+                "url": "https://raw.githubusercontent.com/zbraniecki/pluralrules/d0715d5b7cca72e228d6e6c4de154bd30dfdd06a/intl_pluralrules/LICENSE-APACHE",
+                "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+            },
+            {
+                "path": "third-party/zbraniecki-pluralrules/LICENSE-MIT",
+                "url": "https://raw.githubusercontent.com/zbraniecki/pluralrules/d0715d5b7cca72e228d6e6c4de154bd30dfdd06a/intl_pluralrules/LICENSE-MIT",
+                "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+            }
+        ]
+    },
+    {
+        "name": "blake2b_simd",
+        "version": "1.0.4",
+        "source": "registry+https://github.com/rust-lang/crates.io-index",
+        "revision": "6a94ae2e18985c7c35bada8a4d438bfe9ab0d0c0",
+        "notices": [
+            {
+                "path": "third-party/oconnor663-blake2_simd/LICENSE",
+                "url": "https://raw.githubusercontent.com/oconnor663/blake2_simd/6a94ae2e18985c7c35bada8a4d438bfe9ab0d0c0/LICENSE",
+                "sha256": "27e0387973d6b8507cb15f825f6f26e0278d4d5857082c1f56b49a7b39a90183"
+            }
+        ]
+    }
+]

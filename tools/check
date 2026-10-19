@@ -1,0 +1,7 @@
+#!/bin/bash
+# Check owned source and all declared Linux development targets.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+python3 tools/style-check.py
+./bazel test //... --keep_going --test_timeout=180
+./bazel build --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect --output_groups=clippy_checks --@rules_rust//rust/settings:clippy_flag=-Dwarnings //...

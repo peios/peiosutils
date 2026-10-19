@@ -1,0 +1,22 @@
+{
+    "package": {
+        "name": "dev.peios.libreg-devel",
+        "version": "0.8.18-1",
+        "architecture": "x86_64",
+        "description": "Headers and linker metadata for libreg",
+        "license": "MIT",
+        "license_class": "free",
+        "homepage": "https://github.com/peios/peiosutils"
+    },
+    "files": {
+        "stage:usr/include/peios/reg.h": "usr/include/peios/reg.h",
+        "stage:usr/lib/x86_64-linux-peios/libreg.so": "usr/lib/x86_64-linux-peios/libreg.so",
+        "stage:usr/lib/x86_64-linux-peios/pkgconfig/reg.pc": "usr/lib/x86_64-linux-peios/pkgconfig/reg.pc",
+        "source:LICENSE": "usr/share/licenses/dev.peios.libreg-devel/LICENSE",
+        "stage:usr/share/man/man3/libreg.3.gz": "usr/share/man/man3/libreg.3.gz"
+    },
+    "dependencies": {
+        "dev.peios.libreg": "= 0.8.18-1",
+        "dev.peios.libpeios-devel": ">= 0.5.12-1"
+    }
+}

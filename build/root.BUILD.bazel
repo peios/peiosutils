@@ -1,0 +1,20 @@
+load("//packages:package.bzl", "package_store")
+
+filegroup(name="package-data",srcs=["Cargo.toml","Cargo.lock","LICENSE","NOTICE","//include:sources",":all-locales","//packages:definitions"]+glob(["third-party/**", "docs/man/*.3", "docs/man/*.inc"]))
+filegroup(name="package-sources",srcs=[":all-sources","//include:sources","//tests/abi:sources","//packages:sources","//build/feature-set:sources"])
+package_store(name="packages",packages=["//packages:all"])
+
+load("//build:checks.bzl", "host_test")
+
+host_test(
+    name = "generated-targets-test",
+    command = 'exec python3 tools/bazel-targets.py --check --buildifier "$BUILDIFIER"',
+    data = [":all-sources"],
+    tools = {"@buildifier//file": "BUILDIFIER"},
+    tags = ["external", "no-remote"],
+)
+
+load("//build:locales.bzl", "locale_tree")
+locale_tree(name="locales-runtime", srcs=[":all-locales"])
+
+exports_files([".clippy.toml"])

@@ -1,0 +1,74 @@
+diff --git a/rust/private/rustc.bzl b/rust/private/rustc.bzl
+--- a/rust/private/rustc.bzl
++++ b/rust/private/rustc.bzl
+@@ -2625,7 +2625,7 @@
+         get_preferred_artifact(lib, use_pic)
+         for linker_input in dep_info.transitive_noncrates.to_list()
+         for lib in linker_input.libraries
+-        if _is_dylib(lib)
++        if _is_dylib(lib) and lib.dynamic_library
+     ]
+ 
+     # Include std dylib if dylib linkage is enabled
+diff --git a/cargo/private/cargo_build_script.bzl b/cargo/private/cargo_build_script.bzl
+--- a/cargo/private/cargo_build_script.bzl
++++ b/cargo/private/cargo_build_script.bzl
+@@ -64,12 +64,13 @@
+     executable = True,
+ )
+ 
+-def get_cc_compile_args_and_env(cc_toolchain, feature_configuration):
++def get_cc_compile_args_and_env(cc_toolchain, feature_configuration, cpp_config):
+     """Gather cc environment variables from the given `cc_toolchain`
+ 
+     Args:
+         cc_toolchain (cc_toolchain): The current rule's `cc_toolchain`.
+         feature_configuration (FeatureConfiguration): Class used to construct command lines from CROSSTOOL features.
++        cpp_config (cpp): C/C++ command-line options for this configuration.
+ 
+     Returns:
+         tuple: A tuple of the following items:
+@@ -77,24 +78,30 @@
+             - (sequence): A flattened list of CXX command line flags.
+             - (dict): C environment variables to be set for this configuration.
+     """
+-    compile_variables = cc_common.create_compile_variables(
++    c_variables = cc_common.create_compile_variables(
+         feature_configuration = feature_configuration,
+         cc_toolchain = cc_toolchain,
++        user_compile_flags = cpp_config.copts + cpp_config.conlyopts,
++    )
++    cxx_variables = cc_common.create_compile_variables(
++        feature_configuration = feature_configuration,
++        cc_toolchain = cc_toolchain,
++        user_compile_flags = cpp_config.copts + cpp_config.cxxopts,
+     )
+     cc_c_args = cc_common.get_memory_inefficient_command_line(
+         feature_configuration = feature_configuration,
+         action_name = ACTION_NAMES.c_compile,
+-        variables = compile_variables,
++        variables = c_variables,
+     )
+     cc_cxx_args = cc_common.get_memory_inefficient_command_line(
+         feature_configuration = feature_configuration,
+         action_name = ACTION_NAMES.cpp_compile,
+-        variables = compile_variables,
++        variables = cxx_variables,
+     )
+     cc_env = cc_common.get_environment_variables(
+         feature_configuration = feature_configuration,
+         action_name = ACTION_NAMES.c_compile,
+-        variables = compile_variables,
++        variables = c_variables,
+     )
+     return cc_c_args, cc_cxx_args, cc_env
+ 
+@@ -523,7 +530,7 @@
+ 
+     if cc_toolchain:
+         # MSVC requires INCLUDE to be set
+-        cc_c_args, cc_cxx_args, cc_env = get_cc_compile_args_and_env(cc_toolchain, feature_configuration)
++        cc_c_args, cc_cxx_args, cc_env = get_cc_compile_args_and_env(cc_toolchain, feature_configuration, ctx.fragments.cpp)
+         include = cc_env.get("INCLUDE")
+         if include:
+             if toolchain.exec_triple.str.find("windows") > 0:

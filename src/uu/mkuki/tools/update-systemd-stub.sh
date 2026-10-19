@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-here="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-mkuki_dir="$(CDPATH= cd -- "$here/.." && pwd)"
+here="$(CDPATH="" cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+mkuki_dir="$(CDPATH="" cd -- "$here/.." && pwd)"
 stubs_dir="$mkuki_dir/stubs"
 
 package_name="systemd-boot-efi"
@@ -28,10 +28,13 @@ printf '%s  %s\n' "$deb_sha256" "$tmp/$deb_name" | sha256sum --check --status
     ar x "$deb_name"
     data_member="$(printf '%s\n' data.tar.* | head -n 1)"
     case "$data_member" in
-        *.zst) zstd -dc "$data_member" | tar -x -f - "$stub_path" "$copyright_path" ;;
-        *.xz) xz -dc "$data_member" | tar -x -f - "$stub_path" "$copyright_path" ;;
-        *.gz) tar -x -z -f "$data_member" "$stub_path" "$copyright_path" ;;
-        *) echo "unsupported Debian data archive: $data_member" >&2; exit 1 ;;
+    *.zst) zstd -dc "$data_member" | tar -x -f - "$stub_path" "$copyright_path" ;;
+    *.xz) xz -dc "$data_member" | tar -x -f - "$stub_path" "$copyright_path" ;;
+    *.gz) tar -x -z -f "$data_member" "$stub_path" "$copyright_path" ;;
+    *)
+        echo "unsupported Debian data archive: $data_member" >&2
+        exit 1
+        ;;
     esac
 )
 
@@ -39,7 +42,7 @@ install -m 0644 "$tmp/$stub_path" "$stubs_dir/linuxx64.efi.stub"
 install -m 0644 "$tmp/$copyright_path" "$stubs_dir/COPYRIGHT.debian-systemd"
 
 stub_sha256="$(sha256sum "$stubs_dir/linuxx64.efi.stub" | awk '{print $1}')"
-cat > "$stubs_dir/SOURCE.systemd-stub" <<EOF
+cat >"$stubs_dir/SOURCE.systemd-stub" <<EOF
 default stub: systemd-stub linuxx64.efi.stub
 upstream: systemd
 upstream project: https://github.com/systemd/systemd
@@ -54,7 +57,7 @@ license/copyright details: src/uu/mkuki/stubs/COPYRIGHT.debian-systemd
 refresh script: src/uu/mkuki/tools/update-systemd-stub.sh
 EOF
 
-cat > "$stubs_dir/SHA256SUMS" <<EOF
+cat >"$stubs_dir/SHA256SUMS" <<EOF
 ${stub_sha256}  linuxx64.efi.stub
 EOF
 

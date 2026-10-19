@@ -1,0 +1,35 @@
+load(":packaging.bzl", "package_mode")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(glob([
+    "*.bzl",
+    "*.patch",
+    "*.sha256",
+]))
+
+config_setting(
+    name = "native",
+    values = {"define": "peios_native=true"},
+)
+
+config_setting(
+    name = "packaged",
+    flag_values = {":package-mode": "true"},
+)
+
+filegroup(
+    name = "sources",
+    srcs = glob([
+        "*.bzl",
+        "*.bazel",
+        "*.json",
+        "*.patch",
+        "*.sha256",
+    ]),
+)
+
+package_mode(
+    name = "package-mode",
+    build_setting_default = False,
+)

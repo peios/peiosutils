@@ -1,0 +1,21 @@
+{
+    "package": {
+        "name": "dev.peios.libevman-devel",
+        "version": "0.8.18-1",
+        "architecture": "x86_64",
+        "description": "Headers and linker metadata for libevman",
+        "license": "MIT",
+        "license_class": "free",
+        "homepage": "https://github.com/peios/peiosutils"
+    },
+    "files": {
+        "stage:usr/include/peios/evman.h": "usr/include/peios/evman.h",
+        "stage:usr/lib/x86_64-linux-peios/libevman.so": "usr/lib/x86_64-linux-peios/libevman.so",
+        "stage:usr/lib/x86_64-linux-peios/pkgconfig/evman.pc": "usr/lib/x86_64-linux-peios/pkgconfig/evman.pc",
+        "source:LICENSE": "usr/share/licenses/dev.peios.libevman-devel/LICENSE",
+        "stage:usr/share/man/man3/libevman.3.gz": "usr/share/man/man3/libevman.3.gz"
+    },
+    "dependencies": {
+        "dev.peios.libevman": "= 0.8.18-1"
+    }
+}

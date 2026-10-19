@@ -6,6 +6,7 @@
 use cfg_aliases::cfg_aliases;
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(bsd)");
     cfg_aliases! {
         bsd: { any(
             target_os = "freebsd",
