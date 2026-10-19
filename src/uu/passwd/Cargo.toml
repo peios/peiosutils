@@ -19,16 +19,15 @@ path = "src/passwd.rs"
 doctest = false
 
 [dependencies]
+auth-core = { git = "https://github.com/peios/authd.git", rev = "a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa" }
+terminal-input = { git = "https://github.com/peios/authd.git", rev = "a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa" }
+libc = { workspace = true }
+peios-auth = { git = "https://github.com/peios/authd.git", rev = "a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa" }
 clap = { workspace = true }
 uucore = { workspace = true }
-# The credential-change conversation (libauthd-client, which GUI apps share),
-# the PGSS Logon types it speaks, and the terminal input `login` and `lps`
-# share — all pinned to the one authd revision, since they reach libauthd by
-# path inside that repository and must agree on one crate.
-libauthd = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
-libauthd-client = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
-libtty = { git = "https://github.com/peios/authd.git", rev = "650bc4ac31bae0f917254f02c8e64f08ee3bbec5" }
-
 [[bin]]
 name = "passwd"
 path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

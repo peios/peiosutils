@@ -1,12 +1,15 @@
 // `reg backup <key> <file>` — binary snapshot of a key + subtree.
 
+use std::os::fd::AsFd;
+
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, OpenFlags};
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags};
-use serde_json::json;
-use std::os::fd::AsFd;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;

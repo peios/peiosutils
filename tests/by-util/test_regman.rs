@@ -209,7 +209,10 @@ fn wildcard_corpus() -> TempDir {
 #[test]
 fn wildcard_answers_for_a_concrete_key() {
     let tmp = wildcard_corpus();
-    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd", "ImagePath"]);
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Services\\sshd", "ImagePath"],
+    );
     assert!(out.status.success());
     let s = stdout(&out);
     assert!(s.contains("Machine\\System\\Services\\<name> ImagePath"));
@@ -230,7 +233,10 @@ fn wildcard_key_view_lists_the_family_values() {
 fn wildcard_matches_one_component_only() {
     let tmp = wildcard_corpus();
     // `<name>` stands for a single key name, never a path tail.
-    let out = regman(tmp.path(), &["Machine\\System\\Services\\a\\b", "ImagePath"]);
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Services\\a\\b", "ImagePath"],
+    );
     assert_eq!(out.status.code(), Some(2));
 }
 
@@ -241,7 +247,10 @@ fn wildcard_survives_an_indexed_lookup() {
     let tmp = wildcard_corpus();
     assert!(regman(tmp.path(), &["index"]).status.success());
 
-    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd", "ImagePath"]);
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Services\\sshd", "ImagePath"],
+    );
     assert!(out.status.success());
     let s = stdout(&out);
     assert!(s.contains("Machine\\System\\Services\\<name> ImagePath"));
@@ -266,7 +275,10 @@ sshd ships its own page for this value.
 ",
     )
     .unwrap();
-    let out = regman(tmp.path(), &["Machine\\System\\Services\\sshd", "ImagePath"]);
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Services\\sshd", "ImagePath"],
+    );
     assert!(out.status.success());
     let s = stdout(&out);
     assert!(s.contains("sshd ships its own page"));
@@ -315,7 +327,10 @@ fn spanning_wildcard_answers_at_every_depth() {
 fn spanning_wildcard_still_needs_one_component() {
     // The layer key has its own page; the rule family must not answer for it.
     let tmp = spanning_corpus();
-    let out = regman(tmp.path(), &["Machine\\System\\Network\\Rules\\Packet", "Actions"]);
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Network\\Rules\\Packet", "Actions"],
+    );
     assert_eq!(out.status.code(), Some(2));
 }
 
@@ -335,7 +350,10 @@ A page for a rule at the top of a tree.
     .unwrap();
 
     // At one component both match; the narrower page answers, alone.
-    let out = regman(tmp.path(), &["Machine\\System\\Network\\Rules\\Packet\\ssh", "Actions"]);
+    let out = regman(
+        tmp.path(),
+        &["Machine\\System\\Network\\Rules\\Packet\\ssh", "Actions"],
+    );
     assert!(out.status.success());
     let s = stdout(&out);
     assert!(s.contains("A page for a rule at the top of a tree."));
@@ -344,7 +362,10 @@ A page for a rule at the top of a tree.
     // Deeper, only the spanning page can reach.
     let out = regman(
         tmp.path(),
-        &["Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan", "Actions"],
+        &[
+            "Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan",
+            "Actions",
+        ],
     );
     assert!(out.status.success());
     assert!(stdout(&out).contains("What the rule does when it matches."));
@@ -356,7 +377,10 @@ fn spanning_wildcard_survives_an_indexed_lookup() {
     assert!(regman(tmp.path(), &["index"]).status.success());
     let out = regman(
         tmp.path(),
-        &["Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan", "Actions"],
+        &[
+            "Machine\\System\\Network\\Rules\\Packet\\ssh\\from-lan",
+            "Actions",
+        ],
     );
     assert!(out.status.success());
     assert!(!stdout(&out).contains("documented by 2 packages"));
@@ -367,7 +391,10 @@ fn lint_accepts_a_spanning_fragment() {
     let tmp = spanning_corpus();
     let path = tmp.path().join("pnp.regman");
     let out = regman(tmp.path(), &["lint", path.to_str().unwrap()]);
-    assert!(out.status.success(), "spanning anchors must fmt and lint cleanly");
+    assert!(
+        out.status.success(),
+        "spanning anchors must fmt and lint cleanly"
+    );
 }
 
 #[test]
@@ -375,7 +402,10 @@ fn lint_accepts_a_wildcard_fragment() {
     let tmp = wildcard_corpus();
     let path = tmp.path().join("peinit.regman");
     let out = regman(tmp.path(), &["lint", path.to_str().unwrap()]);
-    assert!(out.status.success(), "wildcard anchors must fmt and lint cleanly");
+    assert!(
+        out.status.success(),
+        "wildcard anchors must fmt and lint cleanly"
+    );
 }
 
 #[test]
@@ -424,8 +454,15 @@ fn apropos_and_terms_narrow() {
 #[test]
 fn lint_accepts_the_kmes_fragment() {
     let tmp = corpus();
-    let out = regman(tmp.path(), &["lint", tmp.path().join("kmes.regman").to_str().unwrap()]);
-    assert!(out.status.success(), "lint stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let out = regman(
+        tmp.path(),
+        &["lint", tmp.path().join("kmes.regman").to_str().unwrap()],
+    );
+    assert!(
+        out.status.success(),
+        "lint stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 #[test]

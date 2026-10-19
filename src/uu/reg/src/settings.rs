@@ -1,8 +1,9 @@
 // Behavioural settings, resolved from flags + environment (docs/reg-spec.md
 // §4.0). Precedence: explicit flag > environment variable > built-in default.
 
+use std::io::{IsTerminal, Write};
+
 use crate::error::{Error, Result};
-use std::io::IsTerminal;
 
 /// The resolved output/behaviour knobs shared across subcommands.
 #[derive(Debug, Clone)]
@@ -22,12 +23,15 @@ pub struct Settings {
 }
 
 fn env_flag(name: &str) -> bool {
-    matches!(std::env::var(name).ok().as_deref(), Some("1" | "true" | "yes"))
+    matches!(
+        std::env::var(name).ok().as_deref(),
+        Some("1" | "true" | "yes")
+    )
 }
 
 impl Settings {
     /// Resolve settings from a subcommand's matches plus the environment.
-    pub fn from_matches(m: &clap::ArgMatches) -> Result<Settings> {
+    pub fn from_matches(m: &clap::ArgMatches) -> Result<Self> {
         let sep = match m.get_one::<String>("sep") {
             Some(s) => parse_sep(s)?,
             None => match std::env::var("REG_SEP").ok().as_deref() {
@@ -52,7 +56,7 @@ impl Settings {
             .get_one::<String>("layer")
             .cloned()
             .or_else(|| std::env::var("REG_LAYER").ok().filter(|s| !s.is_empty()));
-        Ok(Settings {
+        Ok(Self {
             sep,
             json,
             verbose,
@@ -80,7 +84,6 @@ impl Settings {
         if self.assume_yes || !std::io::stdin().is_terminal() {
             return Ok(true);
         }
-        use std::io::Write;
         eprint!("{prompt} [y/N] ");
         std::io::stderr().flush().ok();
         let mut line = String::new();

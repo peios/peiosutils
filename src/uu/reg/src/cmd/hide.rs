@@ -3,12 +3,14 @@
 // Hiding installs a HIDDEN path entry in the target layer; unhiding removes
 // that layer's path entry (`delete_key` on the layer), letting the key reappear.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, OpenFlags};
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches, hide: bool) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -27,9 +29,8 @@ pub fn run(m: &ArgMatches, hide: bool) -> Result<()> {
         &set,
         json!({ "key": target, "hidden": hide, "layer": set.layer_label() }),
         &format!(
-            "{} {} (layer: {})",
+            "{} {target} (layer: {})",
             if hide { "hid" } else { "unhid" },
-            target,
             set.layer_label()
         ),
     );

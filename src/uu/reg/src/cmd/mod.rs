@@ -1,11 +1,13 @@
 // Subcommand dispatch + helpers shared across commands.
 
+use clap::ArgMatches;
+
+use peios::registry::{CreateFlags, Key, KeyAccess, OpenFlags};
+
 use crate::addr::{KeyPath, ValueTarget};
 use crate::error::{Error, Result};
 use crate::render::CmdOutput;
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{CreateFlags, Key, KeyAccess, OpenFlags};
 
 pub mod backup;
 pub mod del;
@@ -66,7 +68,10 @@ pub fn key_path(m: &ArgMatches) -> Result<KeyPath> {
 
 /// Parse the optional `value` positional into a [`ValueTarget`].
 pub fn value_target(m: &ArgMatches) -> ValueTarget {
-    ValueTarget::from_arg(m.get_one::<String>(crate::cli::opt::VALUE).map(String::as_str))
+    ValueTarget::from_arg(
+        m.get_one::<String>(crate::cli::opt::VALUE)
+            .map(String::as_str),
+    )
 }
 
 /// Open an existing key, mapping failures through the reg error funnel.
@@ -116,7 +121,10 @@ pub fn emit(out: &CmdOutput, set: &Settings) {
 /// message otherwise (suppressed by `--quiet`).
 pub fn report(set: &Settings, json: serde_json::Value, human: &str) {
     if set.json {
-        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
     } else if !set.quiet {
         println!("{human}");
     }

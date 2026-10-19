@@ -7,9 +7,11 @@
 // type or content. Bytes that don't decode as their type (a string that is
 // not UTF-8, a number of the wrong length) are shown as hex.
 
-use crate::error::{Error, Result};
-use peios::registry::{Data, ValueType};
 use serde_json::{json, Value as Json};
+
+use peios::registry::{Data, ValueType};
+
+use crate::error::{Error, Result};
 
 /// Parse a CLI data token into a registry `(type, bytes)` pair.
 ///
@@ -65,7 +67,10 @@ fn parse_typed(ty: ValueType, rest: &str) -> Result<(ValueType, Vec<u8>)> {
 /// `0x…` → DWORD/QWORD by width; everything else → SZ. Leading zeros are lost
 /// (the accepted footgun).
 fn infer(token: &str) -> (ValueType, Vec<u8>) {
-    if let Some(hex) = token.strip_prefix("0x").or_else(|| token.strip_prefix("0X")) {
+    if let Some(hex) = token
+        .strip_prefix("0x")
+        .or_else(|| token.strip_prefix("0X"))
+    {
         if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
             if let Ok(v) = u32::from_str_radix(hex, 16) {
                 return (ValueType::DWORD, v.to_le_bytes().to_vec());
@@ -90,7 +95,11 @@ fn sz_bytes(s: &str) -> Vec<u8> {
 }
 
 fn multi_bytes(s: &str) -> Vec<u8> {
-    let list = if s.is_empty() { Vec::new() } else { split_escaped_commas(s) };
+    let list = if s.is_empty() {
+        Vec::new()
+    } else {
+        split_escaped_commas(s)
+    };
     Data::MultiSz(list).encode()
 }
 
@@ -144,7 +153,7 @@ fn parse_hex(s: &str) -> Result<Vec<u8>> {
         .chars()
         .filter(|c| !matches!(c, ':' | '-' | ' ' | '\t' | '\n'))
         .collect();
-    if cleaned.len() % 2 != 0 {
+    if !cleaned.len().is_multiple_of(2) {
         return Err(Error::InvalidSpec(
             "hex: needs an even number of digits".into(),
         ));
@@ -157,8 +166,9 @@ fn parse_hex(s: &str) -> Result<Vec<u8>> {
     (0..cleaned.len())
         .step_by(2)
         .map(|i| {
-            u8::from_str_radix(&cleaned[i..i + 2], 16)
-                .map_err(|_| Error::InvalidSpec(format!("hex: invalid byte {:?}", &cleaned[i..i + 2])))
+            u8::from_str_radix(&cleaned[i..i + 2], 16).map_err(|_| {
+                Error::InvalidSpec(format!("hex: invalid byte {:?}", &cleaned[i..i + 2]))
+            })
         })
         .collect()
 }
@@ -169,12 +179,13 @@ fn parse_hex(s: &str) -> Result<Vec<u8>> {
 
 /// The canonical `REG_*` name for a value type.
 pub fn type_name(ty: ValueType) -> String {
-    ty.name().map_or_else(|| format!("REG(0x{:x})", ty.0), str::to_owned)
+    ty.name()
+        .map_or_else(|| format!("REG(0x{:x})", ty.0), str::to_owned)
 }
 
 /// A short keyword name (lowercase, for compact listings / JSON `type` field).
 pub fn type_keyword(ty: ValueType) -> String {
-    libreg::keyword(ty)
+    registry_docs::keyword(ty)
 }
 
 /// Render value data for the human view (a single concise line where possible).
@@ -206,9 +217,9 @@ pub fn format_bare(ty: ValueType, data: &[u8]) -> String {
 pub fn format_json(ty: ValueType, data: &[u8]) -> Json {
     // As the batch document has it: data that doesn't fit its type goes as
     // `hex`, its bytes exactly.
-    match libreg::data_json(ty, data) {
+    match registry_docs::data_json(ty, data) {
         Some(value) => json!({ "type": type_keyword(ty), "data": value }),
-        None => json!({ "type": type_keyword(ty), "hex": libreg::hex(data) }),
+        None => json!({ "type": type_keyword(ty), "hex": registry_docs::hex(data) }),
     }
 }
 
@@ -270,16 +281,6 @@ mod tests {
     }
 
     #[test]
-    fn malformed_unicode_hex_returns_an_error() {
-        for token in ["hex:0€", "hex:€0", "hex:😀", "hex:aéa", "bin:0€", "hex:é"] {
-            assert!(
-                matches!(parse(token), Err(Error::InvalidSpec(_))),
-                "{token}"
-            );
-        }
-    }
-
-    #[test]
     fn infer_numbers_broadly() {
         assert_eq!(rt("4096"), ("dword".into(), "4096".into()));
         assert_eq!(rt("007"), ("dword".into(), "7".into())); // zeros lost
@@ -315,6 +316,16 @@ mod tests {
         let (ty, bytes) = parse("hex:de:ad-be ef").unwrap();
         assert_eq!(ty, ValueType::BINARY);
         assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
+    }
+
+    #[test]
+    fn malformed_unicode_hex_returns_an_error() {
+        for token in ["hex:0€", "hex:€0", "hex:😀", "hex:aéa", "bin:0€", "hex:é"] {
+            assert!(
+                matches!(parse(token), Err(Error::InvalidSpec(_))),
+                "{token}"
+            );
+        }
     }
 
     #[test]

@@ -6,13 +6,14 @@
 //
 // See `peios/regman-design.md` for the full design.
 //
-// Reading the manual is libregman's, which programs other than this take
+// Reading the manual is registry_manual's, which programs other than this take
 // too; this is the command line and the terminal's rendering.
 
 use clap::Command;
+
 use uucore::error::{UResult, USimpleError};
 
-pub use libregman::{corpus, error, fold, fragment, index, pattern, query, scan};
+pub use registry_manual::{corpus, error, fold, fragment, index, pattern, query, scan};
 
 pub mod cli;
 pub mod cmd;

@@ -18,11 +18,7 @@ pub fn build() -> Command {
                 .help("registry key path (e.g. Machine\\System\\KMES)")
                 .index(1),
         )
-        .arg(
-            Arg::new("value")
-                .help("value name within the key")
-                .index(2),
-        )
+        .arg(Arg::new("value").help("value name within the key").index(2))
         .arg(
             Arg::new("apropos")
                 .short('k')
@@ -69,13 +65,18 @@ mod tests {
         let m = build()
             .try_get_matches_from(["regman", "Machine\\System\\KMES", "BufferCapacity"])
             .unwrap();
-        assert_eq!(m.get_one::<String>("path").unwrap(), "Machine\\System\\KMES");
+        assert_eq!(
+            m.get_one::<String>("path").unwrap(),
+            "Machine\\System\\KMES"
+        );
         assert_eq!(m.get_one::<String>("value").unwrap(), "BufferCapacity");
     }
 
     #[test]
     fn parses_index_watch() {
-        let m = build().try_get_matches_from(["regman", "index", "--watch"]).unwrap();
+        let m = build()
+            .try_get_matches_from(["regman", "index", "--watch"])
+            .unwrap();
         let (name, sm) = m.subcommand().unwrap();
         assert_eq!(name, "index");
         assert!(sm.get_flag("watch"));
@@ -83,7 +84,9 @@ mod tests {
 
     #[test]
     fn parses_index_clear() {
-        let m = build().try_get_matches_from(["regman", "index", "clear"]).unwrap();
+        let m = build()
+            .try_get_matches_from(["regman", "index", "clear"])
+            .unwrap();
         let (_, sm) = m.subcommand().unwrap();
         assert_eq!(sm.subcommand().unwrap().0, "clear");
     }

@@ -3,13 +3,15 @@
 // A symlink key carries an immutable symlink flag (set at creation) plus a
 // default REG_LINK value holding the absolute target path, with no NUL.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{CreateFlags, Data, Key, KeyAccess, ValueType};
+
 use crate::addr::KeyPath;
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{CreateFlags, Data, Key, KeyAccess, ValueType};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;

@@ -1,13 +1,15 @@
 // `reg tree <key>` — recursively list the subkey tree.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, OpenFlags};
+
 use crate::addr::{display_value_name, KeyPath};
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::literal;
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;

@@ -1,42 +1,9 @@
-// Privilege-name table helpers.
-//
-// This table used to be a hand-written copy of the old
-// `libp_token::uapi::PRIVILEGES`, and it drifted, twice. First `SeBackup` (17),
-// `SeRemoteShutdown` (24) and `SeSystemProfile` (11) were simply absent;
-// because `entries()` filtered *by* this table, a token holding any of them did
-// not show them, so `token show` under-reported a real token with no indication
-// anything was missing, which read as a policy failure rather than a display
-// one. That is why `entries()` now walks the mask rather than the table. Then
-// `SeManageVolume` (28) went missing the same way and printed as
-// `<privilege bit 28>` on a booted image (PEI-1077).
-//
-// So the table is no longer written here. It is derived from
-// `peios::security::Privileges`, whose own bits come from the ABI headers, plus
-// the handful of privileges the headers name that `Privileges` has no constant
-// for yet — and those take their bits from `peios_sys` rather than from a
-// literal. Nothing below writes a bit number by hand, which is the point: a
-// name↔bit mapping typed out in two places drifts silently, and a wrong bit
-// still *is* a bit.
+// Privilege names are derived from the pinned SDK's ABI-backed constants.
+// Unknown present bits remain visible through PrivSnapshot::entries.
 
 use std::sync::OnceLock;
 
 use peios::security::Privileges;
-
-/// Privileges the ABI header names but `peios::security::Privileges` has no
-/// constant for (PEI-186). Their bits still come from the header, through
-/// `peios_sys`, so this list adds names and never bit numbers. Drop an entry
-/// here when `Privileges` grows the matching constant.
-const UNNAMED_BY_PEIOS_RS: &[(u64, &str)] = &[
-    (
-        peios_sys::KACS_SE_TAKE_OWNERSHIP_PRIVILEGE as u64,
-        "SeTakeOwnership",
-    ),
-    (
-        peios_sys::KACS_SE_SYSTEM_PROFILE_PRIVILEGE as u64,
-        "SeSystemProfile",
-    ),
-    (peios_sys::KACS_SE_RELABEL_PRIVILEGE as u64, "SeRelabel"),
-];
 
 /// (bit_index, name) for every named KACS privilege, in bit order.
 ///
@@ -49,14 +16,10 @@ fn privileges() -> &'static [(u32, &'static str)] {
             let bits = privilege.bits();
             // A canonical name describes exactly one bit; anything else is not
             // a privilege this table can address by LUID.
-            (bits.count_ones() == 1)
+            bits.is_power_of_two()
                 .then(|| (bits.trailing_zeros(), strip_privilege_suffix(name)))
         });
-        let extra = UNNAMED_BY_PEIOS_RS
-            .iter()
-            .map(|(mask, name)| (mask.trailing_zeros(), *name));
-
-        let mut table: Vec<(u32, &'static str)> = derived.chain(extra).collect();
+        let mut table: Vec<(u32, &'static str)> = derived.collect();
         table.sort_unstable_by_key(|(bit, _)| *bit);
         table
     })
@@ -90,7 +53,10 @@ pub fn bit_for_name(name: &str) -> Option<u32> {
 
 /// Bit index → name (the short `SeXxx` form).
 pub fn name_for_bit(bit: u32) -> Option<&'static str> {
-    privileges().iter().find(|(b, _)| *b == bit).map(|(_, n)| *n)
+    privileges()
+        .iter()
+        .find(|(b, _)| *b == bit)
+        .map(|(_, n)| *n)
 }
 
 /// All privilege (bit, name) tuples.
@@ -107,7 +73,10 @@ pub fn parse_bit(s: &str) -> Result<u32, String> {
         return Ok(bit);
     }
     let trimmed = s.trim();
-    let parsed = if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    let parsed = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         u32::from_str_radix(hex, 16)
     } else {
         trimmed.parse::<u32>()
@@ -246,7 +215,10 @@ mod tests {
         };
         let entries: Vec<_> = snap.entries().collect();
         assert_eq!(entries.len(), 13);
-        assert!(entries.iter().all(|e| e.name.is_some()), "all 13 must be nameable");
+        assert!(
+            entries.iter().all(|e| e.name.is_some()),
+            "all 13 must be nameable"
+        );
         assert!(entries.iter().any(|e| e.name == Some("SeBackup")));
         assert!(entries.iter().any(|e| e.name == Some("SeRemoteShutdown")));
     }
@@ -316,10 +288,9 @@ mod tests {
         }
     }
 
-    /// The privileges the ABI header names that `Privileges` has no constant
-    /// for yet (PEI-186) are still nameable here.
+    /// Keep the names that previously needed a fallback table (PEI-186).
     #[test]
-    fn the_privileges_peios_rs_cannot_name_are_still_in_the_table() {
+    fn formerly_missing_sdk_privileges_remain_nameable() {
         assert_eq!(name_for_bit(9), Some("SeTakeOwnership"));
         assert_eq!(name_for_bit(11), Some("SeSystemProfile"));
         assert_eq!(name_for_bit(32), Some("SeRelabel"));

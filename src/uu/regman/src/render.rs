@@ -31,12 +31,19 @@ pub fn exact(hits: &[Hit], width: usize, style: Style) -> String {
 /// `query_canonical` is the path the user asked about, used to derive value
 /// names when no key-level doc supplies the canonical key path.
 pub fn key(hits: &[Hit], query_canonical: &str, width: usize, style: Style) -> String {
-    let key_docs: Vec<&Hit> = hits.iter().filter(|h| h.record.kind() == Kind::Key).collect();
-    let value_docs: Vec<&Hit> = hits.iter().filter(|h| h.record.kind() == Kind::Value).collect();
+    let key_docs: Vec<&Hit> = hits
+        .iter()
+        .filter(|h| h.record.kind() == Kind::Key)
+        .collect();
+    let value_docs: Vec<&Hit> = hits
+        .iter()
+        .filter(|h| h.record.kind() == Kind::Value)
+        .collect();
 
-    let key_canonical = key_docs
-        .first()
-        .map_or_else(|| query_canonical.to_string(), |h| h.record.canonical.clone());
+    let key_canonical = key_docs.first().map_or_else(
+        || query_canonical.to_string(),
+        |h| h.record.canonical.clone(),
+    );
 
     let mut s = String::new();
 
@@ -44,10 +51,18 @@ pub fn key(hits: &[Hit], query_canonical: &str, width: usize, style: Style) -> S
         s.push_str(&format!("documented by {} packages:\n\n", key_docs.len()));
     }
     if let Some(h) = key_docs.first() {
-        s.push_str(&identity_line(&h.record.canonical, &h.provider, width, style));
+        s.push_str(&identity_line(
+            &h.record.canonical,
+            &h.provider,
+            width,
+            style,
+        ));
         s.push('\n');
         if let Some(dep) = &h.record.deprecated {
-            s.push_str(&format!("\n{}\n", style.warn(&format!("DEPRECATED: {dep}"))));
+            s.push_str(&format!(
+                "\n{}\n",
+                style.warn(&format!("DEPRECATED: {dep}"))
+            ));
         }
         let body = markdown::render(&h.record.body, width, style);
         if !body.is_empty() {
@@ -103,7 +118,10 @@ pub fn apropos(hits: &[Hit], width: usize, style: Style) -> String {
 fn value_card(rec: &Record, provider: &str, width: usize, style: Style) -> String {
     let mut s = String::new();
     if let Some(dep) = &rec.deprecated {
-        s.push_str(&format!("{}\n\n", style.warn(&format!("DEPRECATED: {dep}"))));
+        s.push_str(&format!(
+            "{}\n\n",
+            style.warn(&format!("DEPRECATED: {dep}"))
+        ));
     }
     s.push_str(&identity_line(&rec.canonical, provider, width, style));
     s.push('\n');
@@ -127,7 +145,12 @@ fn value_card(rec: &Record, provider: &str, width: usize, style: Style) -> Strin
 fn identity_line(canonical: &str, provider: &str, width: usize, style: Style) -> String {
     let right = format!("documented by {provider}");
     let pad = width.saturating_sub(canonical.len() + right.len()).max(2);
-    format!("{}{}{}", style.bold(canonical), " ".repeat(pad), style.dim(&right))
+    format!(
+        "{}{}{}",
+        style.bold(canonical),
+        " ".repeat(pad),
+        style.dim(&right)
+    )
 }
 
 fn field_block(rec: &Record, style: Style) -> String {
@@ -246,7 +269,12 @@ KMES configuration subtree.
 
     #[test]
     fn key_view_lists_values_with_summaries() {
-        let out = key(&[hit(KEYDOC), hit(VALUE)], "Machine\\System\\KMES", 78, plain());
+        let out = key(
+            &[hit(KEYDOC), hit(VALUE)],
+            "Machine\\System\\KMES",
+            78,
+            plain(),
+        );
         assert!(out.contains("KMES configuration subtree."));
         assert!(out.contains("Values"));
         assert!(out.contains("BufferCapacity"));
@@ -263,7 +291,10 @@ KMES configuration subtree.
     #[test]
     fn value_card_has_single_blank_line_before_body() {
         let out = exact(&[hit(VALUE)], 78, plain());
-        assert!(!out.contains("\n\n\n"), "card had a double blank line:\n{out}");
+        assert!(
+            !out.contains("\n\n\n"),
+            "card had a double blank line:\n{out}"
+        );
     }
 
     #[test]

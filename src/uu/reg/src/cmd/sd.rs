@@ -2,13 +2,15 @@
 //
 // Reuses the same SDDL codec as the `sd` tool, so output is consistent.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, OpenFlags, SecInfo};
+use peios::security::sddl;
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags, SecInfo};
-use peios::security::sddl;
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -33,8 +35,8 @@ pub fn run(m: &ArgMatches) -> Result<()> {
     let key = cmd::open(&path, access, OpenFlags::empty(), &set)?;
 
     if let Some(sddl_text) = setting {
-        let desc = sddl::parse(sddl_text)
-            .map_err(|e| Error::from_peios("parse SDDL", sddl_text, e))?;
+        let desc =
+            sddl::parse(sddl_text).map_err(|e| Error::from_peios("parse SDDL", sddl_text, e))?;
         key.set_security(scope, &desc, None)
             .map_err(|e| Error::from_peios("set security", &target, e))?;
         cmd::report(
@@ -48,10 +50,14 @@ pub fn run(m: &ArgMatches) -> Result<()> {
     let desc = key
         .get_security(scope)
         .map_err(|e| Error::from_peios("get security", &target, e))?;
-    let text = sddl::format(desc.as_bytes())
-        .map_err(|e| Error::from_peios("format SDDL", &target, e))?;
+    let text =
+        sddl::format(desc.as_bytes()).map_err(|e| Error::from_peios("format SDDL", &target, e))?;
     if set.json {
-        println!("{}", serde_json::to_string_pretty(&json!({ "key": target, "sddl": text })).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "key": target, "sddl": text }))
+                .unwrap_or_default()
+        );
     } else {
         println!("{text}");
     }

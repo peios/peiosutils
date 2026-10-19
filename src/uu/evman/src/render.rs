@@ -22,10 +22,14 @@ pub fn event(cat: &Catalogue, entry: &Entry, width: usize, style: Style) -> Stri
     let mut s = identity_line(entry.name(), &entry.fragment, width, style);
     s.push('\n');
 
-    let rows: Vec<(&str, String)> = [("Tier", "tier"), ("Gating", "gating"), ("Cardinality", "cardinality")]
-        .into_iter()
-        .filter_map(|(label, key)| rec.value(key).map(|v| (label, v.to_string())))
-        .collect();
+    let rows: Vec<(&str, String)> = [
+        ("Tier", "tier"),
+        ("Gating", "gating"),
+        ("Cardinality", "cardinality"),
+    ]
+    .into_iter()
+    .filter_map(|(label, key)| rec.value(key).map(|v| (label, v.to_string())))
+    .collect();
     push_block(&mut s, &rows, width, style);
     push_body(&mut s, &rec.body(), width, style);
 
@@ -40,7 +44,9 @@ pub fn event(cat: &Catalogue, entry: &Entry, width: usize, style: Style) -> Stri
         .iter()
         .flat_map(|l| {
             let members = match (l.kind, cat.group(&l.name)) {
-                (LineKind::Include, Some(g)) => g.record.includes.iter().map(|(m, _)| m.len() + 2).collect(),
+                (LineKind::Include, Some(g)) => {
+                    g.record.includes.iter().map(|(m, _)| m.len() + 2).collect()
+                }
                 _ => Vec::new(),
             };
             members.into_iter().chain([l.name.len()])
@@ -57,7 +63,10 @@ pub fn event(cat: &Catalogue, entry: &Entry, width: usize, style: Style) -> Stri
                     None => "group, undefined".to_string(),
                 };
                 let presence = join_nonempty(&line.presence, &style.dim(&label));
-                s.push_str(&format!("  {}  {presence}\n", style.bold(&pad(&line.name, col))));
+                s.push_str(&format!(
+                    "  {}  {presence}\n",
+                    style.bold(&pad(&line.name, col))
+                ));
                 if let Some(g) = group {
                     for (member, _) in &g.record.includes {
                         s.push_str(&format!("    {}\n", pad(member, col - 2).trim_end()));
@@ -69,7 +78,10 @@ pub fn event(cat: &Catalogue, entry: &Entry, width: usize, style: Style) -> Stri
                 if cat.resolve(&line.name).is_none() {
                     presence = join_nonempty(&presence, &style.dim("undefined"));
                 }
-                s.push_str(&format!("  {}  {presence}\n", style.bold(&pad(&line.name, col))));
+                s.push_str(&format!(
+                    "  {}  {presence}\n",
+                    style.bold(&pad(&line.name, col))
+                ));
                 push_line_detail(&mut s, line, width, style);
             }
         }
@@ -79,7 +91,13 @@ pub fn event(cat: &Catalogue, entry: &Entry, width: usize, style: Style) -> Stri
 
 /// A field's card: identity, headers, prose, then the event types that carry
 /// it. `note` heads the card when the name asked for was not the field's own.
-pub fn field(cat: &Catalogue, entry: &Entry, note: Option<&str>, width: usize, style: Style) -> String {
+pub fn field(
+    cat: &Catalogue,
+    entry: &Entry,
+    note: Option<&str>,
+    width: usize,
+    style: Style,
+) -> String {
     let rec = &entry.record;
     let mut s = String::new();
     push_note(&mut s, note, width, style);
@@ -93,7 +111,10 @@ pub fn field(cat: &Catalogue, entry: &Entry, note: Option<&str>, width: usize, s
     match rec.value("values") {
         Some(v) => rows.push(("Values", v.to_string())),
         None if ENUMS.contains(&rec.base_type()) => {
-            rows.push(("Values", "declared by each event that carries it".to_string()));
+            rows.push((
+                "Values",
+                "declared by each event that carries it".to_string(),
+            ));
         }
         None => {}
     }
@@ -119,7 +140,11 @@ pub fn field(cat: &Catalogue, entry: &Entry, note: Option<&str>, width: usize, s
         s.push_str(&format!("  {}\n", style.dim("no event type")));
         return s;
     }
-    let col = carriers.iter().map(|c| c.event.name().len()).max().unwrap_or(0);
+    let col = carriers
+        .iter()
+        .map(|c| c.event.name().len())
+        .max()
+        .unwrap_or(0);
     for c in &carriers {
         let mut how = c.presence.clone();
         if let Some(group) = &c.via {
@@ -128,19 +153,33 @@ pub fn field(cat: &Catalogue, entry: &Entry, note: Option<&str>, width: usize, s
         if let Some(variant) = &c.variant {
             how = join_nonempty(&how, &style.dim(&format!("(as {variant})")));
         }
-        s.push_str(&format!("  {}  {how}\n", style.bold(&pad(c.event.name(), col))));
+        s.push_str(&format!(
+            "  {}  {how}\n",
+            style.bold(&pad(c.event.name(), col))
+        ));
     }
     s
 }
 
 /// What lies beneath a prefix: a group of that name, if there is one, then
 /// the fields and the event types beneath it, one summary line each.
-pub fn index(cat: &Catalogue, index: &Index, note: Option<&str>, width: usize, style: Style) -> String {
+pub fn index(
+    cat: &Catalogue,
+    index: &Index,
+    note: Option<&str>,
+    width: usize,
+    style: Style,
+) -> String {
     let mut s = String::new();
     push_note(&mut s, note, width, style);
 
     if let Some(g) = index.group {
-        s.push_str(&identity_line(&format!("{} (group)", g.name()), &g.fragment, width, style));
+        s.push_str(&identity_line(
+            &format!("{} (group)", g.name()),
+            &g.fragment,
+            width,
+            style,
+        ));
         s.push('\n');
         push_body(&mut s, &g.record.body(), width, style);
         let members: Vec<(&str, String)> = g
@@ -159,12 +198,21 @@ pub fn index(cat: &Catalogue, index: &Index, note: Option<&str>, width: usize, s
     }
 
     push_list(&mut s, "Fields", &summarise(&index.fields), width, style);
-    push_list(&mut s, "Event types", &summarise(&index.events), width, style);
+    push_list(
+        &mut s,
+        "Event types",
+        &summarise(&index.events),
+        width,
+        style,
+    );
     s
 }
 
 fn summarise<'a>(entries: &[&'a Entry]) -> Vec<(&'a str, String)> {
-    entries.iter().map(|e| (e.name(), e.record.summary())).collect()
+    entries
+        .iter()
+        .map(|e| (e.name(), e.record.summary()))
+        .collect()
 }
 
 /// Render apropos (`-k`) results: one line per match, `name  summary`, the
@@ -189,7 +237,12 @@ pub fn apropos(hits: &[&Entry], width: usize, style: Style) -> String {
 fn identity_line(name: &str, fragment: &str, width: usize, style: Style) -> String {
     let right = format!("defined by {fragment}");
     let pad = width.saturating_sub(name.len() + right.len()).max(2);
-    format!("{}{}{}", style.bold(name), " ".repeat(pad), style.dim(&right))
+    format!(
+        "{}{}{}",
+        style.bold(name),
+        " ".repeat(pad),
+        style.dim(&right)
+    )
 }
 
 /// A note above a card saying how the name asked for led to it.
@@ -260,7 +313,10 @@ fn push_line_detail(s: &mut String, line: &FieldLine, width: usize, style: Style
     }
     let w = rows.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
     for (label, value) in &rows {
-        for (i, text) in wrap_words(value, inner.saturating_sub(w + 2)).iter().enumerate() {
+        for (i, text) in wrap_words(value, inner.saturating_sub(w + 2))
+            .iter()
+            .enumerate()
+        {
             let label = if i == 0 { pad(label, w) } else { " ".repeat(w) };
             s.push_str(&format!("{INDENT}{}  {text}\n", style.dim(&label)));
         }
@@ -413,7 +469,12 @@ field: policy.generation-previous  optional
     #[test]
     fn event_card_has_headers_prose_and_fields() {
         let cat = catalogue();
-        let out = event(&cat, cat.event("kacs.audit.handle.used").unwrap(), 78, plain());
+        let out = event(
+            &cat,
+            cat.event("kacs.audit.handle.used").unwrap(),
+            78,
+            plain(),
+        );
         assert!(out.starts_with("kacs.audit.handle.used"));
         assert!(out.lines().next().unwrap().ends_with("defined by kacs"));
         assert!(out.contains("  Tier         standard"));
@@ -427,9 +488,17 @@ field: policy.generation-previous  optional
     #[test]
     fn event_card_expands_groups_and_shows_detail() {
         let cat = catalogue();
-        let out = event(&cat, cat.event("kacs.audit.handle.used").unwrap(), 78, plain());
+        let out = event(
+            &cat,
+            cat.event("kacs.audit.handle.used").unwrap(),
+            78,
+            plain(),
+        );
         let lines: Vec<&str> = out.lines().collect();
-        let at = lines.iter().position(|l| l.starts_with("  subject ")).unwrap();
+        let at = lines
+            .iter()
+            .position(|l| l.starts_with("  subject "))
+            .unwrap();
         assert!(lines[at].ends_with("group, from kernel"));
         assert_eq!(lines[at + 1].trim(), "subject.token.sid");
         assert!(lines[at + 1].starts_with("    "));
@@ -437,13 +506,22 @@ field: policy.generation-previous  optional
         assert!(out.contains("      Values  file.access | file.mmap"));
         assert!(out.contains("      Closed  false"));
         assert!(out.contains("      What the handle was opened with."));
-        assert!(out.lines().any(|l| l.starts_with("  object.kind") && l.ends_with("required")));
+        assert!(
+            out.lines()
+                .any(|l| l.starts_with("  object.kind") && l.ends_with("required"))
+        );
     }
 
     #[test]
     fn field_card_has_headers_and_carriers() {
         let cat = catalogue();
-        let out = field(&cat, cat.field("subject.token.sid").unwrap(), None, 78, plain());
+        let out = field(
+            &cat,
+            cat.field("subject.token.sid").unwrap(),
+            None,
+            78,
+            plain(),
+        );
         assert!(out.starts_with("subject.token.sid"));
         assert!(out.contains("  Type  bin.sid"));
         assert!(out.contains("The user SID of the effective token."));
@@ -454,7 +532,13 @@ field: policy.generation-previous  optional
     #[test]
     fn field_card_for_an_open_enumeration() {
         let cat = catalogue();
-        let out = field(&cat, cat.field("operation.name").unwrap(), None, 78, plain());
+        let out = field(
+            &cat,
+            cat.field("operation.name").unwrap(),
+            None,
+            78,
+            plain(),
+        );
         assert!(out.contains("  Values  declared by each event that carries it"));
         let out = field(&cat, cat.field("object.kind").unwrap(), None, 78, plain());
         assert!(out.contains("  Values  file | process"));
@@ -472,7 +556,8 @@ field: policy.generation-previous  optional
     #[test]
     fn variant_card_carries_its_note() {
         let cat = catalogue();
-        let Some(Lookup::Variant { field: f, .. }) = cat.lookup("policy.generation-previous") else {
+        let Some(Lookup::Variant { field: f, .. }) = cat.lookup("policy.generation-previous")
+        else {
             panic!("a variant");
         };
         let out = field(&cat, f, Some("a note"), 78, plain());
@@ -508,7 +593,10 @@ field: policy.generation-previous  optional
         let cat = catalogue();
         let hits = cat.apropos(&["handle".to_string()]);
         let out = apropos(&hits, 100, plain());
-        assert_eq!(out, "kacs.audit.handle.used  The record of what was done with a handle.\n");
+        assert_eq!(
+            out,
+            "kacs.audit.handle.used  The record of what was done with a handle.\n"
+        );
     }
 
     #[test]

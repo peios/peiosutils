@@ -77,7 +77,10 @@ mod tests {
     #[test]
     fn normalize_slashes_and_trailing() {
         assert_eq!(normalize("Machine/System/KMES"), "Machine\\System\\KMES");
-        assert_eq!(normalize("Machine\\System\\KMES\\"), "Machine\\System\\KMES");
+        assert_eq!(
+            normalize("Machine\\System\\KMES\\"),
+            "Machine\\System\\KMES"
+        );
         assert_eq!(normalize("Machine\\System\\KMES"), "Machine\\System\\KMES");
     }
 }

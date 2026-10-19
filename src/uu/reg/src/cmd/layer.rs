@@ -5,13 +5,15 @@
 // `peios::registry::layers` reads and writes: a `Precedence` (DWORD), an
 // `Enabled` (DWORD 0/1), and an informational `Owner` (a binary SID).
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::layers::{self, LAYERS};
+use peios::security::Sid;
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::layers::{self, LAYERS};
-use peios::security::Sid;
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let (name, sub) = m
@@ -43,7 +45,10 @@ fn ls(m: &ArgMatches) -> Result<()> {
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&json!({ "layers": arr })).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "layers": arr })).unwrap_or_default()
+        );
     } else {
         for l in &rows {
             println!(
@@ -51,8 +56,15 @@ fn ls(m: &ArgMatches) -> Result<()> {
                 l.name,
                 l.precedence,
                 if l.enabled { "enabled " } else { "disabled" },
-                l.owner.as_ref().map(|s| format!("  owner={s}")).unwrap_or_default(),
-                if l.malformed { "  (malformed metadata)" } else { "" },
+                l.owner
+                    .as_ref()
+                    .map(|s| format!("  owner={s}"))
+                    .unwrap_or_default(),
+                if l.malformed {
+                    "  (malformed metadata)"
+                } else {
+                    ""
+                },
             );
         }
     }
@@ -66,15 +78,19 @@ fn new(m: &ArgMatches) -> Result<()> {
     let enabled = !m.get_flag("disabled");
     let owner = m.get_one::<String>("owner").map(|o| sid(o)).transpose()?;
 
-    layers::create(name, precedence, enabled).map_err(|e| Error::from_peios("create layer", name, e))?;
+    layers::create(name, precedence, enabled)
+        .map_err(|e| Error::from_peios("create layer", name, e))?;
     if let Some(owner) = owner {
-        layers::set_owner(name, &owner).map_err(|e| Error::from_peios("write layer metadata", name, e))?;
+        layers::set_owner(name, &owner)
+            .map_err(|e| Error::from_peios("write layer metadata", name, e))?;
     }
     cmd::report(
         &set,
         json!({ "layer": name, "precedence": precedence, "enabled": enabled }),
-        &format!("created layer {name} (precedence {precedence}, {})",
-                 if enabled { "enabled" } else { "disabled" }),
+        &format!(
+            "created layer {name} (precedence {precedence}, {})",
+            if enabled { "enabled" } else { "disabled" }
+        ),
     );
     Ok(())
 }
@@ -96,7 +112,11 @@ fn set(m: &ArgMatches) -> Result<()> {
     if let Some(o) = m.get_one::<String>("owner") {
         layers::set_owner(name, &sid(o)?).map_err(failed)?;
     }
-    cmd::report(&set, json!({ "layer": name, "updated": true }), &format!("updated layer {name}"));
+    cmd::report(
+        &set,
+        json!({ "layer": name, "updated": true }),
+        &format!("updated layer {name}"),
+    );
     Ok(())
 }
 
@@ -107,11 +127,16 @@ fn del(m: &ArgMatches) -> Result<()> {
         return Err(Error::Usage("aborted".into()));
     }
     layers::delete(name).map_err(|e| Error::from_peios("delete layer", name, e))?;
-    cmd::report(&set, json!({ "layer": name, "deleted": true }), &format!("deleted layer {name}"));
+    cmd::report(
+        &set,
+        json!({ "layer": name, "deleted": true }),
+        &format!("deleted layer {name}"),
+    );
     Ok(())
 }
 
 /// The owner as a SID, which the registry keeps in binary.
 fn sid(text: &str) -> Result<Sid> {
-    text.parse().map_err(|_| Error::InvalidSpec(format!("{text:?}: not a SID")))
+    text.parse()
+        .map_err(|_| Error::InvalidSpec(format!("{text:?}: not a SID")))
 }

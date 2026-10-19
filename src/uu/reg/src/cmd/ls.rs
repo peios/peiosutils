@@ -1,14 +1,16 @@
 // `reg ls <key>` — one-level listing of subkeys and values.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{Key, KeyAccess, OpenFlags};
+
 use crate::addr::display_value_name;
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::literal;
 use crate::render::{CmdOutput, Lines};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{Key, KeyAccess, OpenFlags};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;

@@ -22,7 +22,7 @@ doctest = false
 clap = { workspace = true }
 uucore = { workspace = true }
 # Reading the catalogue, which other programs take too.
-libevman = { path = "libevman" }
+event-catalogue = { path = "../../../crates/event-catalogue" }
 
 [[bin]]
 name = "evman"

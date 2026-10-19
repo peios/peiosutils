@@ -50,12 +50,17 @@ mod tests {
         let m = build()
             .try_get_matches_from(["evman", "kacs.audit.access.checked"])
             .unwrap();
-        assert_eq!(m.get_one::<String>("name").unwrap(), "kacs.audit.access.checked");
+        assert_eq!(
+            m.get_one::<String>("name").unwrap(),
+            "kacs.audit.access.checked"
+        );
     }
 
     #[test]
     fn parses_apropos_terms() {
-        let m = build().try_get_matches_from(["evman", "-k", "token", "sid"]).unwrap();
+        let m = build()
+            .try_get_matches_from(["evman", "-k", "token", "sid"])
+            .unwrap();
         let terms: Vec<_> = m.get_many::<String>("apropos").unwrap().collect();
         assert_eq!(terms, ["token", "sid"]);
     }

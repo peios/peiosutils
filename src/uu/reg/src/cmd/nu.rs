@@ -1,12 +1,14 @@
 // `reg new <key>` — create a key.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{CreateFlags, Disposition, Key, KeyAccess};
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{CreateFlags, Disposition, Key, KeyAccess};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -36,9 +38,8 @@ pub fn run(m: &ArgMatches) -> Result<()> {
     let mut lines = Lines::new();
     if !set.quiet {
         lines.plain(format!(
-            "{} {}   (layer: {})",
+            "{} {target}   (layer: {})",
             if created { "created" } else { "exists" },
-            target,
             set.layer_label()
         ));
     }

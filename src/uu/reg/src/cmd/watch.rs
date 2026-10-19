@@ -6,13 +6,16 @@
 // is out of this tool's scope), so an event faithfully means "something under
 // the filter changed — re-read", which is the contract watchers rely on.
 
+use std::os::fd::AsRawFd;
+
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, NotifyFilter, OpenFlags};
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, NotifyFilter, OpenFlags};
-use serde_json::json;
-use std::os::fd::AsRawFd;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -57,7 +60,10 @@ pub fn run(m: &ArgMatches) -> Result<()> {
 
         seen += 1;
         if set.json {
-            println!("{}", json!({ "event": "changed", "key": target, "seq": seen }));
+            println!(
+                "{}",
+                json!({ "event": "changed", "key": target, "seq": seen })
+            );
         } else {
             println!("changed: {target}");
         }

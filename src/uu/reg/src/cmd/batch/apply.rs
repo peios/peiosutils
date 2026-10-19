@@ -1,12 +1,14 @@
 // `reg apply <file>` — apply a batch of operations in one transaction.
 
+use std::io::Read;
+
+use clap::ArgMatches;
+
 use super::Document;
 use crate::addr::KeyPath;
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use std::io::Read;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -65,7 +67,9 @@ fn run_dir(dir: &str, once_delete: bool, set: &Settings) -> Result<()> {
         &format!("applied {applied_files} file(s), {applied_keys} key(s); {failed} failed"),
     );
     if failed > 0 {
-        return Err(Error::Usage(format!("{failed} batch file(s) failed to apply")));
+        return Err(Error::Usage(format!(
+            "{failed} batch file(s) failed to apply"
+        )));
     }
     Ok(())
 }
@@ -91,7 +95,7 @@ fn list_batch_files(dir: &str) -> Result<Vec<std::path::PathBuf>> {
             errno: e.raw_os_error().unwrap_or(5),
             detail: Some(dir.to_string()),
         })?;
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
             continue;
         }
         files.push(entry.path());
@@ -114,8 +118,8 @@ fn apply_file(file: &str, once_delete: bool, set: &Settings) -> Result<usize> {
         ));
     }
 
-    let doc: Document = serde_json::from_str(&text)
-        .map_err(|e| Error::InvalidSpec(format!("batch JSON: {e}")))?;
+    let doc: Document =
+        serde_json::from_str(&text).map_err(|e| Error::InvalidSpec(format!("batch JSON: {e}")))?;
     let applied = apply_doc(&doc, set)?;
 
     if once_delete && file != "-" {
@@ -131,11 +135,13 @@ fn apply_file(file: &str, once_delete: bool, set: &Settings) -> Result<usize> {
 fn read_input(file: &str) -> Result<String> {
     if file == "-" {
         let mut s = String::new();
-        std::io::stdin().read_to_string(&mut s).map_err(|e| Error::Syscall {
-            op: "read stdin",
-            errno: e.raw_os_error().unwrap_or(5),
-            detail: None,
-        })?;
+        std::io::stdin()
+            .read_to_string(&mut s)
+            .map_err(|e| Error::Syscall {
+                op: "read stdin",
+                errno: e.raw_os_error().unwrap_or(5),
+                detail: None,
+            })?;
         Ok(s)
     } else {
         std::fs::read_to_string(file).map_err(|e| Error::Syscall {
@@ -155,5 +161,5 @@ fn apply_doc(doc: &Document, set: &Settings) -> Result<usize> {
     for entry in &doc.keys {
         KeyPath::parse(&entry.path)?;
     }
-    Ok(libreg::apply(doc, set.layer_arg())?)
+    Ok(registry_docs::apply(doc, set.layer_arg())?)
 }

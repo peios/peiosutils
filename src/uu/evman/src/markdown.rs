@@ -1,7 +1,7 @@
 // A small Markdown-to-terminal renderer for fragment bodies.
 //
 // Copied from regman (src/uu/regman/src/markdown.rs). It lives in the
-// regman applet rather than in libregman, and evman depends on no applet, so a
+// regman applet rather than in registry_manual, and evman depends on no applet, so a
 // change made to one copy wants making to the other.
 //
 // Fragment prose is simple — paragraphs, the odd heading, bullet lists, and
@@ -354,7 +354,10 @@ mod tests {
         let out = render("one two three four five six", 12, Style::plain());
         assert!(out.lines().all(|l| l.chars().count() <= 12));
         // Round-trips the words in order.
-        assert_eq!(out.split_whitespace().collect::<Vec<_>>(), ["one","two","three","four","five","six"]);
+        assert_eq!(
+            out.split_whitespace().collect::<Vec<_>>(),
+            ["one", "two", "three", "four", "five", "six"]
+        );
     }
 
     #[test]
@@ -377,7 +380,10 @@ mod tests {
     fn an_unmatched_delimiter_stays_literal() {
         for (input, want) in [
             ("2 ** 3 and more after it", "2 ** 3 and more after it"),
-            ("an unclosed ` and more after it", "an unclosed ` and more after it"),
+            (
+                "an unclosed ` and more after it",
+                "an unclosed ` and more after it",
+            ),
             ("a lone * and more after it", "a lone * and more after it"),
         ] {
             assert_eq!(render(input, 80, Style::plain()), want, "input: {input}");
@@ -406,7 +412,10 @@ mod tests {
         let out = render("**bold with `code` inside**", 80, Style::new(true));
         assert!(out.contains("\x1b[1m"), "bold applied: {out:?}");
         assert!(out.contains("\x1b[36m"), "code applied inside it: {out:?}");
-        assert_eq!(render("**bold with `code` inside**", 80, Style::plain()), "bold with code inside");
+        assert_eq!(
+            render("**bold with `code` inside**", 80, Style::plain()),
+            "bold with code inside"
+        );
     }
 
     /// Emphasis may hold other markup, and markers still come off cleanly.
@@ -453,7 +462,10 @@ mod tests {
             72,
             Style::plain(),
         );
-        assert!(!out.contains('*'), "span must close across the lines: {out:?}");
+        assert!(
+            !out.contains('*'),
+            "span must close across the lines: {out:?}"
+        );
         for (i, l) in out.lines().enumerate() {
             assert!(
                 l.starts_with(if i == 0 { "  - " } else { "    " }),
@@ -464,7 +476,11 @@ mod tests {
 
     #[test]
     fn bullet_hanging_indent() {
-        let out = render("- a fairly long bullet that needs to wrap onto another line here", 24, Style::plain());
+        let out = render(
+            "- a fairly long bullet that needs to wrap onto another line here",
+            24,
+            Style::plain(),
+        );
         let lines: Vec<&str> = out.lines().collect();
         assert!(lines[0].starts_with("  - "));
         assert!(lines[1].starts_with("    ")); // continuation indented under text

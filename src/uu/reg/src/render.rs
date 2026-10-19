@@ -54,7 +54,7 @@ impl Lines {
         for line in &self.0 {
             match line {
                 Line::Section(s) => println!("\n[{s}]"),
-                Line::Kv(k, v) => println!("  {k:<width$}  {v}", width = max_key),
+                Line::Kv(k, v) => println!("  {k:<max_key$}  {v}"),
                 Line::Plain(s) => println!("{s}"),
                 Line::Detail(s) => println!("      {s}"),
                 Line::Blank => println!(),

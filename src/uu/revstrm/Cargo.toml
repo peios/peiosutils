@@ -29,9 +29,9 @@ glob = { workspace = true }
 libc = { workspace = true }
 # The event catalogue, read for the declared type of each payload field. A
 # library with no command line, so revstrm does not depend on the evman applet.
-libevman = { path = "../evman/libevman" }
+event-catalogue = { path = "../../../crates/event-catalogue" }
 # Peios-native dependency: not coreutils, not tracked against upstream.
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "f8c84930f2b71763bcf0550df0b1420a0f63b21e" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "26ac6968cec4cb7f887198aa3fb9268096660831" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

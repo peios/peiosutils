@@ -119,6 +119,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "auth-abi"
+version = "0.0.24"
+source = "git+https://github.com/peios/authd.git?rev=a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa#a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa"
+
+[[package]]
+name = "auth-core"
+version = "0.0.24"
+source = "git+https://github.com/peios/authd.git?rev=a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa#a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -863,6 +876,14 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "event-catalogue"
+version = "0.8.18"
+dependencies = [
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1654,22 +1675,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
-name = "libauthd"
-version = "0.0.23"
-source = "git+https://github.com/peios/authd.git?rev=650bc4ac31bae0f917254f02c8e64f08ee3bbec5#650bc4ac31bae0f917254f02c8e64f08ee3bbec5"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "libauthd-client"
-version = "0.0.23"
-source = "git+https://github.com/peios/authd.git?rev=650bc4ac31bae0f917254f02c8e64f08ee3bbec5#650bc4ac31bae0f917254f02c8e64f08ee3bbec5"
-dependencies = [
- "libauthd",
-]
-
-[[package]]
 name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1679,8 +1684,9 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 name = "libevman"
 version = "0.8.18"
 dependencies = [
- "tempfile",
- "thiserror 2.0.18",
+ "event-catalogue",
+ "libc",
+ "utility-ffi",
 ]
 
 [[package]]
@@ -1715,28 +1721,19 @@ dependencies = [
 name = "libreg"
 version = "0.8.18"
 dependencies = [
- "peios",
- "serde",
+ "libc",
+ "registry-docs",
  "serde_json",
+ "utility-ffi",
 ]
 
 [[package]]
 name = "libregman"
 version = "0.8.18"
 dependencies = [
- "memchr",
- "memmap2",
- "tempfile",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "libtty"
-version = "0.0.23"
-source = "git+https://github.com/peios/authd.git?rev=650bc4ac31bae0f917254f02c8e64f08ee3bbec5#650bc4ac31bae0f917254f02c8e64f08ee3bbec5"
-dependencies = [
- "libauthd",
  "libc",
+ "registry-manual",
+ "utility-ffi",
 ]
 
 [[package]]
@@ -2115,7 +2112,7 @@ dependencies = [
 [[package]]
 name = "peios"
 version = "0.4.0"
-source = "git+https://github.com/peios/peios-rs.git?rev=f8c84930f2b71763bcf0550df0b1420a0f63b21e#f8c84930f2b71763bcf0550df0b1420a0f63b21e"
+source = "git+https://github.com/peios/peios-rs.git?rev=26ac6968cec4cb7f887198aa3fb9268096660831#26ac6968cec4cb7f887198aa3fb9268096660831"
 dependencies = [
  "bitflags",
  "libc",
@@ -2123,9 +2120,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "peios-auth"
+version = "0.0.24"
+source = "git+https://github.com/peios/authd.git?rev=a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa#a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa"
+dependencies = [
+ "auth-abi",
+]
+
+[[package]]
+name = "peios-evman"
+version = "0.8.18"
+dependencies = [
+ "utility-client",
+ "utility-ffi",
+]
+
+[[package]]
+name = "peios-reg"
+version = "0.8.18"
+dependencies = [
+ "utility-client",
+ "utility-ffi",
+]
+
+[[package]]
+name = "peios-regman"
+version = "0.8.18"
+dependencies = [
+ "utility-client",
+ "utility-ffi",
+]
+
+[[package]]
 name = "peios-sys"
 version = "0.3.0"
-source = "git+https://github.com/peios/peios-rs.git?rev=f8c84930f2b71763bcf0550df0b1420a0f63b21e#f8c84930f2b71763bcf0550df0b1420a0f63b21e"
+source = "git+https://github.com/peios/peios-rs.git?rev=26ac6968cec4cb7f887198aa3fb9268096660831#26ac6968cec4cb7f887198aa3fb9268096660831"
 dependencies = [
  "bindgen 0.70.1",
  "pkg-config",
@@ -2282,6 +2311,7 @@ dependencies = [
  "rustc-hash 2.1.2",
  "rustix",
  "selinux",
+ "serde_json",
  "sha1",
  "tempfile",
  "textwrap",
@@ -2292,6 +2322,13 @@ dependencies = [
  "uutests",
  "walkdir",
  "zip",
+]
+
+[[package]]
+name = "peiosutils-build-features"
+version = "0.0.0"
+dependencies = [
+ "peiosutils",
 ]
 
 [[package]]
@@ -2728,7 +2765,7 @@ name = "pu_evman"
 version = "0.8.18"
 dependencies = [
  "clap",
- "libevman",
+ "event-catalogue",
  "uucore",
 ]
 
@@ -2938,11 +2975,12 @@ dependencies = [
 name = "pu_logonse"
 version = "0.8.18"
 dependencies = [
+ "auth-core",
  "clap",
  "jiff",
- "libauthd-client",
  "libc",
  "peios",
+ "peios-auth",
  "serde",
  "serde_json",
  "tempfile",
@@ -3191,10 +3229,12 @@ dependencies = [
 name = "pu_passwd"
 version = "0.8.18"
 dependencies = [
+ "auth-core",
  "clap",
- "libauthd",
- "libauthd-client",
- "libtty",
+ "libc",
+ "peios-auth",
+ "tempfile",
+ "terminal-input",
  "uucore",
 ]
 
@@ -3301,9 +3341,9 @@ version = "0.8.18"
 dependencies = [
  "clap",
  "libc",
- "libreg",
  "peios",
  "peios-sys",
+ "registry-docs",
  "serde",
  "serde_json",
  "tempfile",
@@ -3316,8 +3356,8 @@ name = "pu_regman"
 version = "0.8.18"
 dependencies = [
  "clap",
- "libregman",
  "notify",
+ "registry-manual",
  "uucore",
 ]
 
@@ -3326,10 +3366,10 @@ name = "pu_revstrm"
 version = "0.8.18"
 dependencies = [
  "clap",
+ "event-catalogue",
  "fluent",
  "glob",
  "libc",
- "libevman",
  "peios",
  "tempfile",
  "uucore",
@@ -4041,6 +4081,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
+name = "registry-docs"
+version = "0.8.18"
+dependencies = [
+ "peios",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "registry-manual"
+version = "0.8.18"
+dependencies = [
+ "memchr",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4455,6 +4513,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "terminal-input"
+version = "0.0.24"
+source = "git+https://github.com/peios/authd.git?rev=a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa#a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa"
+dependencies = [
+ "auth-core",
+ "libc",
+]
+
+[[package]]
 name = "terminal_size"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4740,6 +4807,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "utility-client"
+version = "0.8.18"
+dependencies = [
+ "libc",
+ "utility-ffi",
+]
+
+[[package]]
+name = "utility-ffi"
+version = "0.8.18"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "utmp-classic"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4785,6 +4867,7 @@ dependencies = [
 name = "uucore"
 version = "0.8.18"
 dependencies = [
+ "auth-core",
  "base64-simd",
  "bigdecimal",
  "blake2b_simd",
@@ -4812,8 +4895,6 @@ dependencies = [
  "itertools 0.14.0",
  "jiff",
  "jiff-icu",
- "libauthd",
- "libauthd-client",
  "libc",
  "libloading",
  "md-5",
@@ -4822,6 +4903,7 @@ dependencies = [
  "num-traits",
  "os_display",
  "peios",
+ "peios-auth",
  "procfs",
  "rustc-hash 2.1.2",
  "rustix",

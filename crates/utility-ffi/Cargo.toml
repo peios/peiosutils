@@ -1,0 +1,11 @@
+[package]
+name = "utility-ffi"
+description = "Internal ownership and byte-span helpers for the utility C interfaces."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+libc.workspace = true

@@ -49,34 +49,37 @@ pub enum Error {
 impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Usage(_) => 1,
-            Error::NotFound(_) => 2,
-            Error::Denied { .. } => 3,
-            Error::InvalidSpec(_) => 4,
-            Error::Syscall { .. } => 5,
-            Error::Conflict { .. } => 6,
+            Self::Usage(_) => 1,
+            Self::NotFound(_) => 2,
+            Self::Denied { .. } => 3,
+            Self::InvalidSpec(_) => 4,
+            Self::Syscall { .. } => 5,
+            Self::Conflict { .. } => 6,
         }
     }
 
     /// Classify a `peios::Error` from operation `op` against `target` into the
     /// right exit-code bucket. This is the single funnel every registry call
     /// goes through, so the errno→exit-code policy lives in one place.
-    pub fn from_peios(op: &'static str, target: &str, e: peios::Error) -> Error {
+    pub fn from_peios(op: &'static str, target: &str, e: peios::Error) -> Self {
         let errno = e.raw_os_error().unwrap_or(0);
         match errno {
-            ENOENT => Error::NotFound(target.to_string()),
-            EACCES | EPERM => Error::Denied {
+            ENOENT => Self::NotFound(target.to_string()),
+            EACCES | EPERM => Self::Denied {
                 op,
                 target: target.to_string(),
                 errno,
             },
-            EAGAIN => Error::Conflict {
+            EAGAIN => Self::Conflict {
                 target: target.to_string(),
             },
-            EINVAL | EXDEV | ENAMETOOLONG | ELOOP | EEXIST | ENOTEMPTY => Error::InvalidSpec(
-                format!("{op}: {} ({target})", peios::Error::from_raw_os_error(errno)),
-            ),
-            _ => Error::Syscall {
+            EINVAL | EXDEV | ENAMETOOLONG | ELOOP | EEXIST | ENOTEMPTY => {
+                Self::InvalidSpec(format!(
+                    "{op}: {} ({target})",
+                    peios::Error::from_raw_os_error(errno)
+                ))
+            }
+            _ => Self::Syscall {
                 op,
                 errno: if errno == 0 { EIO } else { errno },
                 detail: Some(target.to_string()),
@@ -88,14 +91,14 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Usage(m) => write!(f, "{m}"),
-            Error::NotFound(m) => write!(f, "not found: {m}"),
-            Error::Denied { op, target, errno } => {
+            Self::Usage(m) => write!(f, "{m}"),
+            Self::NotFound(m) => write!(f, "not found: {m}"),
+            Self::Denied { op, target, errno } => {
                 let e = peios::Error::from_raw_os_error(*errno);
                 write!(f, "{op}: {e}\n  target: {target}")
             }
-            Error::InvalidSpec(m) => write!(f, "invalid spec: {m}"),
-            Error::Syscall { op, errno, detail } => {
+            Self::InvalidSpec(m) => write!(f, "invalid spec: {m}"),
+            Self::Syscall { op, errno, detail } => {
                 let e = peios::Error::from_raw_os_error(*errno);
                 write!(f, "{op}: {e}")?;
                 if let Some(d) = detail {
@@ -103,7 +106,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::Conflict { target } => write!(
+            Self::Conflict { target } => write!(
                 f,
                 "value changed under you (sequence mismatch): {target}\n  \
                  re-read and retry, or drop --expected-seq to force"

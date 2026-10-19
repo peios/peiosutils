@@ -1,0 +1,18 @@
+[package]
+name = "libreg"
+description = "Registry batch documents through the libreg C interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "reg"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+registry-docs = { path = "../registry-docs" }
+utility-ffi = { path = "../utility-ffi" }
+serde_json = "1.0"
+libc.workspace = true

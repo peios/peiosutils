@@ -23,7 +23,7 @@ clap = { workspace = true }
 uucore = { workspace = true }
 notify = { workspace = true }
 # Reading the manual, which other programs take too.
-libregman = { path = "libregman" }
+registry-manual = { path = "../../../crates/registry-manual" }
 
 [[bin]]
 name = "regman"

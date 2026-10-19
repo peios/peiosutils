@@ -1,0 +1,12 @@
+# Resolution anchor for the native Bazel Linux build, not a shipped crate.
+[package]
+name = "peiosutils-build-features"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+peiosutils = { path = "../..", default-features = false, features = ["feat_os_unix", "feat_external_libstdbuf", "uudoc"] }
+
+[lib]
+path = "lib.rs"

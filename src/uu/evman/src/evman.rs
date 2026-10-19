@@ -6,13 +6,14 @@
 // /usr/share/evman and never reads a record.
 //
 // evman is to events what regman is to the registry, and is built the same
-// way: reading and checking the catalogue is libevman's, which programs other
+// way: reading and checking the catalogue is event_catalogue's, which programs other
 // than this take too; this is the command line and the terminal's rendering.
 
 use clap::Command;
+
 use uucore::error::{UResult, USimpleError};
 
-pub use libevman::{catalogue, corpus, error, fragment, lint};
+pub use event_catalogue::{catalogue, corpus, error, fragment, lint};
 
 pub mod cli;
 pub mod cmd;

@@ -2,6 +2,8 @@
 // record's `canonical` field (design §4.5). Authors write only `canonical`;
 // fmt keeps the search anchor in sync.
 
+use std::cmp::Reverse;
+
 use clap::ArgMatches;
 
 use crate::error::{Error, Result};
@@ -43,21 +45,23 @@ pub fn bake(text: &str) -> (String, Vec<ParseIssue>) {
     let mut edits: Vec<(usize, usize, String)> = records
         .iter()
         .map(|r| {
-            let line_end = text[r.fence_offset..]
-                .find('\n')
-                .map_or(text.len(), |i| {
-                    let end = r.fence_offset + i;
-                    // Replace the fence content, preserving its LF or CRLF.
-                    if i > 0 && text.as_bytes()[end - 1] == b'\r' {
-                        end - 1
-                    } else {
-                        end
-                    }
-                });
-            (r.fence_offset, line_end, format!("--- {}", r.expected_anchor()))
+            let line_end = text[r.fence_offset..].find('\n').map_or(text.len(), |i| {
+                let end = r.fence_offset + i;
+                // Replace the fence content, preserving its LF or CRLF.
+                if i > 0 && text.as_bytes()[end - 1] == b'\r' {
+                    end - 1
+                } else {
+                    end
+                }
+            });
+            (
+                r.fence_offset,
+                line_end,
+                format!("--- {}", r.expected_anchor()),
+            )
         })
         .collect();
-    edits.sort_by(|a, b| b.0.cmp(&a.0));
+    edits.sort_by_key(|edit| Reverse(edit.0));
 
     let mut out = text.to_string();
     for (start, end, replacement) in edits {

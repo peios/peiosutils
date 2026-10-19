@@ -1,0 +1,12 @@
+[package]
+name = "utility-client"
+description = "Internal ownership helpers for shared utility library clients."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+utility-ffi = { path = "../utility-ffi" }
+libc.workspace = true

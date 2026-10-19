@@ -1,0 +1,12 @@
+[package]
+name = "peios-reg"
+description = "Safe Rust interface to libreg."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+utility-ffi = { path = "../utility-ffi" }
+utility-client = { path = "../utility-client" }

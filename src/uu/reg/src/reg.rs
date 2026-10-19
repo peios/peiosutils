@@ -4,6 +4,7 @@
 // shaped configuration store). See `docs/reg-spec.md` for the full design.
 
 use clap::Command;
+
 use uucore::error::{UResult, USimpleError};
 
 pub mod addr;
@@ -23,7 +24,7 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             // clap encodes --help/--version as non-error "errors" whose
             // exit_code() is 0. Honour that so `--version` exits 0 and a bad
             // flag exits 1.
-            let code = e.exit_code() as i32;
+            let code = e.exit_code();
             e.print().ok();
             return if code == 0 {
                 Ok(())

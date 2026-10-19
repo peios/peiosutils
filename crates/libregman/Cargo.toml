@@ -1,0 +1,17 @@
+[package]
+name = "libregman"
+description = "Registry manual parsing and lookup through the libregman C interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "regman"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+registry-manual = { path = "../registry-manual" }
+utility-ffi = { path = "../utility-ffi" }
+libc.workspace = true

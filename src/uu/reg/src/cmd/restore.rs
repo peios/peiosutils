@@ -1,12 +1,15 @@
 // `reg restore <key> <file>` — replace a key + subtree from a snapshot.
 
+use std::os::fd::AsFd;
+
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, OpenFlags};
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags};
-use serde_json::json;
-use std::os::fd::AsFd;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -16,7 +19,9 @@ pub fn run(m: &ArgMatches) -> Result<()> {
         .get_one::<String>("file")
         .ok_or_else(|| Error::Usage("missing input file".into()))?;
 
-    if !set.confirm(&format!("Replace key {target} and its entire subtree from {file}?"))? {
+    if !set.confirm(&format!(
+        "Replace key {target} and its entire subtree from {file}?"
+    ))? {
         return Err(Error::Usage("aborted".into()));
     }
 

@@ -16,7 +16,13 @@
 // Without the listing, the walk is all there is, and the output says so.
 
 use clap::{Arg, ArgAction, Command};
-use libauthd_client::logon::{Logon, Refusal};
+use peios_auth::{Client, Error as AuthError, Operation, Progress};
+
+// Public error category and PGSS denial codes from peios/auth.h and PGSS.
+const AUTH_PGSS_DENIAL: u32 = 6;
+const AUTH_PROTOCOL_ERROR: u32 = 3;
+const AUTH_PERMISSION_DENIED: u32 = 3;
+const AUTH_NO_SUCH_SESSION: u32 = 10;
 use peios::process::{Mitigations, Process};
 use peios::security::Sid;
 use peios::token::{LogonSessionInfo, LogonType, Session, SessionId, Token};
@@ -32,7 +38,7 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let matches = match build_cli().try_get_matches_from(args) {
         Ok(m) => m,
         Err(e) => {
-            let code = e.exit_code() as i32;
+            let code = e.exit_code();
             e.print().ok();
             return if code == 0 {
                 Ok(())
@@ -344,7 +350,10 @@ fn cmd_show(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
                 .find(|s| s.id.0 == want)
                 .ok_or_else(|| format!("no session {want}"))?;
             if json_mode {
-                println!("{}", serde_json::to_string_pretty(&session_json(s, &pids)).unwrap());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&session_json(s, &pids)).unwrap()
+                );
             } else {
                 print_session(s, &pids);
             }
@@ -352,7 +361,9 @@ fn cmd_show(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
         }
         Err(why) => {
             if pids.is_empty() {
-                return Err(format!("{why}, and no process you can inspect is in session {want}"));
+                return Err(format!(
+                    "{why}, and no process you can inspect is in session {want}"
+                ));
             }
             if json_mode {
                 println!(
@@ -441,40 +452,53 @@ fn cmd_destroy(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
 /// call that ends a session's processes, and who may is authd's to decide.
 fn cmd_end(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
     let id: u64 = *sub.get_one::<u64>("session-id").unwrap();
-    let logon = Logon::new();
-    let refused = |refusal: Refusal| {
-        if refusal.not_permitted() {
+    let logon = Client::new().map_err(|error| error.to_string())?;
+    let refused = |refusal: AuthError| {
+        if refusal.category == AUTH_PGSS_DENIAL && refusal.code == AUTH_PERMISSION_DENIED {
             // authd says the same of a session nobody may end as of one this
             // caller may not; the kernel's list, where it can be read, tells
             // which.
-            let listed = Session::list().ok().and_then(|all| all.into_iter().find(|s| s.id.0 == id));
+            let listed = Session::list()
+                .ok()
+                .and_then(|all| all.into_iter().find(|s| s.id.0 == id));
             match listed {
                 // SYSTEM's and Anonymous's, which are listed as services' too.
-                Some(_) if id == 998 || id == 999 => format!("session {id}: the kernel's own sessions never end"),
-                Some(s) if LogonType::from_raw(s.logon_type) == Some(LogonType::Service) => format!(
-                    "session {id}: a service's session ends when its service is stopped (svctl stop)"
-                ),
+                Some(_) if id == 998 || id == 999 => {
+                    format!("session {id}: the kernel's own sessions never end")
+                }
+                Some(s) if LogonType::from_raw(s.logon_type) == Some(LogonType::Service) => {
+                    format!(
+                        "session {id}: a service's session ends when its service is stopped (svctl stop)"
+                    )
+                }
                 _ => format!(
                     "session {id}: you may not end it: only its own person, and whoever \
                      SessionEndSecurity allows, may"
                 ),
             }
-        } else if refusal.no_such_session() {
+        } else if refusal.category == AUTH_PGSS_DENIAL && refusal.code == AUTH_NO_SUCH_SESSION {
             format!("session {id}: no such session")
+        } else if refusal.outcome_unknown {
+            format!("session {id}: {refusal}; whether the session ended is not known")
         } else {
             format!("session {id}: {refusal}")
         }
     };
     if sub.get_flag("check") {
-        logon.may_end_session(id).map_err(refused)?;
+        finish_session_operation(logon.may_end_session(id)).map_err(refused)?;
         if json_mode {
-            println!("{}", serde_json::to_string_pretty(&json!({ "session_id": id, "may_end": true })).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({ "session_id": id, "may_end": true }))
+                    .unwrap()
+            );
         } else {
             println!("you may end session {id}");
         }
         return Ok(());
     }
-    let ended = logon.end_session(id).map_err(refused)?;
+    let operation = finish_session_operation(logon.end_session(id)).map_err(refused)?;
+    let ended = operation.ended().map_err(refused)?;
     if json_mode {
         println!(
             "{}",
@@ -494,11 +518,36 @@ fn cmd_end(sub: &clap::ArgMatches, json_mode: bool) -> Result<(), String> {
             ended.remaining
         );
     }
-    if ended.remaining == 0 { Ok(()) } else { Err(format!("session {id} is still open")) }
+    if ended.remaining == 0 {
+        Ok(())
+    } else {
+        Err(format!("session {id} is still open"))
+    }
+}
+
+/// Drive a session operation without adding a retry or collecting credentials.
+fn finish_session_operation(
+    operation: Result<Operation, AuthError>,
+) -> Result<Operation, AuthError> {
+    let mut operation = operation?;
+    if operation.wait()? == Progress::Complete {
+        return Ok(operation);
+    }
+    operation.cancel();
+    Err(AuthError {
+        category: AUTH_PROTOCOL_ERROR,
+        code: 0,
+        outcome_unknown: operation.error()?.outcome_unknown,
+        message: "unexpected authentication prompt for a session operation".into(),
+    })
 }
 
 fn processes(n: u32) -> String {
-    if n == 1 { "1 process".into() } else { format!("{n} processes") }
+    if n == 1 {
+        "1 process".into()
+    } else {
+        format!("{n} processes")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -618,5 +667,112 @@ fn parse_mask(s: &str) -> Result<u32, String> {
         u32::from_str_radix(hex, 16).map_err(|e| format!("bad mask `{s}`: {e}"))
     } else {
         t.parse::<u32>().map_err(|e| format!("bad mask `{s}`: {e}"))
+    }
+}
+
+#[cfg(test)]
+mod auth_tests {
+    use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::time::Duration;
+    use auth_core::{transport, wire};
+    use peios_auth::Options;
+
+    #[test]
+    fn query_and_end_use_distinct_messages_and_keep_counts() {
+        for query in [true, false] {
+            let directory = tempfile::Builder::new()
+                .prefix("pu-session-")
+                .tempdir_in("/tmp")
+                .unwrap();
+            let path = directory.path().join("socket");
+            let listener = UnixListener::bind(&path).unwrap();
+            let worker = std::thread::spawn(move || {
+                let (socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let message = transport::recv_message(&wire::FRAMING, &socket).unwrap();
+                let response = if query {
+                    assert_eq!(
+                        wire::decode_session_end_query(message.expose())
+                            .unwrap()
+                            .logon_session_id,
+                        123
+                    );
+                    wire::encode_session_end_allowed(&wire::SessionEndAllowed).unwrap()
+                } else {
+                    assert_eq!(
+                        wire::decode_session_end(message.expose())
+                            .unwrap()
+                            .logon_session_id,
+                        123
+                    );
+                    wire::encode_session_ended(&wire::SessionEnded {
+                        ended: 3,
+                        remaining: 2,
+                    })
+                    .unwrap()
+                };
+                transport::send_message(&socket, &response).unwrap();
+            });
+            let client = Client::with_options(Options {
+                logon_socket: path.to_str().unwrap(),
+                reply_timeout_ms: 500,
+                ..Options::default()
+            })
+            .unwrap();
+            let operation = if query {
+                client.may_end_session(123)
+            } else {
+                client.end_session(123)
+            };
+            let completed = finish_session_operation(operation).unwrap();
+            if !query {
+                let counts = completed.ended().unwrap();
+                assert_eq!((counts.ended, counts.remaining), (3, 2));
+            }
+            worker.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn session_denials_retain_the_public_category_and_code() {
+        let directory = tempfile::Builder::new()
+            .prefix("pu-session-")
+            .tempdir_in("/tmp")
+            .unwrap();
+        let path = directory.path().join("socket");
+        let listener = UnixListener::bind(&path).unwrap();
+        let worker = std::thread::spawn(move || {
+            let (socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            transport::recv_message(&wire::FRAMING, &socket).unwrap();
+            transport::send_message(
+                &socket,
+                &wire::encode_access_denied(&wire::AccessDenied {
+                    denial: wire::Denial::NoSuchSession,
+                    reason: "no such session".into(),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        });
+        let client = Client::with_options(Options {
+            logon_socket: path.to_str().unwrap(),
+            reply_timeout_ms: 500,
+            ..Options::default()
+        })
+        .unwrap();
+        let error = finish_session_operation(client.end_session(123))
+            .err()
+            .unwrap();
+        assert_eq!(
+            (error.category, error.code),
+            (AUTH_PGSS_DENIAL, AUTH_NO_SUCH_SESSION)
+        );
+        worker.join().unwrap();
     }
 }

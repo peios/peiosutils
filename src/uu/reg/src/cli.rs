@@ -29,9 +29,17 @@ pub fn build() -> Command {
             common(Command::new("get").about("Read the effective value (or list a key's values)"))
                 .arg(key_arg())
                 .arg(value_arg())
-                .arg(flag("layers", 'L', "Annotate with the winning layer + sequence"))
+                .arg(flag(
+                    "layers",
+                    'L',
+                    "Annotate with the winning layer + sequence",
+                ))
                 .arg(flag("raw", '\0', "Write raw value bytes to stdout"))
-                .arg(flag("no-follow", '\0', "Operate on a symlink key, not its target")),
+                .arg(flag(
+                    "no-follow",
+                    '\0',
+                    "Operate on a symlink key, not its target",
+                )),
         )
         .subcommand(
             common(Command::new("ls").about("List a key's subkeys and values"))
@@ -55,13 +63,21 @@ pub fn build() -> Command {
         .subcommand(
             common(Command::new("info").about("Show key metadata"))
                 .arg(key_arg())
-                .arg(flag("no-follow", '\0', "Inspect a symlink key, not its target")),
+                .arg(flag(
+                    "no-follow",
+                    '\0',
+                    "Inspect a symlink key, not its target",
+                )),
         )
         .subcommand(
             common(Command::new("set").about("Create or update a value"))
                 .arg(key_arg())
                 .arg(value_arg().required(true))
-                .arg(Arg::new(opt::DATA).required(true).help("Value data (type: prefix or inferred)"))
+                .arg(
+                    Arg::new(opt::DATA)
+                        .required(true)
+                        .help("Value data (type: prefix or inferred)"),
+                )
                 .arg(layer_arg())
                 .arg(flag("parents", 'p', "Create missing ancestor keys"))
                 .arg(
@@ -85,7 +101,11 @@ pub fn build() -> Command {
                 .arg(key_arg())
                 .arg(value_arg())
                 .arg(layer_arg())
-                .arg(flag("recursive", 'r', "Recursively delete a key and its children"))
+                .arg(flag(
+                    "recursive",
+                    'r',
+                    "Recursively delete a key and its children",
+                ))
                 .arg(yes_arg()),
         )
         .subcommand(
@@ -93,7 +113,11 @@ pub fn build() -> Command {
                 .arg(key_arg())
                 .arg(value_arg())
                 .arg(layer_arg())
-                .arg(flag("all", '\0', "Blanket tombstone: mask all lower values")),
+                .arg(flag(
+                    "all",
+                    '\0',
+                    "Blanket tombstone: mask all lower values",
+                )),
         )
         .subcommand(
             common(Command::new("unmask").about("Clear a tombstone / blanket tombstone"))
@@ -116,7 +140,12 @@ pub fn build() -> Command {
         .subcommand(
             common(Command::new("sd").about("Show or set a key's security descriptor (SDDL)"))
                 .arg(key_arg())
-                .arg(Arg::new("set").long("set").value_name("SDDL").help("Apply this SDDL"))
+                .arg(
+                    Arg::new("set")
+                        .long("set")
+                        .value_name("SDDL")
+                        .help("Apply this SDDL"),
+                )
                 .arg(flag("owner", '\0', "Scope to the owner"))
                 .arg(flag("group", '\0', "Scope to the group"))
                 .arg(flag("dacl", '\0', "Scope to the DACL"))
@@ -125,7 +154,11 @@ pub fn build() -> Command {
         .subcommand(
             common(Command::new("link").about("Create a symlink key"))
                 .arg(key_arg())
-                .arg(Arg::new("target").required(true).help("Absolute target key path"))
+                .arg(
+                    Arg::new("target")
+                        .required(true)
+                        .help("Absolute target key path"),
+                )
                 .arg(layer_arg()),
         )
         .subcommand(
@@ -136,15 +169,10 @@ pub fn build() -> Command {
                         .conflicts_with("dir")
                         .help("Batch file (text or JSON); - for stdin"),
                 )
-                .arg(
-                    Arg::new("dir")
-                        .long("dir")
-                        .value_name("DIR")
-                        .help(
-                            "Apply every batch file in DIR (sorted), each as its own \
+                .arg(Arg::new("dir").long("dir").value_name("DIR").help(
+                    "Apply every batch file in DIR (sorted), each as its own \
                              transaction. A missing or empty DIR applies nothing and succeeds.",
-                        ),
-                )
+                ))
                 .arg(
                     Arg::new("once-delete")
                         .long("once-delete")
@@ -193,7 +221,11 @@ pub fn build() -> Command {
 fn layer_subcommand() -> Command {
     common(Command::new("layer").about("Manage layers"))
         .subcommand_required(true)
-        .subcommand(common(Command::new("ls").about("List layers")).arg(flag("long", 'l', "Long form")))
+        .subcommand(common(Command::new("ls").about("List layers")).arg(flag(
+            "long",
+            'l',
+            "Long form",
+        )))
         .subcommand(
             common(Command::new("new").about("Create a layer"))
                 .arg(Arg::new("name").required(true).help("Layer name"))
@@ -204,7 +236,12 @@ fn layer_subcommand() -> Command {
                         .value_parser(clap::value_parser!(u32))
                         .help("Precedence (higher wins; >0 needs SeTcbPrivilege)"),
                 )
-                .arg(Arg::new("owner").long("owner").value_name("SID").help("Owner SID (informational)"))
+                .arg(
+                    Arg::new("owner")
+                        .long("owner")
+                        .value_name("SID")
+                        .help("Owner SID (informational)"),
+                )
                 .arg(flag("disabled", '\0', "Create disabled")),
         )
         .subcommand(
@@ -243,7 +280,9 @@ fn common(cmd: Command) -> Command {
 }
 
 fn key_arg() -> Arg {
-    Arg::new(opt::KEY).required(true).help("Key path (/ or \\ separated)")
+    Arg::new(opt::KEY)
+        .required(true)
+        .help("Key path (/ or \\ separated)")
 }
 
 fn value_arg() -> Arg {
@@ -263,7 +302,10 @@ fn yes_arg() -> Arg {
 
 /// A boolean flag; pass `'\0'` for no short form.
 fn flag(name: &'static str, short: char, help: &'static str) -> Arg {
-    let mut a = Arg::new(name).long(name).help(help).action(ArgAction::SetTrue);
+    let mut a = Arg::new(name)
+        .long(name)
+        .help(help)
+        .action(ArgAction::SetTrue);
     if short != '\0' {
         a = a.short(short);
     }

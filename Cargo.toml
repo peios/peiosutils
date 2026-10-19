@@ -365,12 +365,11 @@ test = ["pu_test"]
 [workspace]
 resolver = "3"
 members = [
+  "crates/*",
+  "build/feature-set",
   ".",
   "src/uu/*",
   "src/uu/stdbuf/src/libstdbuf",
-  "src/uu/regman/libregman",
-  "src/uu/evman/libevman",
-  "src/uu/reg/libreg",
   "src/uucore",
   "src/uucore_procs",
   "tests/uutests",
@@ -552,7 +551,6 @@ implicit_hasher = "allow"
 doc_link_with_quotes = "allow"
 format_push_string = "allow"
 flat_map_option = "allow"
-from_iter_instead_of_collect = "allow"
 large_types_passed_by_value = "allow"
 
 [workspace.metadata.cargo-shear]
@@ -702,6 +700,7 @@ whoami = { optional = true, version = "0.8.0", package = "pu_whoami", path = "sr
 yes = { optional = true, version = "0.8.0", package = "pu_yes", path = "src/uu/yes" }
 
 [dev-dependencies]
+serde_json = "1"
 ctor.workspace = true
 filetime.workspace = true
 glob.workspace = true

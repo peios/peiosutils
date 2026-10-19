@@ -1,40 +1,20 @@
-// passwd ~ (peiosutils) — change your own password.
-//
-// A PGSS Logon client for the credential-change conversation (PGSS §2.20). The
-// conversation itself — opening /run/logon.sock with `CredentialChangeStart`,
-// carrying the authority's rounds and reading how it ended — is
-// libauthd-client's `credential` module, shared with the GUI apps. What is
-// here is the terminal: rendering each round, and saying how it ended.
-//
-// That is the whole of it, and deliberately so. Linux's passwd is two programs
-// in one binary — a PAM front end, and a setuid editor of /etc/shadow for
-// locking, ageing and deleting — and neither half exists here. There is no
-// shadow file to edit and no uid 0 to be; an administrator sets another
-// principal's password with `lps password`, and account policy is the
-// authority's.
-//
-// Two properties follow from the protocol rather than from this file:
-//
-// - **It can only change your own password.** `CredentialChangeStart` has no
-//   field naming a principal; the authority takes it from this process's
-//   token. There is nothing to pass a username into.
-// - **It does not know what a password is.** It renders the prompts it is sent
-//   and returns the answers. Asking for the current password, asking twice for
-//   the new one and deciding what is acceptable are the source's, so none of
-//   that is here.
+// passwd ~ (peiosutils) changes the calling account's password through authd.
+// The shared library owns the protocol; this applet collects terminal input.
 
 use std::io;
 
+use auth_core::{Denial, LOGON_SOCKET_PATH, Secret};
 use clap::{Arg, ArgAction, Command};
-use libauthd::LOGON_SOCKET_PATH;
-use libauthd::Secret;
-use libauthd_client::credential::{Abandon, Collector, Credentials, MessageSeverity, Refusal, Round};
-use libtty as tty;
+use peios_auth::{Answer, Capabilities, Client, Error, Progress, Round};
+use terminal_input as tty;
 use uucore::error::{UResult, USimpleError, UUsageError};
 
-/// A positional argument, accepted only so that giving one gets an answer
-/// rather than clap's "unexpected argument".
 const NAME: &str = "name";
+// Stable public constants from peios/auth.h.
+const ERROR_UNAVAILABLE: u32 = 1;
+const ERROR_PGSS_DENIAL: u32 = 6;
+const MESSAGE_ERROR: u32 = 1;
+const CREDENTIAL_PASSWORD: u32 = 1;
 
 #[uucore::main(no_signals)]
 pub fn uumain(args: impl uucore::Args) -> UResult<()> {
@@ -50,7 +30,6 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             };
         }
     };
-
     if matches.contains_id(NAME) {
         return Err(UUsageError::new(
             2,
@@ -58,10 +37,8 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
              principal's with 'lps password'",
         ));
     }
-
-    Credentials::new()
-        .change_password(&mut Terminal)
-        .map_err(|refusal| USimpleError::new(1, explain(&refusal)))?;
+    let client = Client::new().map_err(|error| USimpleError::new(1, explain(&error)))?;
+    change_password(&client, read_round).map_err(|message| USimpleError::new(1, message))?;
     println!("password changed");
     Ok(())
 }
@@ -84,128 +61,114 @@ pub fn uu_app() -> Command {
         )
 }
 
-/// What `passwd` says about a change that did not happen — in its own words,
-/// about a password, where the shared conversation's are about any change.
-fn explain(refusal: &Refusal) -> String {
-    match refusal {
-        Refusal::Unreachable(error) => match error.kind() {
-            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused => {
+/// Complete one credential conversation without retrying an uncertain mutation.
+fn change_password(
+    client: &Client,
+    mut collect: impl FnMut(&Round) -> Result<Vec<Secret>, String>,
+) -> Result<(), String> {
+    let mut operation = client
+        .change_password(Capabilities::PASSWORD)
+        .map_err(|e| explain(&e))?;
+    loop {
+        match operation.wait().map_err(|error| explain(&error))? {
+            Progress::Complete => return Ok(()),
+            Progress::Wait => continue,
+            Progress::Prompt => {}
+        }
+        let round = operation.round().map_err(|error| explain(&error))?;
+        let secrets = match collect(&round) {
+            Ok(secrets) => secrets,
+            Err(message) => {
+                operation.cancel();
+                return Err(message);
+            }
+        };
+        if secrets.len() != round.prompts.len() {
+            operation.cancel();
+            return Err("could not collect every requested credential".into());
+        }
+        let answers: Vec<_> = round
+            .prompts
+            .iter()
+            .zip(&secrets)
+            .map(|(prompt, secret)| Answer {
+                credential_ref: prompt.credential_ref,
+                data: secret.expose(),
+            })
+            .collect();
+        operation
+            .respond(round.id, &answers)
+            .map_err(|error| explain(&error))?;
+        // Both the caller's Secret values and the library's encoded response are wiped.
+        // No credential material survives here into the next prompt round.
+    }
+}
+
+/// Distinguish an explicit refusal from a request whose outcome is unknown.
+fn explain(error: &Error) -> String {
+    if error.outcome_unknown {
+        return format!(
+            "{}; whether the password changed is not known",
+            error.message
+        );
+    }
+    if error.category == ERROR_PGSS_DENIAL {
+        let reason = if !error.message.is_empty() {
+            error.message.clone()
+        } else if let Some(denial) = Denial::from_u32(error.code) {
+            format!("{denial:?}")
+        } else {
+            format!("refused with denial {}", error.code)
+        };
+        return format!("{reason} The password is unchanged.");
+    }
+    if error.category == ERROR_UNAVAILABLE {
+        let kind = i32::try_from(error.code)
+            .ok()
+            .map(|code| io::Error::from_raw_os_error(code).kind());
+        return match kind {
+            Some(io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) => {
                 format!("cannot reach the authority at {LOGON_SOCKET_PATH}; is authd running?")
             }
-            io::ErrorKind::PermissionDenied => format!(
+            Some(io::ErrorKind::PermissionDenied) => format!(
                 "permission denied connecting to {LOGON_SOCKET_PATH}; this machine does not \
                  let you change your own password"
             ),
-            _ => format!("cannot reach the authority at {LOGON_SOCKET_PATH}: {error}"),
-        },
-        Refusal::Unsent(what) | Refusal::Unrenderable(what) => what.clone(),
-        // The terminal stops only when it cannot read, and says why.
-        Refusal::Abandoned { reason, .. } => reason.clone(),
-        Refusal::Unknown(what) => format!("{what}; whether the password changed is not known"),
-        Refusal::Declined {
-            code,
-            denial,
-            reason,
-        } => {
-            let reason = if !reason.is_empty() {
-                reason.clone()
-            } else if let Some(denial) = denial {
-                format!("{denial:?}")
-            } else {
-                format!("refused with denial {code}")
-            };
-            format!("{reason} The password is unchanged.")
-        }
+            _ => format!(
+                "cannot reach the authority at {LOGON_SOCKET_PATH}: {}",
+                error.message
+            ),
+        };
     }
+    error.message.clone()
 }
 
-/// The real terminal — or, when standard input is not one, a pipe read a line
-/// per prompt.
-struct Terminal;
-
-impl Collector for Terminal {
-    fn round(&mut self, round: &Round) -> Result<Vec<Secret>, Abandon> {
-        for message in &round.messages {
-            match message.severity {
-                MessageSeverity::Info => {
-                    let _ = tty::show(&message.text);
-                }
-                MessageSeverity::Error => eprintln!("{}", message.text),
-            }
+/// Read one line per password prompt, retaining the shared terminal cleanup behavior.
+fn read_round(round: &Round) -> Result<Vec<Secret>, String> {
+    for message in &round.messages {
+        if message.severity == MESSAGE_ERROR {
+            eprintln!("{}", message.text);
+        } else {
+            let _ = tty::show(&message.text);
         }
-        round
-            .prompts
-            .iter()
-            .map(|ask| {
-                // Down a pipe there is nobody to show a prompt to, and a
-                // fixed-size read could swallow the lines meant for the
-                // prompts after this one.
-                if tty::stdin_is_a_terminal() {
-                    tty::prompt_secret(&format!("{}: ", ask.label))
-                } else {
-                    tty::read_line_secret()
-                }
-                .map_err(|error| Abandon::new(format!("could not read the password: {error}")))
-            })
-            .collect()
     }
+    round
+        .prompts
+        .iter()
+        .map(|prompt| {
+            if prompt.credential_type != CREDENTIAL_PASSWORD {
+                return Err("the authority requested an unsupported credential".into());
+            }
+            if tty::stdin_is_a_terminal() {
+                tty::prompt_secret(&format!("{}: ", prompt.label))
+            } else {
+                tty::read_line_secret()
+            }
+            .map_err(|error| format!("could not read the password: {error}"))
+        })
+        .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    // The conversation is tested where it lives, in libauthd-client. What is
-    // left here is what passwd says.
-    use super::*;
-    use libauthd::Denial;
-
-    #[test]
-    fn a_denial_says_the_password_is_unchanged() {
-        let said = explain(&Refusal::Declined {
-            code: 4,
-            denial: Some(Denial::AuthenticationFailed),
-            reason: "Authentication failed.".into(),
-        });
-        assert_eq!(said, "Authentication failed. The password is unchanged.");
-    }
-
-    #[test]
-    fn a_denial_without_words_is_named() {
-        let said = explain(&Refusal::Declined {
-            code: 6,
-            denial: Some(Denial::AccountRestricted),
-            reason: String::new(),
-        });
-        assert_eq!(said, "AccountRestricted The password is unchanged.");
-    }
-
-    /// PGSS client obligation 4: an authority that goes away has not said how
-    /// the change ended, and passwd must not claim to know.
-    #[test]
-    fn a_lost_authority_leaves_the_outcome_unknown() {
-        let said = explain(&Refusal::Unknown("lost the authority: broken pipe".into()));
-        assert_eq!(
-            said,
-            "lost the authority: broken pipe; whether the password changed is not known"
-        );
-    }
-
-    #[test]
-    fn an_absent_authority_asks_whether_authd_is_running() {
-        let said = explain(&Refusal::Unreachable(io::ErrorKind::NotFound.into()));
-        assert_eq!(
-            said,
-            "cannot reach the authority at /run/logon.sock; is authd running?"
-        );
-        let said = explain(&Refusal::Unreachable(io::ErrorKind::PermissionDenied.into()));
-        assert!(said.starts_with("permission denied connecting to /run/logon.sock"));
-    }
-
-    #[test]
-    fn a_terminal_that_cannot_read_says_so() {
-        let said = explain(&Refusal::Abandoned {
-            reason: "could not read the password: end of file".into(),
-            last_error: None,
-        });
-        assert_eq!(said, "could not read the password: end of file");
-    }
-}
+#[path = "auth_tests.rs"]
+mod tests;

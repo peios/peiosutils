@@ -1,12 +1,14 @@
 // `reg info <key>` — key metadata.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{KeyAccess, OpenFlags};
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{KeyAccess, OpenFlags};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;

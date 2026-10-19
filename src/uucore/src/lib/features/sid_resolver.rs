@@ -59,10 +59,8 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::Duration;
 
-use libauthd::ident::{Fields, Key, Kind};
-use libauthd_client::ident::Ident;
+use peios_auth::{Client, IdentityKind, Key, Options, Progress};
 use peios::security::SidRef;
 
 use crate::sid_render;
@@ -72,7 +70,9 @@ use crate::sid_render;
 /// Short on purpose: this sits between a user and their `ls` output. If the
 /// authority is wedged, printing SIDs promptly is a better answer than a
 /// terminal that appears to hang.
-const TIMEOUT: Duration = Duration::from_secs(2);
+const LOOKUP_TIMEOUT_MS: u64 = 2_000;
+// PEIOS_AUTH_FOUND from the public peios/auth.h interface.
+const IDENTITY_FOUND: u32 = 1;
 
 /// SID string -> the name, or the absence of one.
 ///
@@ -105,7 +105,7 @@ fn resolve(sid: &SidRef) -> Option<String> {
     answer
 }
 
-/// One round trip, on a connection of its own, through libauthd-client.
+/// One round trip, on a connection of its own, through libauth.so.
 /// `None` is both an authoritative "no such principal" and every failure:
 /// the caller treats them the same.
 fn ask(sid: &SidRef) -> Option<String> {
@@ -117,11 +117,99 @@ fn ask(sid: &SidRef) -> Option<String> {
     // buys nothing: the command is over in milliseconds and would ask again
     // next time either way, and re-asking a down authority once per file is
     // the cost the cache exists to avoid.
-    Ident::new()
-        .with_timeout(TIMEOUT)
-        .lookup(Key::Sid(sid.as_bytes().to_vec()), Kind::Any, Fields::empty())
-        .ok()
-        .flatten()
-        .map(|record| record.qualified_name)
+    let client = Client::with_options(Options {
+        reply_timeout_ms: LOOKUP_TIMEOUT_MS,
+        ..Options::default()
+    })
+    .ok()?;
+    ask_client(&client, sid)
+}
+
+fn ask_client(client: &Client, sid: &SidRef) -> Option<String> {
+    let mut operation = client
+        .lookup(Key::Sid(sid.as_bytes()), IdentityKind::Any, 0)
+        .ok()?;
+    if operation.wait().ok()? != Progress::Complete {
+        return None;
+    }
+    let identity = operation.identity().ok()?;
+    if identity.outcome != IDENTITY_FOUND {
+        return None;
+    }
+    identity
+        .records
+        .into_iter()
+        .next()
+        .map(|record| record.name)
         .filter(|name| !name.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::time::Duration;
+    use auth_core::{ident, transport, wire};
+
+    #[test]
+    fn shared_lookup_preserves_names_and_falls_back_on_absence_or_bad_replies() {
+        let sid_bytes = [1, 1, 0, 0, 0, 0, 0, 5, 18, 0, 0, 0];
+        let sid = SidRef::from_bytes(&sid_bytes).unwrap();
+        for (outcome, malformed) in [
+            (ident::Outcome::Found, false),
+            (ident::Outcome::NotFound, false),
+            (ident::Outcome::Found, true),
+        ] {
+            let directory = tempfile::Builder::new()
+                .prefix("pu-ident-")
+                .tempdir_in("/tmp")
+                .unwrap();
+            let path = directory.path().join("socket");
+            let listener = UnixListener::bind(&path).unwrap();
+            let worker = std::thread::spawn(move || {
+                let (socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let message = transport::recv_message(&wire::FRAMING, &socket).unwrap();
+                let request = ident::decode_lookup(message.expose()).unwrap();
+                assert!(request.fields.is_empty());
+                assert_eq!(request.key, ident::Key::Sid(sid_bytes.to_vec()));
+                if malformed {
+                    transport::send_message(&socket, &[0, 1, 2]).unwrap();
+                    return;
+                }
+                let record = (outcome == ident::Outcome::Found).then(|| ident::Record {
+                    sid: sid_bytes.to_vec(),
+                    qualified_name: "local\\jack".into(),
+                    kind_found: ident::Kind::Principal,
+                    values: Vec::new(),
+                    withheld: Vec::new(),
+                });
+                transport::send_message(
+                    &socket,
+                    &ident::encode_lookup_reply(&ident::LookupReply {
+                        tag: request.tag,
+                        outcome,
+                        record,
+                    })
+                    .unwrap(),
+                )
+                .unwrap();
+            });
+            let client = Client::with_options(Options {
+                identity_socket: path.to_str().unwrap(),
+                reply_timeout_ms: 500,
+                ..Options::default()
+            })
+            .unwrap();
+            let expected = if outcome == ident::Outcome::Found && !malformed {
+                Some("local\\jack".to_string())
+            } else {
+                None
+            };
+            assert_eq!(ask_client(&client, sid), expected);
+            worker.join().unwrap();
+        }
+    }
 }

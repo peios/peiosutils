@@ -1,14 +1,16 @@
 // `reg set <key> <value> <data>` — create or update a value.
 
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{CreateFlags, Key, KeyAccess, OpenFlags};
+
 use crate::addr::{display_value_name, ValueTarget};
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::literal;
 use crate::render::{CmdOutput, Lines};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{CreateFlags, Key, KeyAccess};
-use serde_json::json;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -38,7 +40,7 @@ pub fn run(m: &ArgMatches) -> Result<()> {
         .map_err(|e| Error::from_peios("create key", &target, e))?
         .0
     } else {
-        cmd::open(&path, KeyAccess::SET_VALUE, Default::default(), &set)?
+        cmd::open(&path, KeyAccess::SET_VALUE, OpenFlags::default(), &set)?
     };
 
     let mut sv = key.set_value(&name, ty, &bytes);
@@ -57,8 +59,7 @@ pub fn run(m: &ArgMatches) -> Result<()> {
     let suppress = set.quiet && !literal::is_surprising_coercion(data_token, ty);
     if !suppress {
         lines.plain(format!(
-            "set {} {} = {} {}   (layer: {})",
-            target,
+            "set {target} {} = {} {}   (layer: {})",
             display_value_name(&name),
             literal::type_name(ty),
             literal::format_human(ty, &bytes),

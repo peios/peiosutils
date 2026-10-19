@@ -1,15 +1,18 @@
 // `reg get <key> [value]` — read the effective value, or list a key's values.
 
+use std::io::Write;
+
+use clap::ArgMatches;
+use serde_json::json;
+
+use peios::registry::{Key, KeyAccess, OpenFlags, RegValue};
+
 use crate::addr::{display_value_name, ValueTarget};
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::literal;
 use crate::render::{CmdOutput, Lines};
 use crate::settings::Settings;
-use clap::ArgMatches;
-use peios::registry::{Key, KeyAccess, OpenFlags, RegValue};
-use serde_json::json;
-use std::io::Write;
 
 pub fn run(m: &ArgMatches) -> Result<()> {
     let set = Settings::from_matches(m)?;
@@ -51,13 +54,16 @@ fn render_one(name: &[u8], v: &RegValue, with_layers: bool) -> CmdOutput {
     let mut lines = Lines::new();
     if with_layers {
         let layer = String::from_utf8_lossy(&v.layer);
-        let layer = if layer.is_empty() { "base".into() } else { layer };
+        let layer = if layer.is_empty() {
+            "base".into()
+        } else {
+            layer
+        };
         lines.plain(format!(
-            "{} = {} {}   (layer: {}, seq {})",
+            "{} = {} {}   (layer: {layer}, seq {})",
             display_value_name(name),
             literal::type_name(v.ty),
             literal::format_human(v.ty, &v.data),
-            layer,
             v.sequence,
         ));
     } else {

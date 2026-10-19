@@ -18,16 +18,16 @@ impl KeyPath {
     /// Parse a CLI path string. Accepts `/` and `\` (and mixes of both) as
     /// separators; a leading separator is ignored; repeated separators
     /// collapse. Empty paths and zero-length components are rejected.
-    pub fn parse(raw: &str) -> Result<KeyPath> {
+    pub fn parse(raw: &str) -> Result<Self> {
         let components: Vec<String> = raw
             .split(['/', '\\'])
             .filter(|c| !c.is_empty())
-            .map(|c| c.to_string())
+            .map(ToString::to_string)
             .collect();
         if components.is_empty() {
             return Err(Error::InvalidSpec(format!("empty key path: {raw:?}")));
         }
-        Ok(KeyPath { components })
+        Ok(Self { components })
     }
 
     /// The path string handed to the libpeios ABI: backslash-joined, which is
@@ -47,11 +47,11 @@ impl KeyPath {
     }
 
     /// The parent path, or `None` if this is a single (hive-root) component.
-    pub fn parent(&self) -> Option<KeyPath> {
+    pub fn parent(&self) -> Option<Self> {
         if self.components.len() <= 1 {
             None
         } else {
-            Some(KeyPath {
+            Some(Self {
                 components: self.components[..self.components.len() - 1].to_vec(),
             })
         }
@@ -60,19 +60,19 @@ impl KeyPath {
     /// The proper ancestors of this path, outermost first: for `A\B\C` that
     /// is `A`, then `A\B`. Empty for a single-component (hive-root) path,
     /// which has no ancestor to create.
-    pub fn ancestors(&self) -> Vec<KeyPath> {
+    pub fn ancestors(&self) -> Vec<Self> {
         (1..self.components.len())
-            .map(|n| KeyPath {
+            .map(|n| Self {
                 components: self.components[..n].to_vec(),
             })
             .collect()
     }
 
     /// Append a child component (used when walking subkeys).
-    pub fn child(&self, name: &str) -> KeyPath {
+    pub fn child(&self, name: &str) -> Self {
         let mut components = self.components.clone();
         components.push(name.to_string());
-        KeyPath { components }
+        Self { components }
     }
 }
 
@@ -88,19 +88,19 @@ pub enum ValueTarget {
 impl ValueTarget {
     /// Build from the optional value-name positional. `@` selects the default
     /// (empty-name) value; any other string is taken as length-counted bytes.
-    pub fn from_arg(arg: Option<&str>) -> ValueTarget {
+    pub fn from_arg(arg: Option<&str>) -> Self {
         match arg {
-            None => ValueTarget::Key,
-            Some("@") => ValueTarget::Value(Vec::new()),
-            Some(s) => ValueTarget::Value(s.as_bytes().to_vec()),
+            None => Self::Key,
+            Some("@") => Self::Value(Vec::new()),
+            Some(s) => Self::Value(s.as_bytes().to_vec()),
         }
     }
 
     /// The value-name bytes, or `None` if this targets the key.
     pub fn name_bytes(&self) -> Option<&[u8]> {
         match self {
-            ValueTarget::Key => None,
-            ValueTarget::Value(b) => Some(b),
+            Self::Key => None,
+            Self::Value(b) => Some(b),
         }
     }
 }

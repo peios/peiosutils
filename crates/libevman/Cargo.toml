@@ -1,0 +1,17 @@
+[package]
+name = "libevman"
+description = "Event catalog parsing, validation and lookup through the libevman C interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "evman"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+event-catalogue = { path = "../event-catalogue" }
+utility-ffi = { path = "../utility-ffi" }
+libc.workspace = true

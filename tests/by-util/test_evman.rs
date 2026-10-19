@@ -149,7 +149,10 @@ fn lint_accepts_a_clean_catalogue() {
     let tmp = corpus();
     let k = tmp.path().join("kernel.evman");
     let a = tmp.path().join("kacs.evman");
-    let out = evman(tmp.path(), &["lint", k.to_str().unwrap(), a.to_str().unwrap()]);
+    let out = evman(
+        tmp.path(),
+        &["lint", k.to_str().unwrap(), a.to_str().unwrap()],
+    );
     assert!(out.status.success(), "lint stdout: {}", stdout(&out));
 }
 
@@ -161,8 +164,12 @@ fn lint_reports_findings_and_exits_3() {
     let out = evman(tmp.path(), &["lint", a.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(3));
     let s = stdout(&out);
-    assert!(s.contains("kacs.evman:9: rule 1: kacs.audit.access.checked carries undefined object.kind"));
-    assert!(s.contains("kacs.evman:8: rule 1: kacs.audit.access.checked includes undefined group subject"));
+    assert!(
+        s.contains("kacs.evman:9: rule 1: kacs.audit.access.checked carries undefined object.kind")
+    );
+    assert!(s.contains(
+        "kacs.evman:8: rule 1: kacs.audit.access.checked includes undefined group subject"
+    ));
 }
 
 #[test]
