@@ -1,7 +1,8 @@
 # Build tooling before Bazel
 
 These files are retained as migration history. They are not supported build
-entry points. The former recipe and SDK helper refer to retired Pekit and
+entry points. The former recipe, package definitions, and SDK helper refer to
+retired Pekit and
 PKM inputs. The old utility-list and Clippy helpers assume the upstream
 workspace names.
 
