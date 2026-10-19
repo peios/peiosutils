@@ -61,7 +61,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn open(path: &Path, write: bool) -> Result<Device> {
+    pub fn open(path: &Path, write: bool) -> Result<Self> {
         let file = OpenOptions::new()
             .read(true)
             .write(write)
@@ -87,9 +87,8 @@ impl Device {
         // free, so avoiding it is a straight improvement rather than a
         // workaround — `part` works wherever `dd` does, which is the right bar,
         // and it will keep working however PEI-196 is eventually explained.
-        let is_block = sysfs_name(path)
-            .map(|n| Path::new(&format!("/sys/class/block/{n}")).is_dir())
-            .unwrap_or(false);
+        let is_block =
+            sysfs_name(path).is_some_and(|n| Path::new(&format!("/sys/class/block/{n}")).is_dir());
 
         let geom = if is_block {
             block_geometry(path, &file)?
@@ -111,7 +110,7 @@ impl Device {
             )));
         };
 
-        Ok(Device {
+        Ok(Self {
             path: path.to_path_buf(),
             geom,
             is_block,
@@ -122,7 +121,7 @@ impl Device {
     /// Override the sector size, for exercising 4Kn layouts against a file.
     /// Refused on a real device, where the kernel's answer is the only correct
     /// one and disagreeing with it would corrupt the disk.
-    pub fn with_sector_size(mut self, size: usize) -> Result<Device> {
+    pub fn with_sector_size(mut self, size: usize) -> Result<Self> {
         if self.is_block {
             return Err(PartError::Usage(
                 "the sector size of a block device is not ours to choose".into(),
@@ -210,11 +209,7 @@ impl Device {
 /// Sleeping is a parameter so the schedule can be tested without spending the
 /// budget: the retry policy is the part worth proving, and it is not observable
 /// from outside an ioctl that only a real disk can refuse.
-fn retry_while_busy<A, S>(
-    budget: Duration,
-    mut attempt: A,
-    mut sleep: S,
-) -> std::io::Result<()>
+fn retry_while_busy<A, S>(budget: Duration, mut attempt: A, mut sleep: S) -> std::io::Result<()>
 where
     A: FnMut() -> std::io::Result<()>,
     S: FnMut(Duration),
@@ -226,6 +221,10 @@ where
             Err(e) if e.raw_os_error() == Some(libc::EBUSY) && waited < budget => {
                 // Never sleep past the budget: the caller asked for a bounded
                 // wait, and overshooting it on the last nap is still overshoot.
+                #[expect(
+                    clippy::unchecked_time_subtraction,
+                    reason = "the match guard establishes waited < budget"
+                )]
                 let nap = wait.min(budget - waited);
                 sleep(nap);
                 waited += nap;
@@ -326,7 +325,7 @@ fn regular_file_len(file: &File, path: &Path) -> Result<Option<u64>> {
         path: format!("{} (reading its size)", path.display()),
         source: e,
     })?;
-    Ok(md.is_file().then(|| md.len()))
+    Ok(md.is_file().then_some(md.len()))
 }
 
 fn block_geometry(path: &Path, file: &File) -> Result<Geometry> {
@@ -418,12 +417,11 @@ pub fn ensure_whole_disk(path: &Path) -> Result<()> {
 /// guard that depends on an external command fails *open*.
 pub fn ensure_not_mounted(path: &Path) -> Result<()> {
     let targets = device_and_partitions(path);
-    let mounts = match std::fs::read_to_string("/proc/mounts") {
-        Ok(m) => m,
+    let Ok(mounts) = std::fs::read_to_string("/proc/mounts") else {
         // No /proc/mounts means no evidence either way. Refusing here would
         // make the tool unusable in an initramfs; the whole-disk and foreign
         // -table guards still apply.
-        Err(_) => return Ok(()),
+        return Ok(());
     };
     for line in mounts.lines() {
         let mut f = line.split_whitespace();
@@ -492,7 +490,6 @@ pub fn enumerate_disks() -> Vec<DiskEntry> {
         }
         partitions.sort_by_key(|(_, i)| *i);
 
-
         out.push(DiskEntry {
             path: PathBuf::from(format!("/dev/{name}")),
             name,
@@ -509,37 +506,41 @@ pub fn enumerate_disks() -> Vec<DiskEntry> {
 /// Compare device names the way a person reads them, so `loop2` comes before
 /// `loop10` and `sda9` before `sda10`. Plain lexicographic order puts every
 /// device beginning with a `1` ahead of the one you were looking for.
-fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+fn natural_cmp(left: &str, right: &str) -> std::cmp::Ordering {
     use std::cmp::Ordering;
-    let (mut ai, mut bi) = (a.chars().peekable(), b.chars().peekable());
+    let (mut left_chars, mut right_chars) = (left.chars().peekable(), right.chars().peekable());
     loop {
-        match (ai.peek().copied(), bi.peek().copied()) {
+        match (left_chars.peek().copied(), right_chars.peek().copied()) {
             (None, None) => return Ordering::Equal,
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
-            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
-                let take = |it: &mut std::iter::Peekable<std::str::Chars>| {
-                    let mut n = 0u64;
-                    while let Some(c) = it.peek().copied().filter(char::is_ascii_digit) {
+            (Some(left_char), Some(right_char))
+                if left_char.is_ascii_digit() && right_char.is_ascii_digit() =>
+            {
+                let take_number = |chars: &mut std::iter::Peekable<std::str::Chars<'_>>| {
+                    let mut number = 0u64;
+                    while let Some(digit) = chars.peek().copied().filter(char::is_ascii_digit) {
                         // Saturate rather than wrap: a pathological run of
                         // digits must not reorder the list.
-                        n = n.saturating_mul(10).saturating_add(c as u64 - '0' as u64);
-                        it.next();
+                        number = number
+                            .saturating_mul(10)
+                            .saturating_add(digit as u64 - '0' as u64);
+                        chars.next();
                     }
-                    n
+                    number
                 };
-                match take(&mut ai).cmp(&take(&mut bi)) {
+                match take_number(&mut left_chars).cmp(&take_number(&mut right_chars)) {
                     Ordering::Equal => {}
                     other => return other,
                 }
             }
-            (Some(x), Some(y)) => {
-                match x.cmp(&y) {
+            (Some(left_char), Some(right_char)) => {
+                match left_char.cmp(&right_char) {
                     Ordering::Equal => {}
                     other => return other,
                 }
-                ai.next();
-                bi.next();
+                left_chars.next();
+                right_chars.next();
             }
         }
     }
@@ -621,7 +622,10 @@ mod tests {
     #[test]
     fn sector_size_can_be_overridden_on_a_file_and_rescales_the_count() {
         let (_d, p) = image(8 * 1024 * 1024);
-        let dev = Device::open(&p, false).unwrap().with_sector_size(4096).unwrap();
+        let dev = Device::open(&p, false)
+            .unwrap()
+            .with_sector_size(4096)
+            .unwrap();
         assert_eq!(dev.geom.sector_size, 4096);
         assert_eq!(dev.geom.sectors, 2048);
     }
@@ -881,7 +885,10 @@ proc /proc proc rw 0 0
             mount_target_of("/dev/vdb1", mounts).as_deref(),
             Some("/mnt/rootfs")
         );
-        assert_eq!(mount_target_of("/dev/vdb11", mounts).as_deref(), Some("/srv"));
+        assert_eq!(
+            mount_target_of("/dev/vdb11", mounts).as_deref(),
+            Some("/srv")
+        );
         assert_eq!(mount_target_of("/dev/vdb2", mounts), None);
         // A source that is a prefix of another must not match it.
         assert_eq!(mount_target_of("/dev/vdb", mounts), None);
@@ -902,7 +909,10 @@ proc /proc proc rw 0 0
         let msg = busy_message(&p);
         assert!(msg.contains("probing"), "{msg}");
         assert!(msg.contains("run the command again"), "{msg}");
-        assert!(msg.contains(&REREAD_BUSY_BUDGET.as_millis().to_string()), "{msg}");
+        assert!(
+            msg.contains(&REREAD_BUSY_BUDGET.as_millis().to_string()),
+            "{msg}"
+        );
         assert!(msg.contains(&p.display().to_string()), "{msg}");
     }
 

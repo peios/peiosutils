@@ -31,10 +31,10 @@ pub mod guid;
 pub mod header;
 pub mod mbr;
 
+use self::entry::GptEntry;
+use self::guid::Guid;
+use self::header::{GptHeader, ENTRY_SIZE, NUM_ENTRIES};
 use crate::error::{PartError, Result};
-use entry::GptEntry;
-use guid::Guid;
-use header::{GptHeader, ENTRY_SIZE, NUM_ENTRIES};
 
 /// Partition alignment, in bytes. 1 MiB is the universal convention: it divides
 /// every erase block and stripe width in practice, and misalignment costs
@@ -128,7 +128,7 @@ impl Gpt {
     }
 
     /// A fresh, empty table.
-    pub fn create(disk_sectors: u64, sector_size: usize) -> Result<Gpt> {
+    pub fn create(disk_sectors: u64, sector_size: usize) -> Result<Self> {
         if !sector_size.is_power_of_two() || !(512..=65536).contains(&sector_size) {
             return Err(PartError::Usage(format!(
                 "implausible logical sector size {sector_size}"
@@ -141,7 +141,7 @@ impl Gpt {
             )));
         }
         let array = Self::entry_array_sectors(sector_size);
-        Ok(Gpt {
+        Ok(Self {
             sector_size,
             disk_sectors,
             disk_guid: Guid::random(),
@@ -165,13 +165,14 @@ impl Gpt {
         sector_size: usize,
         header_sector: &[u8],
         entry_bytes: &[u8],
-    ) -> Result<Gpt> {
+    ) -> Result<Self> {
         let h = GptHeader::parse(header_sector)?;
+        h.primary_array_sectors(disk_sectors, sector_size)?;
 
         let want = (h.num_entries as usize).saturating_mul(h.entry_size as usize);
-        let array = entry_bytes
-            .get(..want)
-            .ok_or_else(|| PartError::Damaged("entry array is shorter than the header claims".into()))?;
+        let array = entry_bytes.get(..want).ok_or_else(|| {
+            PartError::Damaged("entry array is shorter than the header claims".into())
+        })?;
         let actual = header::crc32(array);
         if actual != h.entries_crc32 {
             return Err(PartError::Damaged(format!(
@@ -189,7 +190,7 @@ impl Gpt {
             );
         }
 
-        Ok(Gpt {
+        Ok(Self {
             sector_size,
             disk_sectors,
             disk_guid: h.disk_guid,
@@ -210,7 +211,12 @@ impl Gpt {
     fn entry_array(&self) -> Vec<u8> {
         let stride = self.entry_size as usize;
         let mut out = vec![0u8; self.num_entries as usize * stride];
-        for (i, e) in self.entries.iter().take(self.num_entries as usize).enumerate() {
+        for (i, e) in self
+            .entries
+            .iter()
+            .take(self.num_entries as usize)
+            .enumerate()
+        {
             // An entry_size larger than 128 is legal; the extra bytes are
             // reserved and stay zero. Write into the first 128 of each stride.
             out[i * stride..i * stride + 128].copy_from_slice(&e.to_bytes());
@@ -328,11 +334,13 @@ impl Gpt {
             .entries
             .iter()
             .position(|e| !e.is_used())
-            .ok_or_else(|| PartError::Usage(format!("all {NUM_ENTRIES} partition slots are in use")))?;
+            .ok_or_else(|| {
+                PartError::Usage(format!("all {NUM_ENTRIES} partition slots are in use"))
+            })?;
 
         let extents = self.free_extents();
         let chosen = match sectors {
-            Some(n) if n == 0 => return Err(PartError::Usage("size must be non-zero".into())),
+            Some(0) => return Err(PartError::Usage("size must be non-zero".into())),
             Some(n) => extents
                 .iter()
                 .find(|f| f.sectors() >= n)
@@ -341,7 +349,7 @@ impl Gpt {
                     end: f.start + n - 1,
                 })
                 .ok_or_else(|| {
-                    let biggest = extents.iter().map(|f| f.sectors()).max().unwrap_or(0);
+                    let biggest = extents.iter().map(FreeExtent::sectors).max().unwrap_or(0);
                     PartError::NoSpace {
                         wanted: n,
                         largest: biggest,
@@ -401,8 +409,8 @@ impl Gpt {
             }
             if e.starting_lba % align != 0 {
                 out.push(format!(
-                    "partition {i} starts at {}, which is not {}-sector aligned",
-                    e.starting_lba, align
+                    "partition {i} starts at {}, which is not {align}-sector aligned",
+                    e.starting_lba
                 ));
             }
         }
@@ -484,7 +492,9 @@ mod tests {
     #[test]
     fn add_places_the_first_partition_at_the_alignment_boundary() {
         let mut g = Gpt::create(DISK, 512).unwrap();
-        let i = g.add(Some(1_048_576), esp(), "EFI system partition", None).unwrap();
+        let i = g
+            .add(Some(1_048_576), esp(), "EFI system partition", None)
+            .unwrap();
         assert_eq!(i, 1);
         let e = &g.entries[0];
         assert_eq!(e.starting_lba, 2048);
@@ -539,7 +549,8 @@ mod tests {
     fn partitions_never_overlap_however_they_are_added() {
         let mut g = Gpt::create(DISK, 512).unwrap();
         for n in 1..=8 {
-            g.add(Some(2048 * n), linux(), &format!("p{n}"), None).unwrap();
+            g.add(Some(2048 * n), linux(), &format!("p{n}"), None)
+                .unwrap();
         }
         assert_eq!(g.partitions().len(), 8);
         assert!(g.problems().is_empty(), "{:?}", g.problems());
@@ -567,7 +578,8 @@ mod tests {
     #[test]
     fn round_trips_through_serialisation() {
         let mut g = Gpt::create(DISK, 512).unwrap();
-        g.add(Some(1_048_576), esp(), "EFI system partition", None).unwrap();
+        g.add(Some(1_048_576), esp(), "EFI system partition", None)
+            .unwrap();
         g.add(None, linux(), "Peios root", None).unwrap();
 
         let w = g.writes();
@@ -584,7 +596,10 @@ mod tests {
         let w = g.writes();
         let lbas: Vec<u64> = w.iter().map(|(l, _)| *l).collect();
         let primary_entries = lbas.iter().position(|&l| l == 2).unwrap();
-        let backup_entries = lbas.iter().position(|&l| l == g.backup_entries_lba()).unwrap();
+        let backup_entries = lbas
+            .iter()
+            .position(|&l| l == g.backup_entries_lba())
+            .unwrap();
         let primary_header = lbas.iter().position(|&l| l == 1).unwrap();
         let backup_header = lbas.iter().position(|&l| l == g.last_lba()).unwrap();
         assert!(primary_entries < primary_header);
@@ -668,7 +683,11 @@ mod tests {
             attributes: 0,
             name: "over".into(),
         };
-        assert!(g.problems().iter().any(|m| m.contains("outside the usable range")));
+        assert!(
+            g.problems()
+                .iter()
+                .any(|m| m.contains("outside the usable range"))
+        );
     }
 
     #[test]

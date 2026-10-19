@@ -69,13 +69,60 @@ impl GptHeader {
         s
     }
 
+    /// Check a primary header's disk-relative layout before reading its entry array.
+    ///
+    /// The backup may precede the device's last sector when an image has been
+    /// copied onto a larger device. Keep that layout valid, but require both
+    /// copies of the metadata and the usable range to fit without overlap.
+    pub fn primary_array_sectors(&self, disk_sectors: u64, sector_size: usize) -> Result<u64> {
+        if !sector_size.is_power_of_two() || !(512..=65536).contains(&sector_size) {
+            return Err(PartError::Damaged(format!(
+                "implausible logical sector size {sector_size}"
+            )));
+        }
+        let array_bytes = u64::from(self.num_entries) * u64::from(self.entry_size);
+        let array_sectors = array_bytes.div_ceil(sector_size as u64);
+        let array_end = self.entry_array_lba.checked_add(array_sectors);
+        if array_sectors == 0 || array_end.is_none_or(|end| end > disk_sectors) {
+            return Err(PartError::Damaged(format!(
+                "header describes a {}-entry array at LBA {}, which does not fit on this disk",
+                self.num_entries, self.entry_array_lba
+            )));
+        }
+        if self.my_lba != 1 || self.alternate_lba >= disk_sectors {
+            return Err(PartError::Damaged(
+                "primary or backup header is outside its disk location".into(),
+            ));
+        }
+        if self.first_usable_lba > self.last_usable_lba || self.last_usable_lba >= disk_sectors {
+            return Err(PartError::Damaged(
+                "usable range is reversed or extends beyond the disk".into(),
+            ));
+        }
+        if self.entry_array_lba < 2 || array_end.is_none_or(|end| end > self.first_usable_lba) {
+            return Err(PartError::Damaged(
+                "primary entry array overlaps a header or the usable range".into(),
+            ));
+        }
+        if self
+            .alternate_lba
+            .checked_sub(array_sectors)
+            .is_none_or(|start| start <= self.last_usable_lba)
+        {
+            return Err(PartError::Damaged(
+                "backup metadata overlaps the usable range".into(),
+            ));
+        }
+        Ok(array_sectors)
+    }
+
     /// Parse and validate a header sector.
     ///
     /// Validation is deliberately strict: a header that fails here is reported
     /// as damaged rather than repaired silently. `part` is not a recovery tool,
     /// and quietly "fixing" a table nobody asked it to touch is how data is
     /// lost.
-    pub fn parse(sector: &[u8]) -> Result<GptHeader> {
+    pub fn parse(sector: &[u8]) -> Result<Self> {
         if sector.len() < HEADER_SIZE as usize {
             return Err(PartError::Damaged("header sector is too short".into()));
         }
@@ -108,7 +155,7 @@ impl GptHeader {
             )));
         }
 
-        Ok(GptHeader {
+        Ok(Self {
             my_lba: u64::from_le_bytes(sector[24..32].try_into().unwrap()),
             alternate_lba: u64::from_le_bytes(sector[32..40].try_into().unwrap()),
             first_usable_lba: u64::from_le_bytes(sector[40..48].try_into().unwrap()),
@@ -172,10 +219,19 @@ mod tests {
         let s = sample().to_sector(512);
         assert_eq!(&s[0..8], SIGNATURE);
         assert_eq!(u32::from_le_bytes(s[8..12].try_into().unwrap()), REVISION);
-        assert_eq!(u32::from_le_bytes(s[12..16].try_into().unwrap()), HEADER_SIZE);
+        assert_eq!(
+            u32::from_le_bytes(s[12..16].try_into().unwrap()),
+            HEADER_SIZE
+        );
         assert_eq!(u64::from_le_bytes(s[24..32].try_into().unwrap()), 1);
-        assert_eq!(u64::from_le_bytes(s[32..40].try_into().unwrap()), 16_777_215);
-        assert_eq!(u32::from_le_bytes(s[88..92].try_into().unwrap()), 0xDEAD_BEEF);
+        assert_eq!(
+            u64::from_le_bytes(s[32..40].try_into().unwrap()),
+            16_777_215
+        );
+        assert_eq!(
+            u32::from_le_bytes(s[88..92].try_into().unwrap()),
+            0xDEAD_BEEF
+        );
         // Reserved must be zero, and so must everything past the 92-byte header.
         assert_eq!(&s[20..24], &[0, 0, 0, 0]);
         assert!(s[92..].iter().all(|&b| b == 0));
