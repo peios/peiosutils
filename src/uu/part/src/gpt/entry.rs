@@ -69,7 +69,7 @@ impl GptEntry {
         b
     }
 
-    pub fn parse(b: &[u8]) -> Option<GptEntry> {
+    pub fn parse(b: &[u8]) -> Option<Self> {
         if b.len() < 128 {
             return None;
         }
@@ -83,7 +83,7 @@ impl GptEntry {
             }
             units.push(u);
         }
-        Some(GptEntry {
+        Some(Self {
             type_guid: Guid::from_bytes(&b[0..16])?,
             unique_guid: Guid::from_bytes(&b[16..32])?,
             starting_lba: u64::from_le_bytes(b[32..40].try_into().ok()?),
@@ -166,10 +166,16 @@ mod tests {
     fn overlap_is_inclusive_at_both_ends() {
         let e = sample(); // 2048..=1050623
         assert!(e.overlaps(2048, 2048), "touching the first sector overlaps");
-        assert!(e.overlaps(1_050_623, 2_000_000), "touching the last overlaps");
+        assert!(
+            e.overlaps(1_050_623, 2_000_000),
+            "touching the last overlaps"
+        );
         assert!(e.overlaps(0, u64::MAX));
         assert!(!e.overlaps(0, 2047), "ending just before must not overlap");
-        assert!(!e.overlaps(1_050_624, 2_000_000), "starting just after must not");
+        assert!(
+            !e.overlaps(1_050_624, 2_000_000),
+            "starting just after must not"
+        );
     }
 
     #[test]
@@ -179,7 +185,12 @@ mod tests {
 
     #[test]
     fn names_round_trip_through_utf16() {
-        for n in ["", "Peios root", "ünïcødé ✓", "36 chars exactly xxxxxxxxxxxxxxxxxxx"] {
+        for n in [
+            "",
+            "Peios root",
+            "ünïcødé ✓",
+            "36 chars exactly xxxxxxxxxxxxxxxxxxx",
+        ] {
             let e = GptEntry {
                 name: n.into(),
                 ..sample()

@@ -20,14 +20,14 @@ pub enum Report {
 
 impl Report {
     pub fn driven(self) -> bool {
-        self == Report::Driven
+        self == Self::Driven
     }
 
     /// What feat did or found, such as "installed dynamic-boot".
     pub fn said(self, line: &str) {
         match self {
-            Report::Terminal => println!("feat: {line}"),
-            Report::Driven => event(&json!({"event": "message", "text": line})),
+            Self::Terminal => println!("feat: {line}"),
+            Self::Driven => event(&json!({"event": "message", "text": line})),
         }
     }
 

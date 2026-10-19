@@ -161,7 +161,10 @@ fn plan(name: &str, verb: Verb, state: State) -> Result<(Vec<Action>, State)> {
 
 fn change(name: &str, verb: Verb, report: Report) -> Result<()> {
     let (actions, _) = plan(name, verb, require(name)?)?;
-    let steps = actions.iter().filter(|a| matches!(a, Action::Run(_))).count();
+    let steps = actions
+        .iter()
+        .filter(|a| matches!(a, Action::Run(_)))
+        .count();
     let mut step = 0;
     let mut last = String::new();
     for action in actions {
@@ -209,8 +212,16 @@ impl Feature {
             name: name.to_string(),
             state: registry::read_state(name)?,
             defined,
-            phases: if defined { feature::phases(name) } else { Vec::new() },
-            metadata: if defined { feature::metadata(name) } else { Ok(Metadata::default()) },
+            phases: if defined {
+                feature::phases(name)
+            } else {
+                Vec::new()
+            },
+            metadata: if defined {
+                feature::metadata(name)
+            } else {
+                Ok(Metadata::default())
+            },
         })
     }
 
@@ -254,7 +265,10 @@ fn every() -> Result<Vec<Feature>> {
 fn list(json: bool) -> Result<()> {
     let features = every()?;
     if json {
-        let all = features.iter().map(Feature::json).collect::<Result<Vec<_>>>()?;
+        let all = features
+            .iter()
+            .map(Feature::json)
+            .collect::<Result<Vec<_>>>()?;
         println!("{}", Value::Array(all));
         return Ok(());
     }
@@ -295,9 +309,19 @@ fn info(name: &str, json: bool) -> Result<()> {
     println!("State:       {}", f.state.label());
     if f.defined {
         let scripts = f.phases.iter().map(|p| p.as_str()).collect::<Vec<_>>();
-        println!("Scripts:     {}", if scripts.is_empty() { "none".to_string() } else { scripts.join(", ") });
+        println!(
+            "Scripts:     {}",
+            if scripts.is_empty() {
+                "none".to_string()
+            } else {
+                scripts.join(", ")
+            }
+        );
     } else {
-        println!("Definition:  missing (no {})", feature::feature_dir(name).display());
+        println!(
+            "Definition:  missing (no {})",
+            feature::feature_dir(name).display()
+        );
     }
     if let Some(description) = &metadata.description {
         // Paragraphs are already a blank line apart.
@@ -318,32 +342,59 @@ mod tests {
     #[test]
     fn add_installs_then_enables_and_resumes_either_half() {
         use Action::*;
-        assert_eq!(runs(Verb::Add, State::NotInstalled), [Run(INSTALL), Run(ENABLE)]);
-        assert_eq!(runs(Verb::Add, State::Installing), [Run(INSTALL), Run(ENABLE)]);
+        assert_eq!(
+            runs(Verb::Add, State::NotInstalled),
+            [Run(INSTALL), Run(ENABLE)]
+        );
+        assert_eq!(
+            runs(Verb::Add, State::Installing),
+            [Run(INSTALL), Run(ENABLE)]
+        );
         assert_eq!(
             runs(Verb::Add, State::Enabling),
             [Say("f already installed".into()), Run(ENABLE)]
         );
         assert_eq!(
             runs(Verb::Add, State::Enabled),
-            [Say("f already installed".into()), Say("f already enabled".into())]
+            [
+                Say("f already installed".into()),
+                Say("f already enabled".into())
+            ]
         );
     }
 
     #[test]
     fn remove_disables_first_only_when_on() {
         use Action::*;
-        assert_eq!(runs(Verb::Remove, State::Enabled), [Run(DISABLE), Run(UNINSTALL)]);
-        assert_eq!(runs(Verb::Remove, State::Disabling), [Run(DISABLE), Run(UNINSTALL)]);
+        assert_eq!(
+            runs(Verb::Remove, State::Enabled),
+            [Run(DISABLE), Run(UNINSTALL)]
+        );
+        assert_eq!(
+            runs(Verb::Remove, State::Disabling),
+            [Run(DISABLE), Run(UNINSTALL)]
+        );
         assert_eq!(runs(Verb::Remove, State::Installed), [Run(UNINSTALL)]);
-        assert_eq!(runs(Verb::Remove, State::NotInstalled), [Say("f is not installed".into())]);
+        assert_eq!(
+            runs(Verb::Remove, State::NotInstalled),
+            [Say("f is not installed".into())]
+        );
     }
 
     #[test]
     fn a_plan_says_where_it_leaves_the_feature() {
-        assert_eq!(plan("f", Verb::Add, State::NotInstalled).unwrap().1, State::Enabled);
-        assert_eq!(plan("f", Verb::Remove, State::Enabled).unwrap().1, State::NotInstalled);
-        assert_eq!(plan("f", Verb::Disable, State::Installed).unwrap().1, State::Installed);
+        assert_eq!(
+            plan("f", Verb::Add, State::NotInstalled).unwrap().1,
+            State::Enabled
+        );
+        assert_eq!(
+            plan("f", Verb::Remove, State::Enabled).unwrap().1,
+            State::NotInstalled
+        );
+        assert_eq!(
+            plan("f", Verb::Disable, State::Installed).unwrap().1,
+            State::Installed
+        );
     }
 
     #[test]

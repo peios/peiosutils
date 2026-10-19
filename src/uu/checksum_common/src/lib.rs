@@ -12,9 +12,7 @@ use std::io;
 use clap::builder::ValueParser;
 use clap::{Arg, ArgAction, ArgMatches, Command, ValueHint};
 
-use uucore::checksum::compute::{
-    ChecksumComputeOptions, OutputFormat, perform_checksum_computation,
-};
+use uucore::checksum::compute::{ChecksumComputeOptions, OutputFormat, perform_checksum_computation};
 use uucore::checksum::validate::{self, ChecksumValidateOptions, ChecksumVerbose};
 use uucore::checksum::{AlgoKind, ChecksumError, HashLength, SizedAlgoKind};
 use uucore::error::UResult;

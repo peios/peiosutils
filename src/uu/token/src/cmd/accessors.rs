@@ -2,6 +2,12 @@
 // `token query <class>`. Each prints the relevant value as a focused
 // view; `--json` always available.
 
+use std::fmt::Write;
+
+use peios::security::{Sid, SidRef};
+use peios::token::{Token, TokenAccess, TokenClass};
+use serde_json::json;
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::payload::{self, group_attrs_labels};
@@ -9,9 +15,6 @@ use crate::privs;
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::sid_render::{self, SidStyle};
 use crate::target::TargetSpec;
-use peios::security::{Sid, SidRef};
-use peios::token::{Token, TokenAccess, TokenClass};
-use serde_json::json;
 
 const KACS_TOKEN_QUERY: u32 = TokenAccess::QUERY.bits();
 const KACS_TOKEN_QUERY_SOURCE: u32 = TokenAccess::QUERY_SOURCE.bits();
@@ -196,7 +199,7 @@ pub fn stats(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) 
     let mut lines = Lines::new();
     lines.section("statistics");
     for (i, f) in s.fields.iter().enumerate() {
-        lines.kv(format!("field[{i}]"), format!("0x{:016x}", f));
+        lines.kv(format!("field[{i}]"), format!("0x{f:016x}"));
     }
     let json = json!({ "fields": s.fields.to_vec() });
     cmd::emit(CmdOutput { human: lines, json }, mode)
@@ -227,7 +230,7 @@ pub fn origin(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode)
     let buf = tok.query(TokenClass(peios_sys::KACS_TOKEN_CLASS_ORIGIN))?;
     let v = payload::parse_origin(&buf).map_err(Error::Decode)?;
     let mut lines = Lines::new();
-    lines.kv("origin", format!("0x{:016x}", v));
+    lines.kv("origin", format!("0x{v:016x}"));
     let json = json!({ "origin": format!("0x{:016x}", v) });
     cmd::emit(CmdOutput { human: lines, json }, mode)
 }
@@ -276,7 +279,7 @@ pub fn default_dacl(
     lines.kv("bytes_len", buf.len().to_string());
     // Hex preview only — a proper DACL parse/render would need
     // libp_sd::sd::Acl scaffolding. Defer pretty-print to a later phase.
-    let hex: String = buf.iter().map(|b| format!("{b:02x}")).collect();
+    let hex = hex(&buf);
     lines.detail(format!("hex: {hex}"));
     let json = json!({
         "bytes_len": buf.len(),
@@ -318,5 +321,9 @@ pub fn claims(_matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode)
 }
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(output, "{byte:02x}").expect("writing to a String cannot fail");
+    }
+    output
 }

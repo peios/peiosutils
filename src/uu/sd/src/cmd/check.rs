@@ -62,11 +62,10 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
         OutputMode::Human => {
             println!("path:        {}", target.path);
             println!("token:       {token_label}");
-            println!("desired:     0x{:08x} ({})", desired, perms::render(desired));
+            println!("desired:     0x{desired:08x} ({})", perms::render(desired));
             println!("granted:     {}", decision.allowed);
             println!(
-                "granted_mask: 0x{:08x} ({})",
-                granted_mask,
+                "granted_mask: 0x{granted_mask:08x} ({})",
                 perms::render(granted_mask)
             );
             if explain {
@@ -74,9 +73,7 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
                     println!("reason:      ACCESS_GRANTED (kernel)");
                 } else {
                     println!("reason:      ACCESS_DENIED (kernel)");
-                    println!(
-                        "note:        per-ACE trace requires a kernel feature not yet wired"
-                    );
+                    println!("note:        per-ACE trace requires a kernel feature not yet wired");
                 }
             }
         }

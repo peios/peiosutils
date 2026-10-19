@@ -4,10 +4,11 @@
 // per-entry errors rather than aborting (caller decides via
 // --stop-on-error in the future; for v1 we report at the end).
 
-use crate::error::{Error, Result};
-use crate::target::PathTarget;
 use std::fs;
 use std::path::Path;
+
+use crate::error::{Error, Result};
+use crate::target::PathTarget;
 
 /// Build the list of paths to operate on. If `recursive` is false, just
 /// the root. If true, the root plus every descendant in pre-order.
@@ -38,12 +39,11 @@ fn descend(path: &str, nofollow: bool, out: &mut Vec<PathTarget>) -> Result<()> 
     if !md.is_dir() {
         return Ok(());
     }
-    let entries = fs::read_dir(path)
-        .map_err(|e| Error::NotFound(format!("read_dir {path}: {e}")))?;
+    let entries =
+        fs::read_dir(path).map_err(|e| Error::NotFound(format!("read_dir {path}: {e}")))?;
     for entry in entries {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
+        let Ok(entry) = entry else {
+            continue;
         };
         let child = entry.path();
         let child_str = child.to_string_lossy().into_owned();
@@ -56,7 +56,7 @@ fn descend(path: &str, nofollow: bool, out: &mut Vec<PathTarget>) -> Result<()> 
         } else {
             fs::metadata(&child).ok()
         };
-        if child_md.map(|m| m.is_dir()).unwrap_or(false) {
+        if child_md.is_some_and(|m| m.is_dir()) {
             descend(&child_str, nofollow, out)?;
         }
     }
@@ -66,9 +66,8 @@ fn descend(path: &str, nofollow: bool, out: &mut Vec<PathTarget>) -> Result<()> 
 /// True if the path is a directory (used by verbs that pick a default
 /// ACE-flag set based on container-ness).
 pub fn is_container(path: &str) -> bool {
-    let md = match Path::new(path).symlink_metadata() {
-        Ok(m) => m,
-        Err(_) => return false,
+    let Ok(md) = Path::new(path).symlink_metadata() else {
+        return false;
     };
     md.is_dir()
 }
@@ -78,8 +77,7 @@ pub fn parent_path(path: &str) -> String {
     Path::new(path)
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|| ".".to_string())
+        .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().into_owned())
 }
 
 /// Extract `--recursive` from matches, defaulting to false.
@@ -111,7 +109,11 @@ mod tests {
 
         fs::create_dir(root.path().join("sub")).unwrap();
         fs::write(root.path().join("sub/real"), b"x").unwrap();
-        symlink(elsewhere.path().join("multicall"), root.path().join("whoami")).unwrap();
+        symlink(
+            elsewhere.path().join("multicall"),
+            root.path().join("whoami"),
+        )
+        .unwrap();
         symlink(elsewhere.path(), root.path().join("away")).unwrap();
 
         let target = PathTarget {
@@ -152,7 +154,10 @@ mod tests {
         };
         let targets = walk_paths(&target, true).unwrap();
         let paths: Vec<&str> = targets.iter().map(|t| t.path.as_str()).collect();
-        assert!(paths.iter().any(|p| p.ends_with("/away/reached")), "{paths:?}");
+        assert!(
+            paths.iter().any(|p| p.ends_with("/away/reached")),
+            "{paths:?}"
+        );
     }
 
     #[test]

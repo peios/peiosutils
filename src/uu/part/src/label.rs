@@ -60,7 +60,7 @@ impl DiskLabel for Gpt {
     }
 
     fn partitions(&self) -> Vec<PartitionView> {
-        Gpt::partitions(self)
+        Self::partitions(self)
             .into_iter()
             .map(|(index, e): (usize, &GptEntry)| PartitionView {
                 index,
@@ -68,8 +68,7 @@ impl DiskLabel for Gpt {
                 end: e.ending_lba,
                 sectors: e.sectors(),
                 type_name: crate::types::alias(&e.type_guid)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| e.type_guid.to_string()),
+                    .map_or_else(|| e.type_guid.to_string(), str::to_string),
                 name: e.name.clone(),
                 uuid: e.unique_guid.to_string(),
             })
@@ -77,11 +76,11 @@ impl DiskLabel for Gpt {
     }
 
     fn writes(&self) -> Vec<(u64, Vec<u8>)> {
-        Gpt::writes(self)
+        Self::writes(self)
     }
 
     fn problems(&self) -> Vec<String> {
-        Gpt::problems(self)
+        Self::problems(self)
     }
 }
 
@@ -110,7 +109,9 @@ impl DiskState {
             Self::Damaged(m) => format!("a damaged GPT ({m})"),
             Self::Foreign { kind } => format!("{} partition table", pretty_kind(kind)),
             Self::Filesystem { fstype } => {
-                format!("a {fstype} filesystem written directly to the disk, with no partition table")
+                format!(
+                    "a {fstype} filesystem written directly to the disk, with no partition table"
+                )
             }
             Self::Blank => "no partition table".to_string(),
         }
@@ -159,17 +160,11 @@ pub fn probe(dev: &mut Device) -> Result<DiskState> {
     // and misreports a perfectly good table as damaged.
     match crate::gpt::header::GptHeader::parse(&header) {
         Ok(h) => {
-            let sectors =
-                Gpt::array_sectors_for(h.num_entries, h.entry_size, dev.geom.sector_size);
-            // Refuse to chase an array that could not fit on the disk rather
-            // than attempting a huge read: a header claiming millions of
-            // entries is corruption, not a table.
-            if sectors == 0 || h.entry_array_lba + sectors > dev.geom.sectors {
-                return Ok(DiskState::Damaged(format!(
-                    "header describes a {}-entry array at LBA {}, which does not fit on this disk",
-                    h.num_entries, h.entry_array_lba
-                )));
-            }
+            let sectors = match h.primary_array_sectors(dev.geom.sectors, dev.geom.sector_size) {
+                Ok(sectors) => sectors,
+                Err(PartError::Damaged(message)) => return Ok(DiskState::Damaged(message)),
+                Err(error) => return Err(error),
+            };
             let entries = dev.read_sectors(h.entry_array_lba, sectors)?;
             match Gpt::parse(dev.geom.sectors, dev.geom.sector_size, &header, &entries) {
                 Ok(g) => return Ok(DiskState::Gpt(Box::new(g))),
@@ -270,13 +265,17 @@ mod tests {
         let (_d, p) = image(64 * 1024 * 1024);
         let mut dev = Device::open(&p, true).unwrap();
         let mut g = Gpt::create(dev.geom.sectors, dev.geom.sector_size).unwrap();
-        g.add(Some(2048), esp(), "EFI system partition", None).unwrap();
+        g.add(Some(2048), esp(), "EFI system partition", None)
+            .unwrap();
         commit(&mut dev, &g).unwrap();
 
         match probe(&mut dev).unwrap() {
             DiskState::Gpt(back) => {
                 assert_eq!(back.partitions().len(), 1);
-                assert_eq!(DiskLabel::partitions(&*back)[0].name, "EFI system partition");
+                assert_eq!(
+                    DiskLabel::partitions(&*back)[0].name,
+                    "EFI system partition"
+                );
                 assert_eq!(back.disk_guid, g.disk_guid);
             }
             other => panic!("expected GPT, got {other:?}"),
@@ -301,7 +300,10 @@ mod tests {
         let st = probe(&mut dev).unwrap();
         assert!(matches!(st, DiskState::Damaged(_)), "{st:?}");
         assert!(st.permit_destructive(false).is_err(), "damage must stop us");
-        assert!(st.permit_destructive(true).is_ok(), "--force is the way through");
+        assert!(
+            st.permit_destructive(true).is_ok(),
+            "--force is the way through"
+        );
     }
 
     #[test]
@@ -322,7 +324,10 @@ mod tests {
         }
         let msg = st.permit_destructive(false).unwrap_err().to_string();
         assert!(msg.contains("MBR"), "{msg}");
-        assert!(msg.contains("--force"), "the message must say the way through: {msg}");
+        assert!(
+            msg.contains("--force"),
+            "the message must say the way through: {msg}"
+        );
         assert!(st.permit_destructive(true).is_ok());
     }
 
@@ -384,8 +389,13 @@ mod tests {
         let mut dev = Device::open(&p, true).unwrap();
         let mut g = Gpt::create(dev.geom.sectors, dev.geom.sector_size).unwrap();
         g.add(Some(2048 * 8), esp(), "esp", None).unwrap();
-        g.add(None, Guid::parse(crate::types::LINUX).unwrap(), "root", None)
-            .unwrap();
+        g.add(
+            None,
+            Guid::parse(crate::types::LINUX).unwrap(),
+            "root",
+            None,
+        )
+        .unwrap();
         commit(&mut dev, &g).unwrap();
 
         let back = load_gpt(&mut dev).unwrap();
@@ -423,7 +433,10 @@ mod tests {
 
         match probe(&mut dev).unwrap() {
             DiskState::Gpt(back) => {
-                assert_eq!(back.num_entries, 248, "geometry must survive the round trip");
+                assert_eq!(
+                    back.num_entries, 248,
+                    "geometry must survive the round trip"
+                );
                 assert_eq!(back.first_usable(), 64);
                 assert_eq!(back.partitions().len(), 1);
                 assert_eq!(*back, g);
@@ -473,6 +486,71 @@ mod tests {
             DiskState::Damaged(m) => assert!(m.contains("does not fit"), "{m}"),
             other => panic!("expected damage, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn invalid_header_geometry_is_damage_before_reading_entries() {
+        use crate::gpt::header::GptHeader;
+
+        let (_directory, path) = image(8 * 1024 * 1024);
+        let mut device = Device::open(&path, true).unwrap();
+        let table = Gpt::create(device.geom.sectors, 512).unwrap();
+        commit(&mut device, &table).unwrap();
+        let original = GptHeader::parse(&device.read_sectors(1, 1).unwrap()).unwrap();
+        let cases: &[(&str, fn(&mut GptHeader))] = &[
+            ("usable range beyond disk", |header| {
+                header.last_usable_lba = u64::MAX
+            }),
+            ("reversed usable range", |header| {
+                header.first_usable_lba = header.last_usable_lba + 1
+            }),
+            ("entry array addition overflow", |header| {
+                header.entry_array_lba = u64::MAX - 16
+            }),
+            ("entry array overlaps header", |header| {
+                header.entry_array_lba = 1
+            }),
+            ("entry array overlaps usable space", |header| {
+                header.first_usable_lba = 2
+            }),
+            ("backup header beyond disk", |header| {
+                header.alternate_lba = u64::MAX
+            }),
+            ("backup overlaps usable space", |header| {
+                header.alternate_lba = header.last_usable_lba
+            }),
+            ("wrong primary header location", |header| header.my_lba = 0),
+            ("empty entry array", |header| header.num_entries = 0),
+        ];
+        for (name, change) in cases {
+            let mut header = original.clone();
+            change(&mut header);
+            device.write_at(1, &header.to_sector(512)).unwrap();
+            device.sync().unwrap();
+            let found = probe(&mut device).unwrap();
+            assert!(matches!(found, DiskState::Damaged(_)), "{name}: {found:?}");
+        }
+    }
+
+    #[test]
+    fn an_expanded_image_preserves_the_original_usable_range() {
+        let (_directory, path) = image(8 * 1024 * 1024);
+        let mut device = Device::open(&path, true).unwrap();
+        let table = Gpt::create(device.geom.sectors, 512).unwrap();
+        commit(&mut device, &table).unwrap();
+        drop(device);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(16 * 1024 * 1024)
+            .unwrap();
+        let mut expanded = Device::open(&path, false).unwrap();
+        let loaded = load_gpt(&mut expanded).unwrap();
+        assert_eq!(loaded.first_usable(), table.first_usable());
+        assert_eq!(loaded.last_usable(), table.last_usable());
+        assert_eq!(loaded.num_entries, table.num_entries);
+        assert_eq!(loaded.disk_sectors, table.disk_sectors * 2);
     }
 
     /// The backup copy must be a real copy, not an afterthought — a disk whose

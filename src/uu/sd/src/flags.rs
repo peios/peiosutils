@@ -76,9 +76,9 @@ impl TargetKind {
     pub fn from_path(path: &str) -> std::io::Result<Self> {
         let md = std::fs::metadata(path)?;
         Ok(if md.is_dir() {
-            TargetKind::Directory
+            Self::Directory
         } else {
-            TargetKind::File
+            Self::File
         })
     }
 }

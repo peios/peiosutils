@@ -43,9 +43,9 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
         specs.push(parse_audit_spec(spec)?);
     }
     let condition = match matches.get_one::<String>("if") {
-        Some(s) => Some(
-            sddl::parse_condition(s).map_err(|e| Error::Invalid(format!("--if: {e}")))?,
-        ),
+        Some(s) => {
+            Some(sddl::parse_condition(s).map_err(|e| Error::Invalid(format!("--if: {e}")))?)
+        }
         None => None,
     };
     let args = ParsedArgs {
@@ -71,9 +71,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     match mode {
         OutputMode::Human => {
             println!(
-                "{}: {} audit ACE(s) added across {} target(s)",
+                "{}: {applied} audit ACE(s) added across {} target(s)",
                 primary.path,
-                applied,
                 targets.len()
             );
             for (p, e) in &errors {
@@ -115,7 +114,7 @@ fn apply_one(target: &PathTarget, args: &ParsedArgs) -> Result<usize> {
     let audit_cb_type = AceType::Other(ACE_TYPE_SYSTEM_AUDIT_CALLBACK);
 
     let mut new_sacl = if args.replace {
-        let target_principals: Vec<Sid> = args.specs.iter().map(|(s, _, _)| s.clone()).collect();
+        let target_principals: Vec<Sid> = args.specs.iter().map(|(s, _, _)| *s).collect();
         let (b, _dropped) = filter_acl(target, AclKind::Sacl, |ace| {
             let t = ace.ace_type();
             if t != audit_type && t != audit_cb_type {
@@ -136,7 +135,9 @@ fn apply_one(target: &PathTarget, args: &ParsedArgs) -> Result<usize> {
         let flags = base_flags | *audit_bits;
         match args.condition.as_deref() {
             None => new_sacl.audit(sid, *mask, flags),
-            Some(artx) => new_sacl.callback(ACE_TYPE_SYSTEM_AUDIT_CALLBACK, sid, *mask, flags, artx),
+            Some(artx) => {
+                new_sacl.callback(ACE_TYPE_SYSTEM_AUDIT_CALLBACK, sid, *mask, flags, artx);
+            }
         }
     }
 

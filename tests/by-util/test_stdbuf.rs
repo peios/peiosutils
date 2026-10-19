@@ -72,16 +72,17 @@ fn test_stdbuf_search_order_exe_dir_first() {
     };
     let lib_name = format!("libstdbuf.{lib_extension}");
 
-    // Look for libstdbuf in the build directory deps folder
-    // During build, libstdbuf.so is in target/debug/deps/ or target/release/deps/
-    // This allows running tests without requiring installation to a root-owned path
-    // ts.bin_path is the path to the binary file, so we get its parent directory first
-    let source_lib = ts
+    // Bazel stages runtime files beside the executable; Cargo uses its deps directory.
+    let binary_dir = ts
         .bin_path
         .parent()
-        .expect("Binary should have a parent directory")
-        .join("deps")
-        .join(&lib_name);
+        .expect("Binary should have a parent directory");
+    let adjacent = binary_dir.join(&lib_name);
+    let source_lib = if adjacent.is_file() {
+        adjacent
+    } else {
+        binary_dir.join("deps").join(&lib_name)
+    };
 
     // Fail test if the library doesn't exist - it should have been built
     assert!(

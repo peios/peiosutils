@@ -73,7 +73,10 @@ pub fn parse(data: &[u8]) -> Vec<MountEntry> {
 }
 
 fn parse_line(line: &[u8]) -> Option<MountEntry> {
-    let fields: Vec<&[u8]> = line.split(|&b| b == b' ').filter(|f| !f.is_empty()).collect();
+    let fields: Vec<&[u8]> = line
+        .split(|&b| b == b' ')
+        .filter(|f| !f.is_empty())
+        .collect();
     // Minimum: 6 pre-fields + separator + 3 post-fields = 10, with ≥0 optional.
     if fields.len() < 10 {
         return None;

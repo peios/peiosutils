@@ -22,7 +22,11 @@ use serde_json::json;
 pub fn run(matches: &ArgMatches) -> Result<()> {
     let root = parse_path_target(matches)?;
     let mode = parse_output_mode(matches);
-    let lists = if matches.get_flag("sacl") { SecInfo::DACL | SecInfo::SACL } else { SecInfo::DACL };
+    let lists = if matches.get_flag("sacl") {
+        SecInfo::DACL | SecInfo::SACL
+    } else {
+        SecInfo::DACL
+    };
 
     // The walker yields [root, ...descendants]. We skip the root because
     // propagation pushes *down*; the root's own lists are the source.
@@ -49,10 +53,13 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     match mode {
         OutputMode::Human => {
             println!(
-                "{}: propagated inheritance to {} descendant(s){}{}",
+                "{}: propagated inheritance to {pushed} descendant(s){}{}",
                 root.path,
-                pushed,
-                if protected == 0 { String::new() } else { format!(", {protected} protected and left as they are") },
+                if protected == 0 {
+                    String::new()
+                } else {
+                    format!(", {protected} protected and left as they are")
+                },
                 if errors.is_empty() {
                     String::new()
                 } else {
@@ -109,8 +116,13 @@ fn push_one(child: &PathTarget, nofollow: bool, lists: SecInfo) -> Result<bool> 
     .map_err(Error::from)?;
     // The owner and group too, which CREATOR OWNER and CREATOR GROUP
     // resolve to.
-    let child_sd = get_sd(child.dirfd(), child.as_path(), lists | SecInfo::OWNER | SecInfo::GROUP, child.at_flags())
-        .map_err(Error::from)?;
+    let child_sd = get_sd(
+        child.dirfd(),
+        child.as_path(),
+        lists | SecInfo::OWNER | SecInfo::GROUP,
+        child.at_flags(),
+    )
+    .map_err(Error::from)?;
     let child_bytes = child_sd.as_bytes();
     if child_bytes.is_empty() {
         // Child has no SD yet; nothing to reinherit on top of.
@@ -136,9 +148,21 @@ fn push_one(child: &PathTarget, nofollow: bool, lists: SecInfo) -> Result<bool> 
         parent_sd.as_bytes()
     };
     let mapping = File::generic_mapping();
-    let new_sd = reinherit_with(parent_bytes, child_bytes, walk::is_container(&child.path), Some(&mapping), write)
-        .map_err(Error::from)?;
-    set_sd(child.dirfd(), child.as_path(), write, &new_sd, child.at_flags())
-        .map_err(Error::from)?;
+    let new_sd = reinherit_with(
+        parent_bytes,
+        child_bytes,
+        walk::is_container(&child.path),
+        Some(&mapping),
+        write,
+    )
+    .map_err(Error::from)?;
+    set_sd(
+        child.dirfd(),
+        child.as_path(),
+        write,
+        &new_sd,
+        child.at_flags(),
+    )
+    .map_err(Error::from)?;
     Ok(true)
 }

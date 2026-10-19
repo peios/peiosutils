@@ -112,7 +112,10 @@ pub fn parse_u32(buf: &[u8]) -> Result<u32, String> {
 
 fn read_u32(cur: &mut &[u8]) -> Result<u32, String> {
     if cur.len() < 4 {
-        return Err(format!("truncated: need 4 bytes for u32, got {}", cur.len()));
+        return Err(format!(
+            "truncated: need 4 bytes for u32, got {}",
+            cur.len()
+        ));
     }
     let v = u32::from_le_bytes([cur[0], cur[1], cur[2], cur[3]]);
     *cur = &cur[4..];

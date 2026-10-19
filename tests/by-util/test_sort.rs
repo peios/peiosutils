@@ -3010,3 +3010,42 @@ fn test_consistent_sorting_with_i18n_collate() {
 }
 
 /* spell-checker: enable */
+
+#[test]
+#[cfg(not(debug_assertions))]
+fn installed_translations_include_shared_messages() {
+    use std::fs;
+    use std::process::Command;
+
+    let scenario = TestScenario::new("sort");
+    let installation = tempfile::tempdir().unwrap();
+    let binary = installation.path().join("bin/peiosutils");
+    fs::create_dir_all(binary.parent().unwrap()).unwrap();
+    fs::copy(&scenario.bin_path, &binary).unwrap();
+    let source_locales = scenario.bin_path.parent().unwrap().join("locales");
+    for program in ["sort", "uucore"] {
+        let directory = installation.path().join("share/locales").join(program);
+        fs::create_dir_all(&directory).unwrap();
+        for locale in ["en-US", "fr-FR"] {
+            let name = format!("{locale}.ftl");
+            fs::copy(
+                source_locales.join(program).join(&name),
+                directory.join(name),
+            )
+            .unwrap();
+        }
+    }
+    for (locale, expected) in [("en_US.UTF-8", "Usage:"), ("fr_FR.UTF-8", "Utilisation:")] {
+        let output = Command::new(&binary)
+            .args(["sort", "--help"])
+            .env("LC_ALL", locale)
+            .env("LANG", locale)
+            .env_remove("LANGUAGE")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let help = String::from_utf8(output.stdout).unwrap();
+        assert!(help.contains(expected), "{help}");
+        assert!(!help.contains("common-usage"));
+    }
+}

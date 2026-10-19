@@ -20,6 +20,7 @@
 // feature directory is read-only definition; the registry is the source of truth.
 
 use clap::Command;
+
 use uucore::error::{UResult, USimpleError};
 
 pub mod cli;

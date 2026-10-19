@@ -17,7 +17,8 @@ use crate::request::ListRequest;
 
 /// Run list mode.
 pub fn run(req: &ListRequest) -> Result<()> {
-    let entries = mountinfo::read().map_err(|e| MountError::System(format!("reading mountinfo: {e}")))?;
+    let entries =
+        mountinfo::read().map_err(|e| MountError::System(format!("reading mountinfo: {e}")))?;
     let filter = req.type_filter.as_deref().map(TypeFilter::parse);
 
     let stdout = std::io::stdout();
@@ -65,7 +66,10 @@ fn pretty_source(source: &[u8]) -> Vec<u8> {
     // /dev/loopN → backing file.
     if let Some(n) = source.strip_prefix(b"/dev/") {
         if n.starts_with(b"loop") && n[4..].iter().all(u8::is_ascii_digit) && n.len() > 4 {
-            let p = format!("/sys/block/{}/loop/backing_file", String::from_utf8_lossy(n));
+            let p = format!(
+                "/sys/block/{}/loop/backing_file",
+                String::from_utf8_lossy(n)
+            );
             if let Ok(data) = std::fs::read(&p) {
                 let trimmed = data.strip_suffix(b"\n").unwrap_or(&data);
                 if !trimmed.is_empty() {
@@ -100,7 +104,10 @@ fn pretty_source(source: &[u8]) -> Vec<u8> {
 /// first, then superblock options, dropping a duplicate ro/rw and not
 /// reordering anything else.
 fn merge_options(vfs: &[u8], sb: &[u8]) -> Vec<u8> {
-    let mut toks: Vec<&[u8]> = vfs.split(|&b| b == b',').filter(|t| !t.is_empty()).collect();
+    let mut toks: Vec<&[u8]> = vfs
+        .split(|&b| b == b',')
+        .filter(|t| !t.is_empty())
+        .collect();
     // mountinfo's vfs field leads with ro/rw; the sb field repeats it — drop the
     // repeat so the merged view shows it once (coalesced).
     let have_rorw = toks.first().is_some_and(|t| *t == b"ro" || *t == b"rw");

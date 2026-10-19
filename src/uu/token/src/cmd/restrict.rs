@@ -48,12 +48,12 @@ pub fn run(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> 
     let mut lines = Lines::new();
     lines.section("restrict");
     lines.kv("drop_privs", format!("0x{drop_mask:016x}"));
-    lines.kv("deny_indices", format!("{:?}", deny_indices));
+    lines.kv("deny_indices", format!("{deny_indices:?}"));
     lines.kv(
         "restrict_sids",
         restrict_sids
             .iter()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(", "),
     );
@@ -64,7 +64,7 @@ pub fn run(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputMode) -> 
     let out = json!({
         "drop_privs": format!("0x{drop_mask:016x}"),
         "deny_indices": deny_indices,
-        "restrict_sids": restrict_sids.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        "restrict_sids": restrict_sids.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "flags": flags,
         "result_fd": raw_fd,
     });

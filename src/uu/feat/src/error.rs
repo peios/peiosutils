@@ -26,7 +26,11 @@ pub enum Error {
     /// Feature is in the wrong state for the requested transition (exit 4).
     State(String),
     /// A lifecycle script exited non-zero (exit 5).
-    Script { feature: String, phase: &'static str, code: Option<i32> },
+    Script {
+        feature: String,
+        phase: &'static str,
+        code: Option<i32>,
+    },
     /// Filesystem / process I/O failure (exit 5).
     Io { op: String, source: std::io::Error },
     /// Registry operation failed (exit 5, unless reclassified).
@@ -36,11 +40,11 @@ pub enum Error {
 impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Usage(_) => 1,
-            Error::NotFound(_) => 2,
-            Error::Denied { .. } => 3,
-            Error::State(_) => 4,
-            Error::Script { .. } | Error::Io { .. } | Error::Registry { .. } => 5,
+            Self::Usage(_) => 1,
+            Self::NotFound(_) => 2,
+            Self::Denied { .. } => 3,
+            Self::State(_) => 4,
+            Self::Script { .. } | Self::Io { .. } | Self::Registry { .. } => 5,
         }
     }
 
@@ -49,25 +53,25 @@ impl Error {
     /// failure, since its output says why.
     pub fn code(&self) -> &'static str {
         match self {
-            Error::Usage(_) => "usage",
-            Error::NotFound(_) => "not-found",
-            Error::Denied { .. } => "denied",
-            Error::State(_) => "state",
-            Error::Script { .. } => "script",
-            Error::Io { .. } | Error::Registry { .. } => "failed",
+            Self::Usage(_) => "usage",
+            Self::NotFound(_) => "not-found",
+            Self::Denied { .. } => "denied",
+            Self::State(_) => "state",
+            Self::Script { .. } => "script",
+            Self::Io { .. } | Self::Registry { .. } => "failed",
         }
     }
 
     /// Funnel a `peios::Error` from registry op `op` into the right bucket so the
     /// errno -> exit-code policy lives in one place (mirrors reg's `from_peios`).
-    pub fn from_peios(op: impl Into<String>, e: peios::Error) -> Error {
+    pub fn from_peios(op: impl Into<String>, e: peios::Error) -> Self {
         let op = op.into();
         match e.raw_os_error().unwrap_or(0) {
-            EACCES | EPERM => Error::Denied {
+            EACCES | EPERM => Self::Denied {
                 op,
                 errno: e.raw_os_error().unwrap_or(0),
             },
-            errno => Error::Registry { op, errno },
+            errno => Self::Registry { op, errno },
         }
     }
 
@@ -80,18 +84,25 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Usage(m) => write!(f, "{m}"),
-            Error::NotFound(name) => write!(f, "no such feature: {name}"),
-            Error::Denied { op, errno } => {
-                write!(f, "{op}: denied (errno {errno}) — your token lacks the authority")
+            Self::Usage(m) => write!(f, "{m}"),
+            Self::NotFound(name) => write!(f, "no such feature: {name}"),
+            Self::Denied { op, errno } => {
+                write!(
+                    f,
+                    "{op}: denied (errno {errno}) — your token lacks the authority"
+                )
             }
-            Error::State(m) => write!(f, "{m}"),
-            Error::Script { feature, phase, code } => match code {
+            Self::State(m) => write!(f, "{m}"),
+            Self::Script {
+                feature,
+                phase,
+                code,
+            } => match code {
                 Some(c) => write!(f, "feature {feature}: {phase} script failed (exit {c})"),
                 None => write!(f, "feature {feature}: {phase} script killed by signal"),
             },
-            Error::Io { op, source } => write!(f, "{op}: {source}"),
-            Error::Registry { op, errno } => write!(f, "{op}: registry error (errno {errno})"),
+            Self::Io { op, source } => write!(f, "{op}: {source}"),
+            Self::Registry { op, errno } => write!(f, "{op}: registry error (errno {errno})"),
         }
     }
 }

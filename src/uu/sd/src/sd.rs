@@ -21,7 +21,7 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let matches = match cli.try_get_matches_from(args) {
         Ok(m) => m,
         Err(e) => {
-            let code = e.exit_code() as i32;
+            let code = e.exit_code();
             e.print().ok();
             return if code == 0 {
                 Ok(())

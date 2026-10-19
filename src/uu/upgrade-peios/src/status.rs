@@ -18,7 +18,8 @@ const PEIPKG_STATE: [&str; 2] = ["var/state/peipkg/lock", "var/state/peipkg/db.s
 
 pub fn show(root: &Path, live: bool, as_json: bool) -> Result<()> {
     let path = root.join("usr/lib/os-release");
-    let text = fs::read_to_string(&path).map_err(|e| Error::NoRelease(format!("{}: {e}", path.display())))?;
+    let text = fs::read_to_string(&path)
+        .map_err(|e| Error::NoRelease(format!("{}: {e}", path.display())))?;
     let edition = edition_of(&text, &path)?;
     let field = |key: &str| {
         text.lines()
@@ -43,14 +44,20 @@ pub fn show(root: &Path, live: bool, as_json: bool) -> Result<()> {
         );
         return Ok(());
     }
-    println!("{}", field("PRETTY_NAME").unwrap_or_else(|| edition.clone()));
+    println!(
+        "{}",
+        field("PRETTY_NAME").unwrap_or_else(|| edition.clone())
+    );
     match &version {
         Some(v) => println!("Edition:       {edition} {v}"),
         None => println!("Edition:       {edition} (its version can't be read)"),
     }
     match &queued {
         Some(names) if names.is_empty() => println!("Queued seeds:  none"),
-        Some(names) => println!("Queued seeds:  {} (applied at the next boot)", names.join(", ")),
+        Some(names) => println!(
+            "Queued seeds:  {} (applied at the next boot)",
+            names.join(", ")
+        ),
         None => println!("Queued seeds:  can't be read"),
     }
     println!("May upgrade:   {}", if may { "yes" } else { "no" });
@@ -64,12 +71,19 @@ fn installed_version(root: &Path, live: bool, edition: &str) -> Option<String> {
     if !live {
         cmd.arg("--root").arg(root);
     }
-    let out = cmd.args(["info", "--json", edition]).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    let out = cmd
+        .args(["info", "--json", edition])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
     let info: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    info.get("version").and_then(serde_json::Value::as_str).map(str::to_string)
+    info.get("version")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }
 
 /// The seeds waiting in the queue for the next boot, by name, sorted; `None`
@@ -82,7 +96,13 @@ fn queued(root: &Path) -> Option<Vec<String>> {
     };
     let mut names: Vec<String> = entries
         .filter_map(std::result::Result::ok)
-        .filter_map(|entry| entry.file_name().to_str().and_then(|n| n.strip_suffix(".reg")).map(str::to_string))
+        .filter_map(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .and_then(|n| n.strip_suffix(".reg"))
+                .map(str::to_string)
+        })
         .collect();
     names.sort();
     Some(names)
@@ -95,15 +115,25 @@ fn queued(root: &Path) -> Option<Vec<String>> {
 /// registry's to say when it does.
 fn may_upgrade(root: &Path) -> bool {
     for state in PEIPKG_STATE {
-        match OpenOptions::new().read(true).write(true).open(root.join(state)) {
+        match OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join(state))
+        {
             Err(e) if e.kind() == ErrorKind::PermissionDenied => return false,
             // Not there yet: peipkg makes it, and is the one to refuse.
             _ => {}
         }
     }
     let queue = root.join(AUTOAPPLY_DIR);
-    let dir = if queue.exists() { queue } else { queue.parent().map(Path::to_path_buf).unwrap_or(queue) };
-    let Ok(dir) = CString::new(dir.as_os_str().as_bytes()) else { return false };
+    let dir = if queue.exists() {
+        queue
+    } else {
+        queue.parent().map(Path::to_path_buf).unwrap_or(queue)
+    };
+    let Ok(dir) = CString::new(dir.as_os_str().as_bytes()) else {
+        return false;
+    };
     // SAFETY: a NUL-terminated path; access() reads it and nothing else.
     unsafe { libc::access(dir.as_ptr(), libc::W_OK) == 0 }
 }

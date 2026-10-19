@@ -60,8 +60,13 @@ fn apply_one(target: &PathTarget) -> Result<()> {
         parent_target.at_flags(),
     )
     .map_err(Error::from)?;
-    let child_sd = get_sd(target.dirfd(), target.as_path(), SecInfo::DACL | SecInfo::OWNER | SecInfo::GROUP, target.at_flags())
-        .map_err(Error::from)?;
+    let child_sd = get_sd(
+        target.dirfd(),
+        target.as_path(),
+        SecInfo::DACL | SecInfo::OWNER | SecInfo::GROUP,
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     if child_sd.as_bytes().is_empty() {
         return Err(Error::Invalid(format!(
             "{}: no SD recorded; nothing to reset",
@@ -90,8 +95,14 @@ fn apply_one(target: &PathTarget) -> Result<()> {
         parent_sd.as_bytes()
     };
     let mapping = File::generic_mapping();
-    let new_sd = reinherit_with(parent_for_inherit, child_bytes, child_is_container, Some(&mapping), SecInfo::DACL)
-        .map_err(Error::from)?;
+    let new_sd = reinherit_with(
+        parent_for_inherit,
+        child_bytes,
+        child_is_container,
+        Some(&mapping),
+        SecInfo::DACL,
+    )
+    .map_err(Error::from)?;
     set_sd(
         target.dirfd(),
         target.as_path(),

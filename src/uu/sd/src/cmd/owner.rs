@@ -20,14 +20,14 @@ pub enum Field {
 impl Field {
     fn info(self) -> SecInfo {
         match self {
-            Field::Owner => SecInfo::OWNER,
-            Field::Group => SecInfo::GROUP,
+            Self::Owner => SecInfo::OWNER,
+            Self::Group => SecInfo::GROUP,
         }
     }
     fn name(self) -> &'static str {
         match self {
-            Field::Owner => "owner",
-            Field::Group => "group",
+            Self::Owner => "owner",
+            Self::Group => "group",
         }
     }
 }
@@ -45,17 +45,16 @@ pub fn run(matches: &ArgMatches, field: Field) -> Result<()> {
     let targets = walk::walk_paths(&primary, recursive)?;
     let mut errors: Vec<(String, Error)> = Vec::new();
     for target in &targets {
-        if let Err(e) = apply_one(target, field, sid.clone()) {
+        if let Err(e) = apply_one(target, field, sid) {
             errors.push((target.path.clone(), e));
         }
     }
 
     match mode {
         OutputMode::Human => println!(
-            "{}: {} set to {} on {} target(s)",
+            "{}: {} set to {sid} on {} target(s)",
             primary.path,
             field.name(),
-            sid,
             targets.len()
         ),
         OutputMode::Json => println!(
@@ -85,7 +84,7 @@ fn apply_one(target: &PathTarget, field: Field, sid: Sid) -> Result<()> {
         Field::Group => {
             sd.group(&sid);
         }
-    };
+    }
     let bytes = sd
         .build()
         .map_err(|e| Error::Invalid(format!("building SD: {e}")))?;

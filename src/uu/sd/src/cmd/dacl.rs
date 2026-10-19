@@ -30,8 +30,8 @@ pub enum AclKind {
 impl AclKind {
     pub fn security_info(self) -> SecInfo {
         match self {
-            AclKind::Dacl => SecInfo::DACL,
-            AclKind::Sacl => SecInfo::SACL,
+            Self::Dacl => SecInfo::DACL,
+            Self::Sacl => SecInfo::SACL,
         }
     }
 }
@@ -45,8 +45,8 @@ pub struct AclEdit {
 }
 
 impl AclEdit {
-    pub fn new() -> AclEdit {
-        AclEdit {
+    pub fn new() -> Self {
+        Self {
             builder: AclBuilder::new(),
             count: 0,
         }
@@ -58,19 +58,22 @@ impl AclEdit {
 
     /// Append an access-allowed ACE.
     pub fn allow(&mut self, sid: &SidRef, mask: u32, flags: u8) {
-        self.builder.allow(sid, mask, AceFlags::from_bits_retain(flags));
+        self.builder
+            .allow(sid, mask, AceFlags::from_bits_retain(flags));
         self.count += 1;
     }
 
     /// Append an access-denied ACE.
     pub fn deny(&mut self, sid: &SidRef, mask: u32, flags: u8) {
-        self.builder.deny(sid, mask, AceFlags::from_bits_retain(flags));
+        self.builder
+            .deny(sid, mask, AceFlags::from_bits_retain(flags));
         self.count += 1;
     }
 
     /// Append a system-audit ACE.
     pub fn audit(&mut self, sid: &SidRef, mask: u32, flags: u8) {
-        self.builder.audit(sid, mask, AceFlags::from_bits_retain(flags));
+        self.builder
+            .audit(sid, mask, AceFlags::from_bits_retain(flags));
         self.count += 1;
     }
 
@@ -143,13 +146,19 @@ impl Default for AclEdit {
 /// Read the named ACL into a fresh editable builder. Returns an empty builder
 /// if the SD has no ACL of this kind.
 pub fn read_acl_builder(target: &PathTarget, kind: AclKind) -> Result<AclEdit> {
-    let sd = get_sd(target.dirfd(), target.as_path(), kind.security_info(), target.at_flags())
-        .map_err(Error::from)?;
+    let sd = get_sd(
+        target.dirfd(),
+        target.as_path(),
+        kind.security_info(),
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     let bytes = sd.as_bytes();
     if bytes.is_empty() {
         return Ok(AclEdit::new());
     }
-    let view = SdView::parse(bytes).map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
+    let view =
+        SdView::parse(bytes).map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
     let acl_opt = match kind {
         AclKind::Dacl => view.dacl(),
         AclKind::Sacl => view.sacl(),
@@ -174,7 +183,7 @@ pub fn write_acl(target: &PathTarget, kind: AclKind, acl: AclEdit) -> Result<()>
         AclKind::Sacl => {
             sd.sacl(&built);
         }
-    };
+    }
     let out = sd
         .build()
         .map_err(|e| Error::Invalid(format!("building SD: {e}")))?;
@@ -195,13 +204,19 @@ pub fn filter_acl<F>(target: &PathTarget, kind: AclKind, mut keep: F) -> Result<
 where
     F: FnMut(&AceView<'_>) -> bool,
 {
-    let sd = get_sd(target.dirfd(), target.as_path(), kind.security_info(), target.at_flags())
-        .map_err(Error::from)?;
+    let sd = get_sd(
+        target.dirfd(),
+        target.as_path(),
+        kind.security_info(),
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     let bytes = sd.as_bytes();
     if bytes.is_empty() {
         return Ok((AclEdit::new(), 0));
     }
-    let view = SdView::parse(bytes).map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
+    let view =
+        SdView::parse(bytes).map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
     let acl_opt = match kind {
         AclKind::Dacl => view.dacl(),
         AclKind::Sacl => view.sacl(),
@@ -240,6 +255,6 @@ pub fn is_explicit(ace: &AceView<'_>) -> bool {
 pub fn count_aces_for_principal(acl: Option<&AclView<'_>>, principal: &Sid) -> usize {
     let Some(acl) = acl else { return 0 };
     acl.iter()
-        .filter(|ace| ace.sid().map(|s| s == &**principal).unwrap_or(false))
+        .filter(|ace| ace.sid().is_some_and(|s| s == &**principal))
         .count()
 }

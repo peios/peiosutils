@@ -27,9 +27,7 @@ pub enum OutputMode {
 
 pub fn dispatch(matches: &ArgMatches) -> Result<()> {
     let Some((name, sub)) = matches.subcommand() else {
-        return Err(Error::Usage(
-            "subcommand required (try `sd --help`)".into(),
-        ));
+        return Err(Error::Usage("subcommand required (try `sd --help`)".into()));
     };
     match name {
         "show" => show::run(sub),
@@ -100,7 +98,12 @@ pub fn empty_self_relative_sd() -> Vec<u8> {
 
 /// Common: parse --raw / --label flags (for commands that show SIDs).
 pub fn parse_sid_style(matches: &ArgMatches) -> Result<SidStyle> {
-    let raw = matches.try_get_one::<bool>("raw").ok().flatten().copied().unwrap_or(false);
+    let raw = matches
+        .try_get_one::<bool>("raw")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
     let label = matches
         .try_get_one::<bool>("label")
         .ok()
@@ -161,8 +164,7 @@ mod tests {
     #[test]
     fn an_explicit_no_follow_still_works_on_its_own() {
         assert!(
-            target_for(&["sd", "allow", "-P", "/usr/bin/whoami", "Everyone:rx"])
-                .no_follow_symlinks
+            target_for(&["sd", "allow", "-P", "/usr/bin/whoami", "Everyone:rx"]).no_follow_symlinks
         );
     }
 }

@@ -9,9 +9,7 @@ use icu_collator::{self, CollatorBorrowed};
 
 use crate::i18n::{DEFAULT_LOCALE, get_collating_locale};
 
-pub use icu_collator::options::{
-    AlternateHandling, CaseLevel, CollatorOptions, MaxVariable, Strength,
-};
+pub use icu_collator::options::{AlternateHandling, CaseLevel, CollatorOptions, MaxVariable, Strength};
 
 static COLLATOR: OnceLock<CollatorBorrowed> = OnceLock::new();
 

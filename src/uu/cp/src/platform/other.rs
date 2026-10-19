@@ -7,9 +7,7 @@ use std::fs;
 use std::path::Path;
 use uucore::translate;
 
-use crate::{
-    CopyDebug, CopyResult, CpError, OffloadReflinkDebug, ReflinkMode, SparseDebug, SparseMode,
-};
+use crate::{CopyDebug, CopyResult, CpError, OffloadReflinkDebug, ReflinkMode, SparseDebug, SparseMode};
 
 /// Copies `source` to `dest` for systems without copy-on-write
 pub(crate) fn copy_on_write(

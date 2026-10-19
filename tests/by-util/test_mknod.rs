@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 
 #[cfg(feature = "feat_selinux")]
 use uucore::selinux::get_getfattr_output;
-use uutests::new_ucmd;
+use uutests::{at_and_ucmd, new_ucmd};
 use uutests::util::TestScenario;
 use uutests::util::run_ucmd_as_root;
 use uutests::util_name;
@@ -73,19 +73,6 @@ fn test_mknod_fifo_mnemonic_usage() {
 }
 
 #[test]
-fn test_mknod_fifo_read_only() {
-    let ts = TestScenario::new(util_name!());
-    ts.ucmd()
-        .arg("-m")
-        .arg("a=r")
-        .arg("test_file")
-        .arg("p")
-        .succeeds();
-    assert!(ts.fixtures.is_fifo("test_file"));
-    assert!(ts.fixtures.metadata("test_file").permissions().readonly());
-}
-
-#[test]
 fn test_mknod_fifo_invalid_extra_operand() {
     new_ucmd!()
         .arg("test_file")
@@ -126,19 +113,6 @@ fn test_mknod_character_device_requires_major_and_minor() {
 }
 
 #[test]
-fn test_mknod_invalid_mode() {
-    new_ucmd!()
-        .arg("--mode")
-        .arg("rw")
-        .arg("test_file")
-        .arg("p")
-        .fails()
-        .no_stdout()
-        .code_is(1)
-        .stderr_contains("invalid mode");
-}
-
-#[test]
 fn test_mknod_mode_permissions() {
     for test_mode in [0o0666, 0o0000, 0o0444, 0o0004, 0o0040, 0o0400, 0o0644] {
         let ts = TestScenario::new(util_name!());
@@ -165,22 +139,6 @@ fn test_mknod_mode_permissions() {
         let permissions = ts.fixtures.metadata(&filename).permissions();
         assert_eq!(test_mode, PermissionsExt::mode(&permissions) & 0o777);
     }
-}
-
-#[test]
-fn test_mknod_mode_comma_separated() {
-    let ts = TestScenario::new(util_name!());
-    ts.ucmd()
-        .arg("-m")
-        .arg("u=rwx,g=rx,o=")
-        .arg("test_file")
-        .arg("p")
-        .succeeds();
-    assert!(ts.fixtures.is_fifo("test_file"));
-    assert_eq!(
-        ts.fixtures.metadata("test_file").permissions().mode() & 0o777,
-        0o750
-    );
 }
 
 #[test]
@@ -257,4 +215,14 @@ fn test_mknod_selinux_invalid_cleanup() {
 
     // invalid context → node must not exist
     assert!(!at.file_exists(dest));
+}
+
+#[test]
+fn posix_mode_is_rejected_before_creating_a_node() {
+    let (files, mut command) = at_and_ucmd!();
+    command
+        .args(&["-m", "600", "fifo", "p"])
+        .fails_with_code(1)
+        .stderr_contains("unexpected argument '-m'");
+    assert!(!files.file_exists("fifo"));
 }

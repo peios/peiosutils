@@ -40,8 +40,8 @@ pub fn resolve_source(raw: &[u8]) -> Result<Vec<u8>> {
 /// probe (ambiguous/multiple signatures → error). `auto_fstypes`, when set,
 /// constrains the acceptable result.
 pub fn probe_type(device: &[u8], auto_fstypes: Option<&[u8]>) -> Result<Vec<u8>> {
-    let info = blkid::probe_with(device, Chains::Default)
-        .map_err(|e| map_probe_error(device, e))?;
+    let info =
+        blkid::probe_with(device, Chains::Default).map_err(|e| map_probe_error(device, e))?;
 
     // Probed cleanly, but libblkid offered no TYPE. Distinct from the
     // no-signature case above, and the same message the hand-rolled shim gave.
@@ -158,7 +158,10 @@ mod tests {
     fn an_unresolvable_spec_names_the_spec_and_exits_32() {
         let e = map_resolve_error(b"UUID=1234-abcd", BlkidError::SpecUnresolved);
         let msg = e.to_string();
-        assert!(msg.contains("cannot find device for UUID=1234-abcd"), "{msg}");
+        assert!(
+            msg.contains("cannot find device for UUID=1234-abcd"),
+            "{msg}"
+        );
         assert_eq!(e.exit_code(), 32);
     }
 

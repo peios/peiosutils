@@ -66,29 +66,54 @@ pub fn build() -> Command {
                 .long("output-all")
                 .help("Output all available columns"),
         )
-        .arg(boolean(opt::FS).short('f').long("fs").help("Output filesystem information"))
+        .arg(
+            boolean(opt::FS)
+                .short('f')
+                .long("fs")
+                .help("Output filesystem information"),
+        )
         .arg(
             boolean(opt::PERMS)
                 .short('m')
                 .long("perms")
                 .help("Output owner and SD-derived mode (mirrors `ls -l`)"),
         )
-        .arg(boolean(opt::JSON).short('J').long("json").help("Use JSON output format"))
+        .arg(
+            boolean(opt::JSON)
+                .short('J')
+                .long("json")
+                .help("Use JSON output format"),
+        )
         .arg(
             boolean(opt::PAIRS)
                 .short('P')
                 .long("pairs")
                 .help("Use key=\"value\" output format"),
         )
-        .arg(boolean(opt::RAW).short('r').long("raw").help("Use raw output format"))
-        .arg(boolean(opt::LIST).short('l').long("list").help("Use list output format"))
+        .arg(
+            boolean(opt::RAW)
+                .short('r')
+                .long("raw")
+                .help("Use raw output format"),
+        )
+        .arg(
+            boolean(opt::LIST)
+                .short('l')
+                .long("list")
+                .help("Use list output format"),
+        )
         .arg(
             boolean(opt::ASCII)
                 .short('i')
                 .long("ascii")
                 .help("Use ascii characters for the tree"),
         )
-        .arg(boolean(opt::BYTES).short('b').long("bytes").help("Print SIZE in bytes"))
+        .arg(
+            boolean(opt::BYTES)
+                .short('b')
+                .long("bytes")
+                .help("Print SIZE in bytes"),
+        )
         .arg(
             boolean(opt::NOHEADINGS)
                 .short('n')

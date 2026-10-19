@@ -36,7 +36,10 @@ impl Ctx {
 
 /// Execute a fully-resolved mount request.
 pub fn execute(req: &MountRequest) -> Result<()> {
-    let ctx = Ctx { verbose: req.verbose, fake: req.fake };
+    let ctx = Ctx {
+        verbose: req.verbose,
+        fake: req.fake,
+    };
 
     // Canonicalize the target in the origin namespace (§13).
     let target = canonicalize(&req.target, req.no_canonicalize_target, req.mkdir)?;
@@ -123,32 +126,7 @@ fn exec_new(ctx: &Ctx, req: &MountRequest, target: &[u8]) -> Result<()> {
     // unless rw was explicitly requested.
     let attempt = |force_ro: bool| -> Result<()> {
         let detached = build_new_fsmount(req, &device, &fstype, force_ro)?;
-        // KACS policy set-before-attach (§8.3): on the DETACHED fd, before
-        // move_mount. On failure the fd is dropped and nothing is attached.
-        // (Set on the whole-fs mount so a subdir clone shares the sb policy.)
-        policy::apply_set_before_attach(detached.as_fd(), o.policy, req.synth_sddl.as_deref())?;
-        // The superblock was created from the origin-resolved device; enter the
-        // target ns now, just before attaching (§13).
-        enter_ns(req)?;
-        let tgt = cstr(target)?;
-
-        // X-mount.subdir (§6.9): attach a subdirectory of the fresh instance.
-        // Clone the subtree rooted at DIR within the detached mount, then graft
-        // the clone. Only meaningful for a new instance (here).
-        if let Some(subdir) = &o.subdir {
-            let rel = cstr(subdir.strip_prefix(b"/").unwrap_or(subdir))?;
-            let clone = sys::open_tree(
-                detached.as_fd(),
-                &rel,
-                sys::OPEN_TREE_CLONE | sys::OPEN_TREE_CLOEXEC,
-            )
-            .map_err(MountError::at("open_tree(subdir)"))?;
-            return sys::move_mount_attach(clone.as_fd(), &tgt, move_mount_flags(req))
-                .map_err(MountError::at("move_mount"));
-        }
-
-        sys::move_mount_attach(detached.as_fd(), &tgt, move_mount_flags(req))
-            .map_err(MountError::at("move_mount"))
+        attach_new_mount(req, detached.as_fd(), target)
     };
 
     let result = match attempt(false) {
@@ -167,6 +145,37 @@ fn exec_new(ctx: &Ctx, req: &MountRequest, target: &[u8]) -> Result<()> {
         }
     }
     result
+}
+
+/// Apply the detached mount's policy before entering the target namespace and attaching it.
+/// The caller retains the owning descriptor until attachment succeeds or fails.
+fn attach_new_mount(req: &MountRequest, detached: BorrowedFd<'_>, target: &[u8]) -> Result<()> {
+    // KACS policy set-before-attach (§8.3): on the DETACHED fd, before
+    // move_mount. On failure the fd is dropped and nothing is attached.
+    // (Set on the whole-fs mount so a subdir clone shares the sb policy.)
+    policy::apply_set_before_attach(detached, req.options.policy, req.synth_sddl.as_deref())?;
+    // The superblock was created from the origin-resolved device; enter the
+    // target ns now, just before attaching (§13).
+    enter_ns(req)?;
+    let tgt = cstr(target)?;
+
+    // X-mount.subdir (§6.9): attach a subdirectory of the fresh instance.
+    // Clone the subtree rooted at DIR within the detached mount, then graft
+    // the clone. Only meaningful for a new instance (here).
+    if let Some(subdir) = &req.options.subdir {
+        let rel = cstr(subdir.strip_prefix(b"/").unwrap_or(subdir))?;
+        let clone = sys::open_tree(
+            detached,
+            &rel,
+            sys::OPEN_TREE_CLONE | sys::OPEN_TREE_CLOEXEC,
+        )
+        .map_err(MountError::at("open_tree(subdir)"))?;
+        return sys::move_mount_attach(clone.as_fd(), &tgt, move_mount_flags(req))
+            .map_err(MountError::at("move_mount"));
+    }
+
+    sys::move_mount_attach(detached, &tgt, move_mount_flags(req))
+        .map_err(MountError::at("move_mount"))
 }
 
 /// Build the detached `fsmount` fd: `fsopen → fsconfig(source, params, sb) →
@@ -269,7 +278,8 @@ fn exec_bind(ctx: &Ctx, req: &MountRequest, target: &[u8], recursive: bool) -> R
     // Enter the target ns just before grafting (§13).
     enter_ns(req)?;
     let tgt = cstr(target)?;
-    sys::move_mount_attach(clone.as_fd(), &tgt, move_mount_flags(req)).map_err(MountError::at("move_mount"))
+    sys::move_mount_attach(clone.as_fd(), &tgt, move_mount_flags(req))
+        .map_err(MountError::at("move_mount"))
 }
 
 fn exec_move(ctx: &Ctx, req: &MountRequest, target: &[u8], flags: u32) -> Result<()> {
@@ -283,7 +293,11 @@ fn exec_move(ctx: &Ctx, req: &MountRequest, target: &[u8], flags: u32) -> Result
             "moving {} to {}{}",
             String::from_utf8_lossy(&source),
             String::from_utf8_lossy(target),
-            if flags & libc::MOVE_MOUNT_BENEATH != 0 { " (beneath)" } else { "" }
+            if flags & libc::MOVE_MOUNT_BENEATH != 0 {
+                " (beneath)"
+            } else {
+                ""
+            }
         )
     });
     if ctx.fake {
@@ -370,7 +384,13 @@ fn exec_remount(ctx: &Ctx, req: &MountRequest, target: &[u8]) -> Result<()> {
 
 fn apply_propagation(ctx: &Ctx, target: &[u8], changes: &[PropChange]) -> Result<()> {
     for ch in changes {
-        ctx.say(|| format!("setting propagation {:?}{}", ch.kind, if ch.recursive { " (recursive)" } else { "" }));
+        ctx.say(|| {
+            format!(
+                "setting propagation {:?}{}",
+                ch.kind,
+                if ch.recursive { " (recursive)" } else { "" }
+            )
+        });
         if ctx.fake {
             continue;
         }
@@ -394,7 +414,10 @@ fn apply_propagation(ctx: &Ctx, target: &[u8], changes: &[PropChange]) -> Result
 // ---------------------------------------------------------------------------
 
 fn ctx_io(ctx: &Ctx) -> loopdev::Io {
-    loopdev::Io { verbose: ctx.verbose, fake: ctx.fake }
+    loopdev::Io {
+        verbose: ctx.verbose,
+        fake: ctx.fake,
+    }
 }
 
 fn move_mount_flags(req: &MountRequest) -> u32 {
@@ -461,7 +484,12 @@ fn shares_superblock(target: &[u8]) -> bool {
 }
 
 fn mount_attr(attr_set: u64, attr_clr: u64, propagation: u64) -> libc::mount_attr {
-    libc::mount_attr { attr_set, attr_clr, propagation, userns_fd: 0 }
+    libc::mount_attr {
+        attr_set,
+        attr_clr,
+        propagation,
+        userns_fd: 0,
+    }
 }
 
 fn set_string(fs_fd: BorrowedFd<'_>, key: &[u8], value: &[u8]) -> Result<()> {
@@ -506,10 +534,7 @@ fn canonicalize(path: &[u8], no_canon: bool, mkdir: Option<u32>) -> Result<Vec<u
 /// log is reported on failure regardless of `-v`).
 fn with_log(stage: &'static str, fs_fd: BorrowedFd<'_>, source: std::io::Error) -> MountError {
     let msgs = sys::drain_fs_log(fs_fd);
-    let errors: Vec<&str> = msgs
-        .iter()
-        .filter_map(|m| m.strip_prefix("e "))
-        .collect();
+    let errors: Vec<&str> = msgs.iter().filter_map(|m| m.strip_prefix("e ")).collect();
     if errors.is_empty() {
         MountError::from_syscall(stage, source)
     } else {
@@ -560,7 +585,10 @@ mod tests {
 
     #[test]
     fn retries_ro_on_write_protect_when_unspecified() {
-        assert!(should_retry_ro(&ParsedOptions::default(), &write_protect_err()));
+        assert!(should_retry_ro(
+            &ParsedOptions::default(),
+            &write_protect_err()
+        ));
     }
 
     // Explicit rw means "don't silently downgrade" — no fallback.

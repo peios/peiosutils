@@ -273,8 +273,9 @@ impl ParsedOptions {
             "loud" => (SbFlag::Silent, false),
             // mand/nomand removed from 7.0.9: accept + ignore with a note.
             "mand" | "nomand" => {
-                self.notes
-                    .push(format!("option '{name}' is obsolete (removed from the kernel) — ignored"));
+                self.notes.push(format!(
+                    "option '{name}' is obsolete (removed from the kernel) — ignored"
+                ));
                 return Some(Ok(()));
             }
             _ => return None,
@@ -320,8 +321,11 @@ impl ParsedOptions {
         match rest {
             "mkdir" => self.mkdir = Some(parse_mode(value)?),
             "subdir" => {
-                self.subdir =
-                    Some(value.ok_or_else(|| usage("X-mount.subdir requires a directory"))?.to_vec());
+                self.subdir = Some(
+                    value
+                        .ok_or_else(|| usage("X-mount.subdir requires a directory"))?
+                        .to_vec(),
+                );
             }
             "noloop" => self.noloop = true,
             "auto-fstypes" => {
@@ -423,8 +427,14 @@ fn push_token(out: &mut Vec<(Vec<u8>, Option<Vec<u8>>)>, tok: &[u8]) {
 }
 
 fn trim(b: &[u8]) -> &[u8] {
-    let start = b.iter().position(|c| !c.is_ascii_whitespace()).unwrap_or(b.len());
-    let end = b.iter().rposition(|c| !c.is_ascii_whitespace()).map_or(start, |i| i + 1);
+    let start = b
+        .iter()
+        .position(|c| !c.is_ascii_whitespace())
+        .unwrap_or(b.len());
+    let end = b
+        .iter()
+        .rposition(|c| !c.is_ascii_whitespace())
+        .map_or(start, |i| i + 1);
     &b[start..end]
 }
 
@@ -457,9 +467,18 @@ fn parse_u64(name: &str, value: Option<&[u8]>) -> Result<u64> {
 
 fn split_suffix(s: &str) -> (&str, u64) {
     let units = [
-        ("KiB", 1u64 << 10), ("MiB", 1 << 20), ("GiB", 1 << 30), ("TiB", 1u64 << 40),
-        ("KB", 1000), ("MB", 1_000_000), ("GB", 1_000_000_000), ("TB", 1_000_000_000_000),
-        ("K", 1 << 10), ("M", 1 << 20), ("G", 1 << 30), ("T", 1u64 << 40),
+        ("KiB", 1u64 << 10),
+        ("MiB", 1 << 20),
+        ("GiB", 1 << 30),
+        ("TiB", 1u64 << 40),
+        ("KB", 1000),
+        ("MB", 1_000_000),
+        ("GB", 1_000_000_000),
+        ("TB", 1_000_000_000_000),
+        ("K", 1 << 10),
+        ("M", 1 << 20),
+        ("G", 1 << 30),
+        ("T", 1u64 << 40),
     ];
     for (suf, mult) in units {
         if let Some(stripped) = s.strip_suffix(suf) {

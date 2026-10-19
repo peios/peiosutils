@@ -35,8 +35,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
         } else {
             s.clone()
         };
-        let parsed = sddl::parse(&sddl_str)
-            .map_err(|e| Error::Invalid(format!("SDDL parse: {e}")))?;
+        let parsed =
+            sddl::parse(&sddl_str).map_err(|e| Error::Invalid(format!("SDDL parse: {e}")))?;
         let view = SdView::parse(parsed.as_bytes())
             .map_err(|e| Error::Invalid(format!("re-parsing built SD: {e}")))?;
         let info = infer_info(&view);
@@ -69,9 +69,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     match mode {
         OutputMode::Human => {
             println!(
-                "{}: wrote {} bytes (components: 0x{:08x})",
+                "{}: wrote {bytes_len} bytes (components: 0x{:08x})",
                 target.path,
-                bytes_len,
                 info.bits()
             );
         }
@@ -94,8 +93,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 /// `peios` crate exposes no public `from_bytes`, so round-trip through SDDL,
 /// which is lossless for a valid descriptor.
 fn sd_from_bytes(bytes: &[u8]) -> Result<SecurityDescriptor> {
-    let text = sddl::format(bytes)
-        .map_err(|e| Error::Invalid(format!("rendering SD to SDDL: {e}")))?;
+    let text =
+        sddl::format(bytes).map_err(|e| Error::Invalid(format!("rendering SD to SDDL: {e}")))?;
     sddl::parse(&text).map_err(|e| Error::Invalid(format!("re-encoding SD: {e}")))
 }
 

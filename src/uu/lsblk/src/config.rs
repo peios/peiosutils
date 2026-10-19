@@ -161,7 +161,11 @@ impl Config {
             dedup_by(tree, &|d| d.name.clone(), &mut HashSet::new());
         }
         if let Some(col) = self.dedup {
-            dedup_by(tree, &|d| col.value(d, self).unwrap_or_default(), &mut HashSet::new());
+            dedup_by(
+                tree,
+                &|d| col.value(d, self).unwrap_or_default(),
+                &mut HashSet::new(),
+            );
         }
         if let Some(col) = self.sort {
             sort_tree(tree, col, self);
@@ -229,11 +233,7 @@ impl Config {
 
 /// Drop subtrees whose key (by `key`) was already seen, depth-first. Keeps the
 /// first occurrence; used by both `-M` (key = kname) and `-E` (key = a column).
-fn dedup_by<F: Fn(&Device) -> String>(
-    tree: &mut Vec<Device>,
-    key: &F,
-    seen: &mut HashSet<String>,
-) {
+fn dedup_by<F: Fn(&Device) -> String>(tree: &mut Vec<Device>, key: &F, seen: &mut HashSet<String>) {
     tree.retain(|d| seen.insert(key(d)));
     for d in tree.iter_mut() {
         dedup_by(&mut d.children, key, seen);
@@ -390,7 +390,12 @@ mod tests {
     }
 
     fn dev(name: &str, size: u64, children: Vec<Device>) -> Device {
-        Device { name: name.to_string(), size_bytes: size, children, ..Default::default() }
+        Device {
+            name: name.to_string(),
+            size_bytes: size,
+            children,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -408,7 +413,11 @@ mod tests {
 
     #[test]
     fn sort_orders_siblings_by_size_numerically() {
-        let mut tree = vec![dev("big", 2000, vec![]), dev("small", 30, vec![]), dev("mid", 500, vec![])];
+        let mut tree = vec![
+            dev("big", 2000, vec![]),
+            dev("small", 30, vec![]),
+            dev("mid", 500, vec![]),
+        ];
         sort_tree(&mut tree, Column::Size, &base_config());
         let order: Vec<&str> = tree.iter().map(|d| d.name.as_str()).collect();
         assert_eq!(order, ["small", "mid", "big"]);

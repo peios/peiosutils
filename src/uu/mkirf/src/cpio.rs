@@ -15,12 +15,12 @@ const MAGIC: &[u8; 6] = b"070701";
 const TRAILER_NAME: &[u8] = b"TRAILER!!!";
 
 // st_mode file-type bits.
-const S_IFDIR: u32 = 0o040000;
-const S_IFREG: u32 = 0o100000;
-const S_IFLNK: u32 = 0o120000;
-const S_IFCHR: u32 = 0o020000;
-const S_IFBLK: u32 = 0o060000;
-const S_IFIFO: u32 = 0o010000;
+const S_IFDIR: u32 = 0o040_000;
+const S_IFREG: u32 = 0o100_000;
+const S_IFLNK: u32 = 0o120_000;
+const S_IFCHR: u32 = 0o020_000;
+const S_IFBLK: u32 = 0o060_000;
+const S_IFIFO: u32 = 0o010_000;
 
 /// One filesystem object to be placed in the archive.
 #[derive(Debug)]
@@ -73,11 +73,11 @@ impl Body {
     /// See DESIGN.md §4.
     fn mode(&self) -> u32 {
         match self {
-            Body::Directory => S_IFDIR | 0o755,
-            Body::Symlink { .. } => S_IFLNK | 0o777,
-            Body::Fifo => S_IFIFO | 0o644,
-            Body::Device { block, .. } => (if *block { S_IFBLK } else { S_IFCHR }) | 0o644,
-            Body::File { executable, .. } | Body::Inline { executable, .. } => {
+            Self::Directory => S_IFDIR | 0o755,
+            Self::Symlink { .. } => S_IFLNK | 0o777,
+            Self::Fifo => S_IFIFO | 0o644,
+            Self::Device { block, .. } => (if *block { S_IFBLK } else { S_IFCHR }) | 0o644,
+            Self::File { executable, .. } | Self::Inline { executable, .. } => {
                 S_IFREG | if *executable { 0o755 } else { 0o644 }
             }
         }
@@ -145,7 +145,14 @@ fn write_early_entry<W: Write>(w: &mut W, entry: &Entry, off: u64) -> io::Result
     // Only a regular file's payload must hit the 16-byte boundary.
     let align16 = matches!(&entry.body, Body::File { .. } | Body::Inline { .. });
     let off = write_aligned_header(
-        w, &entry.name, mode, filesize, rdevmajor, rdevminor, off, align16,
+        w,
+        &entry.name,
+        mode,
+        filesize,
+        rdevmajor,
+        rdevminor,
+        off,
+        align16,
     )?;
 
     let off = match &entry.body {
@@ -254,9 +261,8 @@ fn write_entry<W: Write>(w: &mut W, entry: &Entry) -> io::Result<()> {
             let copied = io::copy(&mut file, w)?;
             if copied != *size {
                 return Err(io::Error::other(format!(
-                    "{}: file changed during archiving ({} -> {copied} bytes)",
+                    "{}: file changed during archiving ({size} -> {copied} bytes)",
                     source.display(),
-                    size,
                 )));
             }
             write_pad(w, *size)?;

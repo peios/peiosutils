@@ -183,7 +183,11 @@ fn move_mount_raw(
 
 /// Graft a *detached* mount (an `fsmount`/`open_tree` fd) onto `target` —
 /// empty `from_path` + `MOVE_MOUNT_F_EMPTY_PATH`.
-pub fn move_mount_attach(from_fd: BorrowedFd<'_>, target: &CStr, extra_flags: u32) -> io::Result<()> {
+pub fn move_mount_attach(
+    from_fd: BorrowedFd<'_>,
+    target: &CStr,
+    extra_flags: u32,
+) -> io::Result<()> {
     let empty = c"";
     move_mount_raw(
         fd_arg(from_fd),
@@ -280,7 +284,11 @@ pub fn drain_fs_log(fs_fd: BorrowedFd<'_>) -> Vec<String> {
             )
         };
         if n > 0 {
-            out.push(String::from_utf8_lossy(&buf[..n as usize]).trim_end().to_string());
+            out.push(
+                String::from_utf8_lossy(&buf[..n as usize])
+                    .trim_end()
+                    .to_string(),
+            );
         } else if n == 0 {
             break;
         } else {

@@ -48,10 +48,9 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 
     match mode {
         OutputMode::Human => println!(
-            "{}: integrity set to {} (policy 0x{:x}) on {} target(s)",
+            "{}: integrity set to {} (policy 0x{policy:x}) on {} target(s)",
             primary.path,
             level.label,
-            policy,
             targets.len()
         ),
         OutputMode::Json => println!(
@@ -96,13 +95,34 @@ fn apply_one(target: &PathTarget, level: Level, policy: u32) -> Result<()> {
 
 fn parse_level(s: &str) -> Result<Level> {
     Ok(match s.to_ascii_lowercase().as_str() {
-        "untrusted" => Level { rid: 0, label: "Untrusted IL" },
-        "low" => Level { rid: 4096, label: "Low IL" },
-        "medium" | "med" => Level { rid: 8192, label: "Medium IL" },
-        "medium-plus" | "mediumplus" | "med-plus" => Level { rid: 8448, label: "Medium-Plus IL" },
-        "high" => Level { rid: 12288, label: "High IL" },
-        "system" | "sys" => Level { rid: 16384, label: "System IL" },
-        "protected" | "protected-process" => Level { rid: 20480, label: "Protected-Process IL" },
+        "untrusted" => Level {
+            rid: 0,
+            label: "Untrusted IL",
+        },
+        "low" => Level {
+            rid: 4096,
+            label: "Low IL",
+        },
+        "medium" | "med" => Level {
+            rid: 8192,
+            label: "Medium IL",
+        },
+        "medium-plus" | "mediumplus" | "med-plus" => Level {
+            rid: 8448,
+            label: "Medium-Plus IL",
+        },
+        "high" => Level {
+            rid: 12288,
+            label: "High IL",
+        },
+        "system" | "sys" => Level {
+            rid: 16384,
+            label: "System IL",
+        },
+        "protected" | "protected-process" => Level {
+            rid: 20480,
+            label: "Protected-Process IL",
+        },
         other => {
             return Err(Error::Usage(format!(
                 "unknown integrity level `{other}` (use untrusted|low|medium|medium-plus|high|system|protected)"

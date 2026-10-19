@@ -26,11 +26,11 @@ impl TargetSpec {
     /// Human label suitable for error messages.
     pub fn label(&self) -> String {
         match self {
-            TargetSpec::SelfTok { real: false } => "self (effective)".into(),
-            TargetSpec::SelfTok { real: true } => "self (real/primary)".into(),
-            TargetSpec::Pid(p) => format!("pid {p}"),
-            TargetSpec::Thread { pid, tid } => format!("pid {pid} tid {tid}"),
-            TargetSpec::Peer(fd) => format!("peer of fd {fd}"),
+            Self::SelfTok { real: false } => "self (effective)".into(),
+            Self::SelfTok { real: true } => "self (real/primary)".into(),
+            Self::Pid(p) => format!("pid {p}"),
+            Self::Thread { pid, tid } => format!("pid {pid} tid {tid}"),
+            Self::Peer(fd) => format!("peer of fd {fd}"),
         }
     }
 
@@ -40,8 +40,8 @@ impl TargetSpec {
         let op = self.libp_op_name();
         let access = TokenAccess::from_bits_retain(access_mask);
         let res = match *self {
-            TargetSpec::SelfTok { real } => Token::open_self(real, access),
-            TargetSpec::Pid(pid) => {
+            Self::SelfTok { real } => Token::open_self(real, access),
+            Self::Pid(pid) => {
                 let pidfd = pidfd_open(pid)?;
                 // SAFETY: `pidfd` is a live, owned fd we close immediately below.
                 let borrowed = unsafe { BorrowedFd::borrow_raw(pidfd) };
@@ -53,7 +53,7 @@ impl TargetSpec {
                 }
                 tok
             }
-            TargetSpec::Thread { pid, tid } => {
+            Self::Thread { pid, tid } => {
                 let pidfd = pidfd_open(pid)?;
                 // SAFETY: `pidfd` is a live, owned fd we close immediately below.
                 let borrowed = unsafe { BorrowedFd::borrow_raw(pidfd) };
@@ -63,7 +63,7 @@ impl TargetSpec {
                 }
                 tok
             }
-            TargetSpec::Peer(sock_fd) => {
+            Self::Peer(sock_fd) => {
                 // SAFETY: the socket fd is owned by the caller and lives for the call.
                 let borrowed = unsafe { BorrowedFd::borrow_raw(sock_fd) };
                 Token::open_peer(borrowed)
@@ -87,10 +87,10 @@ impl TargetSpec {
 
     fn libp_op_name(&self) -> &'static str {
         match self {
-            TargetSpec::SelfTok { .. } => "kacs_open_self_token",
-            TargetSpec::Pid(_) => "kacs_open_process_token",
-            TargetSpec::Thread { .. } => "kacs_open_thread_token",
-            TargetSpec::Peer(_) => "getsockopt(SOL_KACS, KACS_SO_PEER_TOKEN)",
+            Self::SelfTok { .. } => "kacs_open_self_token",
+            Self::Pid(_) => "kacs_open_process_token",
+            Self::Thread { .. } => "kacs_open_thread_token",
+            Self::Peer(_) => "getsockopt(SOL_KACS, KACS_SO_PEER_TOKEN)",
         }
     }
 }

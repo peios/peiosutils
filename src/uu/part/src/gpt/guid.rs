@@ -30,14 +30,23 @@ pub struct Guid(pub [u8; 16]);
 
 impl Guid {
     /// The all-zero GUID, which GPT uses to mean "this entry is unused".
-    pub const ZERO: Guid = Guid([0; 16]);
+    pub const ZERO: Self = Self([0; 16]);
 
     /// Parse the canonical textual form, with or without surrounding braces.
-    pub fn parse(s: &str) -> Option<Guid> {
+    pub fn parse(s: &str) -> Option<Self> {
         let s = s.trim();
-        let s = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')).unwrap_or(s);
+        let s = s
+            .strip_prefix('{')
+            .and_then(|r| r.strip_suffix('}'))
+            .unwrap_or(s);
         let f: Vec<&str> = s.split('-').collect();
-        if f.len() != 5 || f[0].len() != 8 || f[1].len() != 4 || f[2].len() != 4 || f[3].len() != 4 || f[4].len() != 12 {
+        if f.len() != 5
+            || f[0].len() != 8
+            || f[1].len() != 4
+            || f[2].len() != 4
+            || f[3].len() != 4
+            || f[4].len() != 12
+        {
             return None;
         }
         let d1 = u32::from_str_radix(f[0], 16).ok()?;
@@ -51,7 +60,7 @@ impl Guid {
         // Groups 4 and 5 are stored big-endian, i.e. exactly as written.
         hex_into(f[3], &mut out[8..10])?;
         hex_into(f[4], &mut out[10..16])?;
-        Some(Guid(out))
+        Some(Self(out))
     }
 
     /// A random version-4 GUID.
@@ -60,14 +69,14 @@ impl Guid {
     /// a filesystem UUID these are what the boot path resolves `root=` against —
     /// so they come from the OS CSPRNG rather than anything derived from time or
     /// device identity.
-    pub fn random() -> Guid {
+    pub fn random() -> Self {
         let mut b = [0u8; 16];
         rand::rng().fill_bytes(&mut b);
         // Version 4 and RFC 4122 variant, applied to the *textual* fields —
         // which are bytes 7 and 8 on disk because of the mixed endianness.
         b[7] = (b[7] & 0x0f) | 0x40;
         b[8] = (b[8] & 0x3f) | 0x80;
-        Guid(b)
+        Self(b)
     }
 
     pub fn is_zero(&self) -> bool {
@@ -78,10 +87,10 @@ impl Guid {
         &self.0
     }
 
-    pub fn from_bytes(b: &[u8]) -> Option<Guid> {
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
         let mut out = [0u8; 16];
         out.copy_from_slice(b.get(..16)?);
-        Some(Guid(out))
+        Some(Self(out))
     }
 }
 
@@ -178,10 +187,10 @@ mod tests {
         for s in [
             "",
             "not-a-guid",
-            "C12A7328-F81F-11D2-BA4B",                       // too few groups
-            "C12A7328-F81F-11D2-BA4B-00A0C93EC93B-extra",    // too many
-            "C12A732-F81F-11D2-BA4B-00A0C93EC93B",           // short group
-            "G12A7328-F81F-11D2-BA4B-00A0C93EC93B",          // non-hex
+            "C12A7328-F81F-11D2-BA4B",                    // too few groups
+            "C12A7328-F81F-11D2-BA4B-00A0C93EC93B-extra", // too many
+            "C12A732-F81F-11D2-BA4B-00A0C93EC93B",        // short group
+            "G12A7328-F81F-11D2-BA4B-00A0C93EC93B",       // non-hex
         ] {
             assert!(Guid::parse(s).is_none(), "should reject {s:?}");
         }
@@ -190,7 +199,11 @@ mod tests {
     #[test]
     fn zero_is_recognised() {
         assert!(Guid::ZERO.is_zero());
-        assert!(Guid::parse("00000000-0000-0000-0000-000000000000").unwrap().is_zero());
+        assert!(
+            Guid::parse("00000000-0000-0000-0000-000000000000")
+                .unwrap()
+                .is_zero()
+        );
         assert!(!Guid::random().is_zero());
     }
 

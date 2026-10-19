@@ -124,12 +124,12 @@ impl Ord for Preserve {
 /// Derived from options as follows:
 ///
 ///  - `--preserve=ATTR_LIST` → parse with [`Attributes::parse_iter`]
-///  - `-p` → [`Attributes::DEFAULT`] (timestamps only — xcopy-style)
+///  - `-p` → [`Attributes::DEFAULT`] (timestamps and execution bits)
 ///  - `-a`/`--archive` or `--preserve-all` → [`Attributes::ALL`]
 ///  - `--sd` → [`Attributes::SD`]
 ///  - `--sd-explicit` → [`Attributes::SD_EXPLICIT`]
 ///  - `-d` → [`Attributes::LINKS`]
-///  - otherwise → [`Attributes::NONE`]
+///  - otherwise → [`Attributes::IMPLICIT`] (execution bits, best-effort)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Attributes {
     /// Owner SID component of the security descriptor.
@@ -914,11 +914,11 @@ pub fn copy_attributes(source: &Path, dest: &Path, attributes: &Attributes) -> P
         if want_saclni && !want_sacl {
             strip_info |= SecInfo::SACL;
         }
-        let sd = if !strip_info.is_empty() {
+        let sd = if strip_info.is_empty() {
+            sd
+        } else {
             strip_inherited(sd.as_bytes(), strip_info)
                 .map_err(|e| PreserveError::Other(format!("strip_inherited: {e}")))?
-        } else {
-            sd
         };
 
         dest.set_sd(sd_info, &sd).map_err(|e| {

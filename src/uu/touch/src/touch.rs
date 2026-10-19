@@ -856,9 +856,7 @@ fn pathbuf_from_stdout() -> Result<PathBuf, TouchError> {
             ERROR_INVALID_PARAMETER, ERROR_NOT_ENOUGH_MEMORY, ERROR_PATH_NOT_FOUND, GetLastError,
             HANDLE, MAX_PATH,
         };
-        use windows_sys::Win32::Storage::FileSystem::{
-            FILE_NAME_OPENED, GetFinalPathNameByHandleW,
-        };
+        use windows_sys::Win32::Storage::FileSystem::{FILE_NAME_OPENED, GetFinalPathNameByHandleW};
 
         let handle = std::io::stdout().lock().as_raw_handle() as HANDLE;
         let mut file_path_buffer: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];

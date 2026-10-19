@@ -100,9 +100,17 @@ pub fn binary_path(args: &mut impl Iterator<Item = OsString>) -> PathBuf {
     // kernel executed the loader, so execfn names it and only argv0 can name
     // the program. A build host uses this to run the tools shipped inside a
     // composed root without chrooting into it.
-    let execfn_name = execfn_bytes.rsplit(|&b| b == b'/').next().unwrap_or(execfn_bytes);
+    let execfn_name = execfn_bytes
+        .rsplit(|&b| b == b'/')
+        .next()
+        .unwrap_or(execfn_bytes);
     let is_loader = execfn_name.starts_with(b"ld-linux") || execfn_name.starts_with(b"ld.so");
-    if execfn_name == argv0.as_bytes().rsplit(|&b| b == b'/').next().unwrap_or(&[])
+    if execfn_name
+        == argv0
+            .as_bytes()
+            .rsplit(|&b| b == b'/')
+            .next()
+            .unwrap_or(&[])
         || is_loader
         || execfn_bytes.starts_with(b"/proc/")
         || (File::open(Path::new(exec_path))

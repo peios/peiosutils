@@ -93,7 +93,12 @@ pub fn build() -> Command {
                         .default_value("linux")
                         .help("type alias or GUID"),
                 )
-                .arg(Arg::new("name").long("name").default_value("").help("partition name"))
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .default_value("")
+                        .help("partition name"),
+                )
                 .arg(yes())
                 .arg(force()),
         )
@@ -153,14 +158,14 @@ fn open_rw(a: &ArgMatches) -> Result<Device> {
 /// knows and a `?` for the table. Dropping it would be the worst possible
 /// behaviour for an inventory command: the disk you cannot read is exactly the
 /// one you most want to be told about.
-fn cmd_list_all() -> Result<()> {
+fn cmd_list_all() {
     let disks = crate::device::enumerate_disks();
     if disks.is_empty() {
         println!("no block devices");
-        return Ok(());
+        return;
     }
 
-    println!("{:<14} {:>8}  {}", "DEVICE", "SIZE", "CONTENTS");
+    println!("{:<14} {:>8}  CONTENTS", "DEVICE", "SIZE");
     for d in &disks {
         // Probing is best-effort. Anything that fails degrades this one line,
         // never the listing.
@@ -177,7 +182,11 @@ fn cmd_list_all() -> Result<()> {
             (None, Some(why)) => why,
             (None, None) => "?  (cannot be probed)".to_string(),
         };
-        println!("{:<14} {:>8}  {}", d.path.display(), human(d.size_bytes), summary);
+        println!(
+            "{:<14} {:>8}  {summary}",
+            d.path.display(),
+            human(d.size_bytes)
+        );
 
         // Partition rows come from sysfs, so a disk carrying a label `part`
         // cannot manage still shows what the kernel found on it.
@@ -197,12 +206,10 @@ fn cmd_list_all() -> Result<()> {
             let size = std::fs::read_to_string(format!("/sys/class/block/{pname}/size"))
                 .ok()
                 .and_then(|s| s.trim().parse::<u64>().ok())
-                .map(|s| human(s * 512))
-                .unwrap_or_else(|| "?".into());
-            println!("  {:<12} {:>8}  {}", pname, size, detail);
+                .map_or_else(|| "?".into(), |s| human(s * 512));
+            println!("  {pname:<12} {size:>8}  {detail}");
         }
     }
-    Ok(())
 }
 
 /// Why a device could not be opened, in words rather than an errno.
@@ -216,7 +223,9 @@ fn unreadable_reason(e: &PartError) -> String {
     };
     match source.raw_os_error() {
         Some(libc::ENOMEDIUM) => "(no medium)".to_string(),
-        Some(libc::EACCES) | Some(libc::EPERM) => "?  (not permitted to read this device)".to_string(),
+        Some(libc::EACCES) | Some(libc::EPERM) => {
+            "?  (not permitted to read this device)".to_string()
+        }
         Some(libc::EBUSY) => "?  (device is busy)".to_string(),
         _ => "?  (cannot read this device)".to_string(),
     }
@@ -224,7 +233,8 @@ fn unreadable_reason(e: &PartError) -> String {
 
 fn cmd_list(a: &ArgMatches) -> Result<()> {
     if a.get_one::<PathBuf>("device").is_none() {
-        return cmd_list_all();
+        cmd_list_all();
+        return Ok(());
     }
     let mut dev = open_ro(a)?;
     let state = label::probe(&mut dev)?;
@@ -254,8 +264,8 @@ fn cmd_list(a: &ArgMatches) -> Result<()> {
         println!("(no partitions)");
     } else {
         println!(
-            "{:>3}  {:>12}  {:>12}  {:>10}  {:<38}  {}",
-            "#", "START", "END", "SIZE", "TYPE", "NAME"
+            "{:>3}  {:>12}  {:>12}  {:>10}  {:<38}  NAME",
+            "#", "START", "END", "SIZE", "TYPE"
         );
         for p in &parts {
             println!(
@@ -275,8 +285,12 @@ fn cmd_list(a: &ArgMatches) -> Result<()> {
     // boundary can never hold one. Reporting raw unallocated space would
     // promise room that `add` would then refuse to use.
     let extents = g.free_extents();
-    let free: u64 = extents.iter().map(|f| f.sectors()).sum();
-    let largest = extents.iter().map(|f| f.sectors()).max().unwrap_or(0);
+    let free: u64 = extents.iter().map(super::gpt::FreeExtent::sectors).sum();
+    let largest = extents
+        .iter()
+        .map(super::gpt::FreeExtent::sectors)
+        .max()
+        .unwrap_or(0);
     println!();
     println!(
         "Free (aligned): {}  in {} extent(s), largest {}",
@@ -310,11 +324,7 @@ fn cmd_create(a: &ArgMatches) -> Result<()> {
 
     let g = Gpt::create(dev.geom.sectors, dev.geom.sector_size)?;
     label::commit(&mut dev, &g)?;
-    println!(
-        "{}: wrote a new GPT ({})",
-        dev.path.display(),
-        g.disk_guid
-    );
+    println!("{}: wrote a new GPT ({})", dev.path.display(), g.disk_guid);
     Ok(())
 }
 
@@ -440,8 +450,14 @@ mod tests {
 
     #[test]
     fn lowercase_suffixes_work_too() {
-        assert_eq!(parse_size("512m", 512).unwrap(), parse_size("512M", 512).unwrap());
-        assert_eq!(parse_size("2g", 512).unwrap(), parse_size("2G", 512).unwrap());
+        assert_eq!(
+            parse_size("512m", 512).unwrap(),
+            parse_size("512M", 512).unwrap()
+        );
+        assert_eq!(
+            parse_size("2g", 512).unwrap(),
+            parse_size("2G", 512).unwrap()
+        );
     }
 
     #[test]

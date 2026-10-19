@@ -42,9 +42,9 @@ pub enum ShowKind {
 impl ShowKind {
     pub fn pick(short: bool, all: bool) -> Self {
         match (short, all) {
-            (_, true) => ShowKind::All,
-            (true, _) => ShowKind::Short,
-            _ => ShowKind::Default,
+            (_, true) => Self::All,
+            (true, _) => Self::Short,
+            _ => Self::Default,
         }
     }
 }

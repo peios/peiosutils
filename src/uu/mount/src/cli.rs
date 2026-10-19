@@ -65,7 +65,13 @@ pub fn build() -> Command {
              (fsopen/fsconfig/fsmount/move_mount). Mount policy is \
              superblock-scoped. See docs/mount-spec.md.",
         )
-        .arg(osstr(opt::TYPE).short('t').long("types").value_name("TYPE").help("Filesystem type (or 'auto')"))
+        .arg(
+            osstr(opt::TYPE)
+                .short('t')
+                .long("types")
+                .value_name("TYPE")
+                .help("Filesystem type (or 'auto')"),
+        )
         .arg(
             osstr(opt::OPTIONS)
                 .short('o')
@@ -90,27 +96,92 @@ pub fn build() -> Command {
                 .overrides_with(opt::READ_ONLY)
                 .help("Mount read-write and forbid the auto-ro fallback (-o rw)"),
         )
-        .arg(osstr(opt::SOURCE).long("source").value_name("SRC").help("Explicit source operand"))
-        .arg(osstr(opt::TARGET).long("target").value_name("DIR").help("Explicit target operand"))
+        .arg(
+            osstr(opt::SOURCE)
+                .long("source")
+                .value_name("SRC")
+                .help("Explicit source operand"),
+        )
+        .arg(
+            osstr(opt::TARGET)
+                .long("target")
+                .value_name("DIR")
+                .help("Explicit target operand"),
+        )
         .arg(
             osstr(opt::TARGET_PREFIX)
                 .long("target-prefix")
                 .value_name("DIR")
                 .help("Prepend DIR to the target path"),
         )
-        .arg(boolean(opt::BIND).short('B').long("bind").help("Bind a subtree elsewhere"))
-        .arg(boolean(opt::RBIND).short('R').long("rbind").help("Bind a subtree and all submounts"))
-        .arg(boolean(opt::MOVE).short('M').long("move").help("Relocate an existing mount"))
-        .arg(boolean(opt::BENEATH).long("beneath").help("Mount beneath the current top mount at the target"))
-        .arg(boolean(opt::MAKE_SHARED).long("make-shared").help("Mark a subtree shared"))
-        .arg(boolean(opt::MAKE_SLAVE).long("make-slave").help("Mark a subtree slave"))
-        .arg(boolean(opt::MAKE_PRIVATE).long("make-private").help("Mark a subtree private"))
-        .arg(boolean(opt::MAKE_UNBINDABLE).long("make-unbindable").help("Mark a subtree unbindable"))
-        .arg(boolean(opt::MAKE_RSHARED).long("make-rshared").help("Recursively mark a subtree shared"))
-        .arg(boolean(opt::MAKE_RSLAVE).long("make-rslave").help("Recursively mark a subtree slave"))
-        .arg(boolean(opt::MAKE_RPRIVATE).long("make-rprivate").help("Recursively mark a subtree private"))
-        .arg(boolean(opt::MAKE_RUNBINDABLE).long("make-runbindable").help("Recursively mark a subtree unbindable"))
-        .arg(boolean(opt::EXCLUSIVE).long("exclusive").help("Force a unique superblock instance (no reuse)"))
+        .arg(
+            boolean(opt::BIND)
+                .short('B')
+                .long("bind")
+                .help("Bind a subtree elsewhere"),
+        )
+        .arg(
+            boolean(opt::RBIND)
+                .short('R')
+                .long("rbind")
+                .help("Bind a subtree and all submounts"),
+        )
+        .arg(
+            boolean(opt::MOVE)
+                .short('M')
+                .long("move")
+                .help("Relocate an existing mount"),
+        )
+        .arg(
+            boolean(opt::BENEATH)
+                .long("beneath")
+                .help("Mount beneath the current top mount at the target"),
+        )
+        .arg(
+            boolean(opt::MAKE_SHARED)
+                .long("make-shared")
+                .help("Mark a subtree shared"),
+        )
+        .arg(
+            boolean(opt::MAKE_SLAVE)
+                .long("make-slave")
+                .help("Mark a subtree slave"),
+        )
+        .arg(
+            boolean(opt::MAKE_PRIVATE)
+                .long("make-private")
+                .help("Mark a subtree private"),
+        )
+        .arg(
+            boolean(opt::MAKE_UNBINDABLE)
+                .long("make-unbindable")
+                .help("Mark a subtree unbindable"),
+        )
+        .arg(
+            boolean(opt::MAKE_RSHARED)
+                .long("make-rshared")
+                .help("Recursively mark a subtree shared"),
+        )
+        .arg(
+            boolean(opt::MAKE_RSLAVE)
+                .long("make-rslave")
+                .help("Recursively mark a subtree slave"),
+        )
+        .arg(
+            boolean(opt::MAKE_RPRIVATE)
+                .long("make-rprivate")
+                .help("Recursively mark a subtree private"),
+        )
+        .arg(
+            boolean(opt::MAKE_RUNBINDABLE)
+                .long("make-runbindable")
+                .help("Recursively mark a subtree unbindable"),
+        )
+        .arg(
+            boolean(opt::EXCLUSIVE)
+                .long("exclusive")
+                .help("Force a unique superblock instance (no reuse)"),
+        )
         .arg(
             Arg::new(opt::MKDIR)
                 .short('m')
@@ -126,7 +197,12 @@ pub fn build() -> Command {
                 .long("no-canonicalize")
                 .help("Do not canonicalize paths"),
         )
-        .arg(boolean(opt::FAKE).short('f').long("fake").help("Dry run: skip the mount syscalls"))
+        .arg(
+            boolean(opt::FAKE)
+                .short('f')
+                .long("fake")
+                .help("Dry run: skip the mount syscalls"),
+        )
         .arg(
             Arg::new(opt::VERBOSE)
                 .short('v')
@@ -134,14 +210,56 @@ pub fn build() -> Command {
                 .action(ArgAction::Count)
                 .help("Verbose; drain the kernel fs_context log"),
         )
-        .arg(boolean(opt::SHOW_LABELS).short('l').long("show-labels").help("Show filesystem labels in listings"))
-        .arg(boolean(opt::ONLYONCE).long("onlyonce").help("Skip if already mounted"))
-        .arg(osstr(opt::NAMESPACE).short('N').long("namespace").value_name("NS").help("Operate in mount namespace NS"))
-        .arg(boolean(opt::INTERNAL_ONLY).short('i').long("internal-only").help("Do not invoke a mount.<type> helper"))
-        .arg(boolean(opt::NO_MTAB).short('n').long("no-mtab").help("Accepted and ignored (no mtab on peios)"))
-        .arg(osstr(opt::SYNTH_SDDL).long("synth-sddl").value_name("SDDL").help("KACS synth-policy template SD"))
-        .arg(osstr(opt::LABEL).short('L').long("label").value_name("LABEL").help("Mount the filesystem with this label (LABEL=)"))
-        .arg(osstr(opt::UUID).short('U').long("uuid").value_name("UUID").help("Mount the filesystem with this UUID (UUID=)"))
+        .arg(
+            boolean(opt::SHOW_LABELS)
+                .short('l')
+                .long("show-labels")
+                .help("Show filesystem labels in listings"),
+        )
+        .arg(
+            boolean(opt::ONLYONCE)
+                .long("onlyonce")
+                .help("Skip if already mounted"),
+        )
+        .arg(
+            osstr(opt::NAMESPACE)
+                .short('N')
+                .long("namespace")
+                .value_name("NS")
+                .help("Operate in mount namespace NS"),
+        )
+        .arg(
+            boolean(opt::INTERNAL_ONLY)
+                .short('i')
+                .long("internal-only")
+                .help("Do not invoke a mount.<type> helper"),
+        )
+        .arg(
+            boolean(opt::NO_MTAB)
+                .short('n')
+                .long("no-mtab")
+                .help("Accepted and ignored (no mtab on peios)"),
+        )
+        .arg(
+            osstr(opt::SYNTH_SDDL)
+                .long("synth-sddl")
+                .value_name("SDDL")
+                .help("KACS synth-policy template SD"),
+        )
+        .arg(
+            osstr(opt::LABEL)
+                .short('L')
+                .long("label")
+                .value_name("LABEL")
+                .help("Mount the filesystem with this label (LABEL=)"),
+        )
+        .arg(
+            osstr(opt::UUID)
+                .short('U')
+                .long("uuid")
+                .value_name("UUID")
+                .help("Mount the filesystem with this UUID (UUID=)"),
+        )
         .arg(
             // util-linux accepts options interspersed with the operands
             // (e.g. `mount SRC -o OPTS TGT`). Append lets clap collect the

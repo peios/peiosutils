@@ -76,7 +76,7 @@ pub fn run(src: &Path, out: &Path, excludes: &Excludes, compress: Compress) -> R
     }
     fs::rename(&tmp, out).map_err(|e| Error::Io(format!("{}: {e}", out.display())))?;
 
-    let size = fs::metadata(out).map(|m| m.len()).unwrap_or(0);
+    let size = fs::metadata(out).map_or(0, |m| m.len());
     if early.is_empty() {
         eprintln!(
             "mkirf: wrote {} ({} entries, {size} bytes)",
@@ -175,8 +175,8 @@ fn collect_early(src: &Path) -> Result<Vec<cpio::Entry>> {
 
     let mut entries: Vec<cpio::Entry> = Vec::new();
     for child in children {
-        let cmeta =
-            fs::symlink_metadata(&child).map_err(|e| Error::Io(format!("{}: {e}", child.display())))?;
+        let cmeta = fs::symlink_metadata(&child)
+            .map_err(|e| Error::Io(format!("{}: {e}", child.display())))?;
         if !cmeta.is_dir() {
             return Err(Error::Layout(format!(
                 "{}: every `++` entry must be a directory (one per early segment) — `{}` is not. \
@@ -254,7 +254,11 @@ fn validate_layout(src: &Path) -> Result<()> {
     // is no longer written, but it is still rejected here: prelude reads it
     // as a fallback, so a stray one in the source tree would be picked up as
     // a sequence nothing generated.
-    for reserved in ["hooks.seq", &format!("{SEQ_DIR}/hooks.seq.1"), &format!("{SEQ_DIR}/hooks.seq.2")] {
+    for reserved in [
+        "hooks.seq",
+        &format!("{SEQ_DIR}/hooks.seq.1"),
+        &format!("{SEQ_DIR}/hooks.seq.2"),
+    ] {
         if src.join(reserved).exists() {
             return Err(Error::Layout(format!(
                 "{}: contains a `{reserved}`; mkirf generates that file",
@@ -319,8 +323,8 @@ fn write_image(
         // smaller output), and single-threading keeps the bytes
         // independent of the build host's core count.
         Compress::Zstd => {
-            let mut zs = zstd::stream::write::Encoder::new(bw, 3)
-                .map_err(|e| Error::Io(e.to_string()))?;
+            let mut zs =
+                zstd::stream::write::Encoder::new(bw, 3).map_err(|e| Error::Io(e.to_string()))?;
             cpio::write_archive(&mut zs, main).map_err(|e| Error::Io(e.to_string()))?;
             zs.finish()
                 .map_err(|e| Error::Io(e.to_string()))?

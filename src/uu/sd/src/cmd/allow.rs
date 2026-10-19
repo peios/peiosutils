@@ -27,21 +27,21 @@ impl Kind {
     /// The plain (non-conditional) ACE type.
     fn ace_type(self) -> AceType {
         match self {
-            Kind::Allow => AceType::AccessAllowed,
-            Kind::Deny => AceType::AccessDenied,
+            Self::Allow => AceType::AccessAllowed,
+            Self::Deny => AceType::AccessDenied,
         }
     }
     fn verb(self) -> &'static str {
         match self {
-            Kind::Allow => "allow",
-            Kind::Deny => "deny",
+            Self::Allow => "allow",
+            Self::Deny => "deny",
         }
     }
     /// The conditional (callback) ACE-type discriminant.
     fn callback_ace_type(self) -> u8 {
         match self {
-            Kind::Allow => ACE_TYPE_ACCESS_ALLOWED_CALLBACK,
-            Kind::Deny => ACE_TYPE_ACCESS_DENIED_CALLBACK,
+            Self::Allow => ACE_TYPE_ACCESS_ALLOWED_CALLBACK,
+            Self::Deny => ACE_TYPE_ACCESS_DENIED_CALLBACK,
         }
     }
 }
@@ -71,9 +71,9 @@ pub fn run(matches: &ArgMatches, kind: Kind) -> Result<()> {
         parsed_specs.push(parse_principal_perms(spec)?);
     }
     let condition = match matches.get_one::<String>("if") {
-        Some(s) => Some(
-            sddl::parse_condition(s).map_err(|e| Error::Invalid(format!("--if: {e}")))?,
-        ),
+        Some(s) => {
+            Some(sddl::parse_condition(s).map_err(|e| Error::Invalid(format!("--if: {e}")))?)
+        }
         None => None,
     };
     let args = ParsedArgs {
@@ -96,7 +96,7 @@ pub fn run(matches: &ArgMatches, kind: Kind) -> Result<()> {
         }
     }
 
-    emit_report(mode, kind, &targets, applied, &errors, args.replace)?;
+    emit_report(mode, kind, &targets, applied, &errors, args.replace);
     if !errors.is_empty() {
         // Recursive walk: surface a summary error for the worst case.
         return Err(Error::Usage(format!(
@@ -116,7 +116,7 @@ fn apply_one(target: &PathTarget, kind: Kind, args: &ParsedArgs) -> Result<usize
         .unwrap_or_else(|| flags::default_for(target_kind));
 
     let mut new_dacl = if args.replace {
-        let target_principals: Vec<Sid> = args.specs.iter().map(|(s, _)| s.clone()).collect();
+        let target_principals: Vec<Sid> = args.specs.iter().map(|(s, _)| *s).collect();
         let dacl_ace_type = kind.ace_type();
         let cb_ace_type = AceType::Other(kind.callback_ace_type());
         let (b, _dropped) = filter_acl(target, AclKind::Dacl, |ace| {
@@ -137,7 +137,14 @@ fn apply_one(target: &PathTarget, kind: Kind, args: &ParsedArgs) -> Result<usize
     };
 
     for (sid, mask) in &args.specs {
-        add_ace(&mut new_dacl, kind, sid, *mask, ace_flags, args.condition.as_deref());
+        add_ace(
+            &mut new_dacl,
+            kind,
+            sid,
+            *mask,
+            ace_flags,
+            args.condition.as_deref(),
+        );
     }
 
     write_acl(target, AclKind::Dacl, new_dacl)?;
@@ -177,21 +184,15 @@ fn emit_report(
     applied: usize,
     errors: &[(String, Error)],
     replace: bool,
-) -> Result<()> {
+) {
     match mode {
         OutputMode::Human => {
             if targets.len() == 1 && errors.is_empty() {
-                println!(
-                    "{}: {} ACE(s) {}ed",
-                    targets[0].path,
-                    applied,
-                    kind.verb()
-                );
+                println!("{}: {applied} ACE(s) {}ed", targets[0].path, kind.verb());
             } else {
                 println!(
-                    "{}: {} ACE(s) {}ed across {} target(s)",
-                    targets.first().map(|t| t.path.as_str()).unwrap_or("?"),
-                    applied,
+                    "{}: {applied} ACE(s) {}ed across {} target(s)",
+                    targets.first().map_or("?", |t| t.path.as_str()),
                     kind.verb(),
                     targets.len()
                 );
@@ -215,5 +216,4 @@ fn emit_report(
             println!("{}", serde_json::to_string_pretty(&v).unwrap());
         }
     }
-    Ok(())
 }

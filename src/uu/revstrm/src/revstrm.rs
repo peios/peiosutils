@@ -43,9 +43,9 @@ use std::sync::Arc;
 use std::thread;
 
 use clap::{Arg, ArgAction, Command};
+
 use uucore::error::{UResult, USimpleError};
 use uucore::{format_usage, translate};
-
 use peios::event::{Event, EventReader, OriginClass};
 use peios::msgpack::{Reader, Type};
 
@@ -103,16 +103,15 @@ struct SendReader(EventReader);
 // touched from two threads at once.
 unsafe impl Send for SendReader {}
 
-/// Emit one event through the printer, copying the borrowed header/payload out
-/// first so the reader is free to advance.
-fn emit_event(printer: &Printer, cpu: u16, ev: &Event<'_>) {
+/// Emit an owned event snapshot through the printer.
+fn emit_event(printer: &Printer, cpu: u16, ev: &Event) {
     printer.emit(
         cpu,
         ev.sequence,
         ev.timestamp,
         origin_raw(ev.origin_class),
         ev.event_type.as_bytes(),
-        ev.payload,
+        &ev.payload,
     );
 }
 
@@ -510,7 +509,15 @@ fn find_str(reader: &mut Reader, path: &str, target: &str) -> Option<String> {
 /// [`compact_in`] with no catalogue and no path: the suffix heuristics only.
 fn compact(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
     let schema = Schema::none();
-    compact_in(reader, buf, &Ctx { schema: &schema, kind: None }, "")
+    compact_in(
+        reader,
+        buf,
+        &Ctx {
+            schema: &schema,
+            kind: None,
+        },
+        "",
+    )
 }
 
 /// Compact recursive rendering of the value at `reader`'s cursor into `buf`,
@@ -651,13 +658,12 @@ fn render_by_spec(
             let n = reader.read_array()?;
             let mut parts = Vec::with_capacity(n);
             for _ in 0..n {
-                match render_scalar(reader, ctx, base, spec.values)? {
-                    Some(s) => parts.push(s),
-                    None => {
-                        let mut s = String::new();
-                        compact_in(reader, &mut s, ctx, path)?;
-                        parts.push(s);
-                    }
+                if let Some(rendered) = render_scalar(reader, ctx, base, spec.values)? {
+                    parts.push(rendered);
+                } else {
+                    let mut rendered = String::new();
+                    compact_in(reader, &mut rendered, ctx, path)?;
+                    parts.push(rendered);
                 }
             }
             Ok(Some(format!("[{}]", parts.join(", "))))
@@ -684,7 +690,9 @@ fn render_scalar(
         }
         ("bin.guid", Some(Type::Bin)) => {
             let b = reader.read_bin()?;
-            Ok(Some(schema::format_guid(b).unwrap_or_else(|| hex_preview(b))))
+            Ok(Some(
+                schema::format_guid(b).unwrap_or_else(|| hex_preview(b)),
+            ))
         }
         (_, Some(Type::Int)) => {
             // A non-negative integer reads as unsigned; a negative one only as
@@ -723,17 +731,10 @@ fn compact_int(reader: &mut Reader, buf: &mut String) -> peios::Result<()> {
     // A non-negative msgpack int reads fine as unsigned; a negative one does
     // not, so fall back to the signed read. `read_uint` leaves the cursor put
     // on a type mismatch, so the fallback re-reads the same value.
-    match reader.read_uint() {
-        Ok(u) => {
-            let _ = write!(buf, "{u}");
-            Ok(())
-        }
-        Err(_) => {
-            let i = reader.read_int()?;
-            let _ = write!(buf, "{i}");
-            Ok(())
-        }
-    }
+    compact_int_into(reader, buf, |output, value| {
+        // Formatting an integer into a String cannot fail.
+        let _ = write!(output, "{value}");
+    })
 }
 
 /// If `key` names a SID or access field, consume the value at `reader` with the
@@ -837,12 +838,12 @@ fn compact_int_into(
     buf: &mut String,
     on_uint: impl FnOnce(&mut String, u64),
 ) -> peios::Result<()> {
-    match reader.read_uint() {
-        Ok(u) => on_uint(buf, u),
-        Err(_) => {
-            let i = reader.read_int()?;
-            let _ = write!(buf, "{i}");
-        }
+    if let Ok(value) = reader.read_uint() {
+        on_uint(buf, value);
+    } else {
+        let value = reader.read_int()?;
+        // Formatting an integer into a String cannot fail.
+        let _ = write!(buf, "{value}");
     }
     Ok(())
 }
@@ -992,12 +993,7 @@ fn render_value(
 /// `key   value` block with bare (unquoted) keys, scalar values column-aligned,
 /// nested maps/arrays expanded beneath their key, and SID-/access-suffixed keys
 /// rendered inline. No `map(N)`/type-name noise.
-fn render_map(
-    reader: &mut Reader,
-    indent: usize,
-    ctx: &Ctx,
-    path: &str,
-) -> peios::Result<Pretty> {
+fn render_map(reader: &mut Reader, indent: usize, ctx: &Ctx, path: &str) -> peios::Result<Pretty> {
     let pad = " ".repeat(indent);
     let n = reader.read_map()?;
     if n == 0 {
@@ -1203,7 +1199,10 @@ mod tests {
     #[ignore = "PEI-18: expects a bare SID; revstrm renders the well-known name"]
     fn parses_canonical_sids() {
         assert_eq!(sid_to_string(&sid(5, &[18])).as_deref(), Some("S-1-5-18"));
-        assert_eq!(sid_to_string(&sid(5, &[32, 544])).as_deref(), Some("S-1-5-32-544"));
+        assert_eq!(
+            sid_to_string(&sid(5, &[32, 544])).as_deref(),
+            Some("S-1-5-32-544")
+        );
         assert_eq!(sid_to_string(&sid(1, &[0])).as_deref(), Some("S-1-1-0"));
         assert_eq!(sid_to_string(&sid(11, &[])).as_deref(), Some("S-1-11"));
         // Length disagrees with the sub-authority count -> not a SID.
@@ -1253,17 +1252,32 @@ mod tests {
     #[test]
     fn non_sid_keys_and_bad_shapes_fall_through() {
         // A non-SID key is not rewritten.
-        assert_eq!(sid_field("count", &encode(|w| {
-            w.write_uint(1);
-        })), None);
+        assert_eq!(
+            sid_field(
+                "count",
+                &encode(|w| {
+                    w.write_uint(1);
+                })
+            ),
+            None
+        );
         // A `sid` key whose value is not binary falls through to normal render.
-        assert_eq!(sid_field("user_sid", &encode(|w| {
-            w.write_uint(1);
-        })), None);
+        assert_eq!(
+            sid_field(
+                "user_sid",
+                &encode(|w| {
+                    w.write_uint(1);
+                })
+            ),
+            None
+        );
         // A `sid`-suffixed bin that isn't a valid SID falls back to hex.
-        let r = sid_field("weird_sid", &encode(|w| {
-            w.write_bin(&[0xde, 0xad]);
-        }))
+        let r = sid_field(
+            "weird_sid",
+            &encode(|w| {
+                w.write_bin(&[0xde, 0xad]);
+            }),
+        )
         .unwrap();
         assert!(r.starts_with("0xdead"), "{r}");
     }
@@ -1301,20 +1315,32 @@ mod tests {
     #[test]
     fn access_suffix_fields_decode() {
         assert_eq!(
-            access_field("granted_access", &encode(|w| {
-                w.write_uint(0x0106_0080);
-            }))
+            access_field(
+                "granted_access",
+                &encode(|w| {
+                    w.write_uint(0x0106_0080);
+                })
+            )
             .as_deref(),
             Some("FILE_READ_ATTRIBUTES|READ_CONTROL|WRITE_DAC|ACCESS_SYSTEM_SECURITY")
         );
         // Non-access key, and a wrong-typed value, both fall through.
-        assert_eq!(access_field("count", &encode(|w| {
-            w.write_uint(5);
-        })), None);
         assert_eq!(
-            access_field("granted_access", &encode(|w| {
-                w.write_str("x");
-            })),
+            access_field(
+                "count",
+                &encode(|w| {
+                    w.write_uint(5);
+                })
+            ),
+            None
+        );
+        assert_eq!(
+            access_field(
+                "granted_access",
+                &encode(|w| {
+                    w.write_str("x");
+                })
+            ),
             None
         );
     }
@@ -1466,7 +1492,10 @@ The emission path.
     /// The payload map `{a: {b: value}}` for a dotted two-level path.
     fn nested(outer: &str, inner: &str, value: impl FnOnce(&mut Writer)) -> Vec<u8> {
         encode(|w| {
-            w.write_map(1).write_str(outer).write_map(1).write_str(inner);
+            w.write_map(1)
+                .write_str(outer)
+                .write_map(1)
+                .write_str(inner);
             value(w);
         })
     }
@@ -1476,7 +1505,10 @@ The emission path.
         let (_dir, schema) = fixture_schema();
         // `owner` has no SID suffix; only the declared type finds it.
         let buf = encode(|w| {
-            w.write_map(1).write_str("subject").write_map(1).write_str("token");
+            w.write_map(1)
+                .write_str("subject")
+                .write_map(1)
+                .write_str("token");
             w.write_map(2)
                 .write_str("owner")
                 .write_bin(&sid(5, &[18]))
@@ -1486,9 +1518,15 @@ The emission path.
                 .write_bin(&sid(5, &[32, 544]));
         });
         let out = render_payload_inline(&buf, &schema);
-        assert!(out.contains("\"owner\": ") && out.contains("S-1-5-18"), "{out}");
+        assert!(
+            out.contains("\"owner\": ") && out.contains("S-1-5-18"),
+            "{out}"
+        );
         assert!(!out.contains("\"owner\": 0x"), "{out}");
-        assert!(out.contains("S-1-1-0") && out.contains("S-1-5-32-544"), "{out}");
+        assert!(
+            out.contains("S-1-1-0") && out.contains("S-1-5-32-544"),
+            "{out}"
+        );
         assert!(out.contains("\"groups\": ["), "{out}");
 
         let guid: Vec<u8> = (1..=16).collect();
@@ -1496,7 +1534,10 @@ The emission path.
             w.write_bin(&guid);
         });
         let out = render_payload_inline(&buf, &schema);
-        assert!(out.contains("04030201-0605-0807-090a-0b0c0d0e0f10"), "{out}");
+        assert!(
+            out.contains("04030201-0605-0807-090a-0b0c0d0e0f10"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -1552,10 +1593,16 @@ The emission path.
             })
         };
         let file = render_payload_inline(&payload("file"), &schema);
-        assert!(file.contains("FILE_READ_DATA|READ_CONTROL|SYNCHRONIZE"), "{file}");
+        assert!(
+            file.contains("FILE_READ_DATA|READ_CONTROL|SYNCHRONIZE"),
+            "{file}"
+        );
         // The low bits mean something else on a process: not named as FILE_*.
         let process = render_payload_inline(&payload("process"), &schema);
-        assert!(process.contains("READ_CONTROL|SYNCHRONIZE|0x00000001"), "{process}");
+        assert!(
+            process.contains("READ_CONTROL|SYNCHRONIZE|0x00000001"),
+            "{process}"
+        );
         assert!(!process.contains("FILE_READ_DATA"), "{process}");
     }
 
@@ -1618,7 +1665,10 @@ The emission path.
     fn pretty_output_uses_the_same_types_and_nesting() {
         let (_dir, schema) = fixture_schema();
         let buf = encode(|w| {
-            w.write_map(1).write_str("subject").write_map(1).write_str("token");
+            w.write_map(1)
+                .write_str("subject")
+                .write_map(1)
+                .write_str("token");
             w.write_map(2)
                 .write_str("owner")
                 .write_bin(&sid(5, &[18]))

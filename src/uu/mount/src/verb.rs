@@ -101,26 +101,43 @@ pub fn resolve_operands(
 
     // Explicit flags take precedence and may combine with one positional.
     match (src_flag, tgt_flag) {
-        (Some(s), Some(t)) => return Ok(Operands { source: Some(s), target: t }),
+        (Some(s), Some(t)) => {
+            return Ok(Operands {
+                source: Some(s),
+                target: t,
+            });
+        }
         (Some(s), None) => {
             let t = positionals.first().cloned().ok_or_else(missing_target)?;
-            return Ok(Operands { source: Some(s), target: t });
+            return Ok(Operands {
+                source: Some(s),
+                target: t,
+            });
         }
         (None, Some(t)) => {
             let s = positionals.first().cloned();
-            return Ok(Operands { source: s, target: t });
+            return Ok(Operands {
+                source: s,
+                target: t,
+            });
         }
         (None, None) => {}
     }
 
     match positionals {
-        [target] if lone_target => Ok(Operands { source: None, target: target.clone() }),
+        [target] if lone_target => Ok(Operands {
+            source: None,
+            target: target.clone(),
+        }),
         [_single] => Err(MountError::Usage(
             "a single operand cannot be resolved without /etc/fstab; \
              supply both SOURCE and TARGET, or use --source/--target"
                 .to_string(),
         )),
-        [source, target] => Ok(Operands { source: Some(source.clone()), target: target.clone() }),
+        [source, target] => Ok(Operands {
+            source: Some(source.clone()),
+            target: target.clone(),
+        }),
         [] => Err(missing_target()),
         _ => Err(MountError::Usage("too many operands".to_string())),
     }
@@ -143,13 +160,22 @@ mod tests {
 
     #[test]
     fn no_verb_is_new() {
-        assert_eq!(resolve_verb(VerbFlags::default(), &opts("")).unwrap(), Verb::New);
+        assert_eq!(
+            resolve_verb(VerbFlags::default(), &opts("")).unwrap(),
+            Verb::New
+        );
     }
 
     #[test]
     fn bind_flag_and_o_bind_agree() {
-        let f = VerbFlags { bind: true, ..Default::default() };
-        assert_eq!(resolve_verb(f, &opts("")).unwrap(), Verb::Bind { recursive: false });
+        let f = VerbFlags {
+            bind: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_verb(f, &opts("")).unwrap(),
+            Verb::Bind { recursive: false }
+        );
         assert_eq!(
             resolve_verb(VerbFlags::default(), &opts("bind")).unwrap(),
             Verb::Bind { recursive: false }
@@ -158,20 +184,40 @@ mod tests {
 
     #[test]
     fn rbind_is_recursive() {
-        let f = VerbFlags { rbind: true, ..Default::default() };
-        assert_eq!(resolve_verb(f, &opts("")).unwrap(), Verb::Bind { recursive: true });
+        let f = VerbFlags {
+            rbind: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_verb(f, &opts("")).unwrap(),
+            Verb::Bind { recursive: true }
+        );
     }
 
     #[test]
     fn bind_plus_rbind_collapses_to_recursive() {
-        let f = VerbFlags { bind: true, rbind: true, ..Default::default() };
-        assert_eq!(resolve_verb(f, &opts("")).unwrap(), Verb::Bind { recursive: true });
+        let f = VerbFlags {
+            bind: true,
+            rbind: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_verb(f, &opts("")).unwrap(),
+            Verb::Bind { recursive: true }
+        );
     }
 
     #[test]
     fn structural_verbs_are_mutually_exclusive() {
-        let f = VerbFlags { bind: true, r#move: true, ..Default::default() };
-        assert!(matches!(resolve_verb(f, &opts("")), Err(MountError::Usage(_))));
+        let f = VerbFlags {
+            bind: true,
+            r#move: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            resolve_verb(f, &opts("")),
+            Err(MountError::Usage(_))
+        ));
         assert!(matches!(
             resolve_verb(VerbFlags::default(), &opts("remount,move")),
             Err(MountError::Usage(_))
@@ -180,7 +226,8 @@ mod tests {
 
     #[test]
     fn two_positionals_are_source_target() {
-        let r = resolve_operands(Verb::New, &pos(&["/dev/sda1", "/mnt"]), None, None, false).unwrap();
+        let r =
+            resolve_operands(Verb::New, &pos(&["/dev/sda1", "/mnt"]), None, None, false).unwrap();
         assert_eq!(r.source.as_deref(), Some(b"/dev/sda1".as_slice()));
         assert_eq!(r.target, b"/mnt");
     }
@@ -223,7 +270,14 @@ mod tests {
 
     #[test]
     fn source_flag_plus_one_positional_target() {
-        let r = resolve_operands(Verb::New, &pos(&["/mnt"]), Some(b"src".to_vec()), None, false).unwrap();
+        let r = resolve_operands(
+            Verb::New,
+            &pos(&["/mnt"]),
+            Some(b"src".to_vec()),
+            None,
+            false,
+        )
+        .unwrap();
         assert_eq!(r.source.as_deref(), Some(b"src".as_slice()));
         assert_eq!(r.target, b"/mnt");
     }

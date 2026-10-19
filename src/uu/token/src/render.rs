@@ -29,7 +29,7 @@ pub fn access_mask_names(mask: u32) -> String {
     if names.is_empty() {
         format!("0x{mask:x}")
     } else {
-        format!("0x{:x} ({})", mask, names.join(" | "))
+        format!("0x{mask:x} ({})", names.join(" | "))
     }
 }
 
@@ -88,7 +88,7 @@ impl Lines {
             match line {
                 Line::Section(s) => println!("\n[{s}]"),
                 Line::Kv(k, v) => {
-                    println!("  {k:<width$}  {v}", width = max_key);
+                    println!("  {k:<max_key$}  {v}");
                 }
                 Line::Detail(s) => println!("      {s}"),
                 Line::Blank => println!(),

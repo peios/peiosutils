@@ -102,9 +102,10 @@ pub fn build() -> Command {
                 .about("Set the mandatory integrity label")
                 .arg(path_arg())
                 .arg(
-                    Arg::new("level").required(true).value_name("LEVEL").help(
-                        "untrusted|low|medium|medium-plus|high|system|protected",
-                    ),
+                    Arg::new("level")
+                        .required(true)
+                        .value_name("LEVEL")
+                        .help("untrusted|low|medium|medium-plus|high|system|protected"),
                 )
                 .arg(
                     Arg::new("policy")

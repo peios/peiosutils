@@ -11,9 +11,7 @@ use uucore::translate;
 
 use crate::numeric::ParsedNumber;
 use crate::options::{NumfmtOptions, RoundMethod, TransformOptions};
-use crate::units::{
-    DisplayableSuffix, RawSuffix, Result, Suffix, Unit, iec_bases_f64, si_bases_f64,
-};
+use crate::units::{DisplayableSuffix, RawSuffix, Result, Suffix, Unit, iec_bases_f64, si_bases_f64};
 
 fn find_numeric_beginning(s: &str) -> Option<&str> {
     let dec_sep = locale_decimal_separator();

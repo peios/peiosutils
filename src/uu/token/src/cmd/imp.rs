@@ -10,14 +10,16 @@
 // (via pidfd or peer). Identity lookup is out of scope; that needs
 // authd and lands later.
 
+use std::ffi::CString;
+use std::os::fd::BorrowedFd;
+
+use peios::token::{Token, TokenAccess};
+use serde_json::json;
+
 use crate::cmd;
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, Lines, OutputMode};
 use crate::target::TargetSpec;
-use peios::token::{Token, TokenAccess};
-use serde_json::json;
-use std::ffi::CString;
-use std::os::fd::BorrowedFd;
 
 const KACS_TOKEN_IMPERSONATE: u32 = TokenAccess::IMPERSONATE.bits();
 
@@ -27,18 +29,15 @@ pub fn impersonate(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputM
         .map(|v| v.cloned().collect())
         .unwrap_or_default();
 
-    // Special case --peer SOCK: there is a dedicated `impersonate_peer`
-    // syscall that doesn't need an explicit Token first.
-    match target {
-        TargetSpec::Peer(sock_fd) => {
-            // SAFETY: the socket fd is owned by the caller and lives for the call.
-            let borrowed = unsafe { BorrowedFd::borrow_raw(sock_fd) };
-            Token::open_peer(borrowed)?.impersonate()?;
-        }
-        _ => {
-            let tok = target.open(KACS_TOKEN_IMPERSONATE)?;
-            tok.impersonate()?;
-        }
+    // Peer tokens are opened through their socket; other targets request
+    // explicit impersonation access when resolving the token.
+    if let TargetSpec::Peer(sock_fd) = target {
+        // SAFETY: the socket fd is owned by the caller and lives for the call.
+        let borrowed = unsafe { BorrowedFd::borrow_raw(sock_fd) };
+        Token::open_peer(borrowed)?.impersonate()?;
+    } else {
+        let tok = target.open(KACS_TOKEN_IMPERSONATE)?;
+        tok.impersonate()?;
     }
 
     if exec_argv.is_empty() {
@@ -73,12 +72,9 @@ pub fn impersonate(matches: &clap::ArgMatches, target: TargetSpec, mode: OutputM
     let cprog = CString::new(program.as_str())
         .map_err(|_| Error::Usage("program path contained a NUL byte".into()))?;
 
-    // Use the standard execvp: search PATH for the program. nix exposes
-    // it, but for a minimal dep set we go through libc directly via
-    // peios-uapi-style raw syscall. We don't have nix; use std::process
-    // would lose the impersonation (it forks). So: call execvp via libc
-    // FFI.
-    let res = unsafe { execvp_helper(&cprog, &argv) };
+    // Replace this process through libc so the program keeps this thread's
+    // impersonation state. execvp searches PATH for an unqualified program name.
+    let res = execvp_helper(&cprog, &argv);
     Err(Error::Syscall {
         op: "execvp",
         errno: res,
@@ -104,9 +100,12 @@ pub fn revert(mode: OutputMode) -> Result<()> {
 // execvp via libc. We avoid pulling in `nix` for a single syscall.
 // ---------------------------------------------------------------------------
 
-unsafe fn execvp_helper(program: &CString, argv: &[CString]) -> i32 {
+/// Replace this process, returning the syscall error number on failure.
+fn execvp_helper(program: &CString, argv: &[CString]) -> i32 {
     let mut ptrs: Vec<*const libc::c_char> = argv.iter().map(|c| c.as_ptr()).collect();
     ptrs.push(core::ptr::null());
+    // SAFETY: CString owns every terminated string, and ptrs adds the required
+    // null terminator. Both the strings and pointer array remain alive for the call.
     let rc = unsafe { libc::execvp(program.as_ptr(), ptrs.as_ptr()) };
     if rc < 0 {
         // execvp doesn't return on success; if we got here it failed.
@@ -115,7 +114,3 @@ unsafe fn execvp_helper(program: &CString, argv: &[CString]) -> i32 {
         0
     }
 }
-
-// Silence the unused warning for the local Token type binding above.
-#[allow(dead_code)]
-fn _unused(_t: &Token) {}

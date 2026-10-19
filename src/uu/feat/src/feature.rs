@@ -22,14 +22,14 @@ pub enum Phase {
 }
 
 impl Phase {
-    pub const ALL: [Phase; 4] = [Phase::Install, Phase::Enable, Phase::Disable, Phase::Uninstall];
+    pub const ALL: [Self; 4] = [Self::Install, Self::Enable, Self::Disable, Self::Uninstall];
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Phase::Install => "install",
-            Phase::Enable => "enable",
-            Phase::Disable => "disable",
-            Phase::Uninstall => "uninstall",
+            Self::Install => "install",
+            Self::Enable => "enable",
+            Self::Disable => "disable",
+            Self::Uninstall => "uninstall",
         }
     }
 
@@ -83,7 +83,7 @@ pub fn list() -> Result<Vec<String>> {
             op: format!("read entry in {FEATURES_DIR}"),
             source,
         })?;
-        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
             if let Some(name) = entry.file_name().to_str() {
                 names.push(name.to_string());
             }
@@ -271,8 +271,16 @@ mod tests {
 
     #[test]
     fn bad_metadata_is_said_in_words() {
-        assert!(parse_metadata("title = 3\n").unwrap_err().contains("title must be a string"));
-        assert!(parse_metadata("title = \n").unwrap_err().starts_with("feature.toml: "));
+        assert!(
+            parse_metadata("title = 3\n")
+                .unwrap_err()
+                .contains("title must be a string")
+        );
+        assert!(
+            parse_metadata("title = \n")
+                .unwrap_err()
+                .starts_with("feature.toml: ")
+        );
     }
 
     #[test]
@@ -293,7 +301,16 @@ mod tests {
 
     #[test]
     fn rejects_traversal_and_separators() {
-        for name in ["", ".", "..", "../evil", "a/b", "/abs", "a\\b", "white space"] {
+        for name in [
+            "",
+            ".",
+            "..",
+            "../evil",
+            "a/b",
+            "/abs",
+            "a\\b",
+            "white space",
+        ] {
             assert!(validate_name(name).is_err(), "{name:?} should be rejected");
         }
     }

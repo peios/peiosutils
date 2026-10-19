@@ -67,11 +67,22 @@ pub fn peipkg(mut cmd: Command) -> Result<Ended, Error> {
     for line in BufReader::new(stdout).lines() {
         let Ok(line) = line else { break };
         let parsed: Option<Value> = serde_json::from_str(&line).ok();
-        let kind = parsed.as_ref().and_then(|v| v.get("event")).and_then(Value::as_str);
-        let text = |key: &str| parsed.as_ref().and_then(|v| v.get(key)).and_then(Value::as_str).map(str::to_string);
+        let kind = parsed
+            .as_ref()
+            .and_then(|v| v.get("event"))
+            .and_then(Value::as_str);
+        let text = |key: &str| {
+            parsed
+                .as_ref()
+                .and_then(|v| v.get(key))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        };
         match kind {
             Some("done") => end = Some(Ok(Ended::Done(text("summary")))),
-            Some("cancelled") => end = Some(Ok(Ended::Cancelled(text("reason").unwrap_or_default()))),
+            Some("cancelled") => {
+                end = Some(Ok(Ended::Cancelled(text("reason").unwrap_or_default())));
+            }
             Some("error") => {
                 end = Some(Err(Error::Refused {
                     code: text("code").unwrap_or_else(|| "failed".into()),
@@ -88,10 +99,16 @@ pub fn peipkg(mut cmd: Command) -> Result<Ended, Error> {
     let fault = fault.join().unwrap_or_default();
     let _ = child.wait();
     end.unwrap_or_else(|| {
-        let said = fault.lines().rev().find(|l| !l.trim().is_empty()).map(str::trim);
+        let said = fault
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .map(str::trim);
         Err(Error::Refused {
             code: "failed".into(),
-            message: said.unwrap_or("peipkg stopped without saying how it ended").to_string(),
+            message: said
+                .unwrap_or("peipkg stopped without saying how it ended")
+                .to_string(),
         })
     })
 }
@@ -100,7 +117,10 @@ pub fn peipkg(mut cmd: Command) -> Result<Ended, Error> {
 /// sent as a message.
 pub fn relayed(mut cmd: Command) -> io::Result<std::process::ExitStatus> {
     let out = cmd.stdin(Stdio::null()).output()?;
-    for line in String::from_utf8_lossy(&out.stdout).lines().chain(String::from_utf8_lossy(&out.stderr).lines()) {
+    for line in String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .chain(String::from_utf8_lossy(&out.stderr).lines())
+    {
         if !line.trim().is_empty() {
             message(line.trim_end());
         }

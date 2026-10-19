@@ -40,8 +40,12 @@ fn ace_type_name(t: AceType) -> String {
         AceType::SystemAudit => "SYSTEM_AUDIT".into(),
         AceType::SystemMandatoryLabel => "SYSTEM_MANDATORY_LABEL".into(),
         AceType::SystemResourceAttribute => "SYSTEM_RESOURCE_ATTRIBUTE".into(),
-        AceType::Other(v) if v == ACE_TYPE_ACCESS_ALLOWED_CALLBACK => "ACCESS_ALLOWED_CALLBACK".into(),
-        AceType::Other(v) if v == ACE_TYPE_ACCESS_DENIED_CALLBACK => "ACCESS_DENIED_CALLBACK".into(),
+        AceType::Other(v) if v == ACE_TYPE_ACCESS_ALLOWED_CALLBACK => {
+            "ACCESS_ALLOWED_CALLBACK".into()
+        }
+        AceType::Other(v) if v == ACE_TYPE_ACCESS_DENIED_CALLBACK => {
+            "ACCESS_DENIED_CALLBACK".into()
+        }
         AceType::Other(v) if v == ACE_TYPE_SYSTEM_AUDIT_CALLBACK => "SYSTEM_AUDIT_CALLBACK".into(),
         AceType::Other(v) => format!("OTHER(0x{v:02x})"),
     }
@@ -101,11 +105,10 @@ pub fn acl_human(acl: &AclView<'_>, style: SidStyle) -> String {
         }
         // Object / label / resource-attribute ACE — render the type name,
         // leave the body opaque for v1.
-        let body_len = ace.app_data().map(|d| d.len()).unwrap_or(0);
+        let body_len = ace.app_data().map_or(0, <[u8]>::len);
         out.push_str(&format!(
-            "    [{i}] {} ({} bytes body, flags {})\n",
+            "    [{i}] {} ({body_len} bytes body, flags {})\n",
             ace_type_name(t),
-            body_len,
             flags::render(ace.flags().bits()),
         ));
     }
@@ -134,7 +137,7 @@ pub fn acl_json(acl: &AclView<'_>) -> Value {
                 continue;
             }
         }
-        let body_len = ace.app_data().map(|d| d.len()).unwrap_or(0);
+        let body_len = ace.app_data().map_or(0, <[u8]>::len);
         arr.push(json!({
             "index": i,
             "type": "other",

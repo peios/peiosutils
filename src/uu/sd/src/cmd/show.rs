@@ -54,8 +54,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
         return Ok(());
     }
 
-    let view = SdView::parse(bytes)
-        .map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
+    let view =
+        SdView::parse(bytes).map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
 
     match mode {
         OutputMode::Human => {

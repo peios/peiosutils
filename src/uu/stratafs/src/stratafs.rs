@@ -3,6 +3,7 @@
 use std::io::Write;
 
 use clap::Command;
+
 use uucore::error::{UResult, USimpleError, set_exit_code};
 
 pub mod cli;

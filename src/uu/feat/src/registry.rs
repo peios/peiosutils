@@ -41,40 +41,40 @@ pub enum State {
 impl State {
     pub fn as_dword(self) -> u32 {
         match self {
-            State::NotInstalled => 0,
-            State::Installing => 1,
-            State::Uninstalling => 4,
-            State::Installed => 5,
-            State::Enabling => 6,
-            State::Disabling => 9,
-            State::Enabled => 10,
+            Self::NotInstalled => 0,
+            Self::Installing => 1,
+            Self::Uninstalling => 4,
+            Self::Installed => 5,
+            Self::Enabling => 6,
+            Self::Disabling => 9,
+            Self::Enabled => 10,
         }
     }
 
     /// Decode the stored DWORD. Unknown values read as `NotInstalled` so a
     /// corrupt/foreign value fails safe to "do nothing is set up".
-    pub fn from_dword(v: u32) -> State {
+    pub fn from_dword(v: u32) -> Self {
         match v {
-            1 => State::Installing,
-            4 => State::Uninstalling,
-            5 => State::Installed,
-            6 => State::Enabling,
-            9 => State::Disabling,
-            10 => State::Enabled,
-            _ => State::NotInstalled,
+            1 => Self::Installing,
+            4 => Self::Uninstalling,
+            5 => Self::Installed,
+            6 => Self::Enabling,
+            9 => Self::Disabling,
+            10 => Self::Enabled,
+            _ => Self::NotInstalled,
         }
     }
 
     /// Human label for `feat list`.
     pub fn label(self) -> &'static str {
         match self {
-            State::NotInstalled => "not-installed",
-            State::Installing => "installing",
-            State::Uninstalling => "uninstalling",
-            State::Installed => "installed",
-            State::Enabling => "enabling",
-            State::Disabling => "disabling",
-            State::Enabled => "enabled",
+            Self::NotInstalled => "not-installed",
+            Self::Installing => "installing",
+            Self::Uninstalling => "uninstalling",
+            Self::Installed => "installed",
+            Self::Enabling => "enabling",
+            Self::Disabling => "disabling",
+            Self::Enabled => "enabled",
         }
     }
 }
@@ -96,8 +96,7 @@ pub fn read_state(name: &str) -> Result<State> {
         Ok(value) => value
             .data
             .get(0..4)
-            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-            .unwrap_or(0),
+            .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]])),
         Err(_) => 0,
     };
     Ok(State::from_dword(dword))
@@ -121,11 +120,25 @@ pub fn write_state(name: &str, state: State) -> Result<()> {
 /// asked for only what is done with it — a subkey made in the container, a
 /// value set on the feature's key — which is what [`may_change`] asks.
 fn ensure_feature_key(name: &str) -> Result<Key> {
-    Key::create(None, FEATURES_KEY, KeyAccess::CREATE_SUB_KEY, CreateFlags::empty(), None, None)
-        .map_err(|e| Error::from_peios(format!("create {FEATURES_KEY}"), e))?;
+    Key::create(
+        None,
+        FEATURES_KEY,
+        KeyAccess::CREATE_SUB_KEY,
+        CreateFlags::empty(),
+        None,
+        None,
+    )
+    .map_err(|e| Error::from_peios(format!("create {FEATURES_KEY}"), e))?;
     let path = feature_key_path(name);
-    let (key, _disposition) = Key::create(None, &path, KeyAccess::SET_VALUE, CreateFlags::empty(), None, None)
-        .map_err(|e| Error::from_peios(format!("create {path}"), e))?;
+    let (key, _disposition) = Key::create(
+        None,
+        &path,
+        KeyAccess::SET_VALUE,
+        CreateFlags::empty(),
+        None,
+        None,
+    )
+    .map_err(|e| Error::from_peios(format!("create {path}"), e))?;
     Ok(key)
 }
 
@@ -133,7 +146,12 @@ fn ensure_feature_key(name: &str) -> Result<Key> {
 /// whose definition has since gone — its package removed while it was set up
 /// — which the definition directory alone would never show.
 pub fn recorded() -> Result<Vec<String>> {
-    let key = match Key::open(None, FEATURES_KEY, KeyAccess::ENUMERATE_SUB_KEYS, OpenFlags::default()) {
+    let key = match Key::open(
+        None,
+        FEATURES_KEY,
+        KeyAccess::ENUMERATE_SUB_KEYS,
+        OpenFlags::default(),
+    ) {
         Ok(key) => key,
         Err(e) if Error::is_enoent(&e) => return Ok(Vec::new()),
         Err(e) => return Err(Error::from_peios(format!("open {FEATURES_KEY}"), e)),

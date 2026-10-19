@@ -68,14 +68,19 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
 }
 
 fn apply_one(target: &PathTarget, protect: bool, strip_inherited: bool) -> Result<()> {
-    let sd_bytes = get_sd(target.dirfd(), target.as_path(), SecInfo::DACL, target.at_flags())
-        .map_err(Error::from)?;
+    let sd_bytes = get_sd(
+        target.dirfd(),
+        target.as_path(),
+        SecInfo::DACL,
+        target.at_flags(),
+    )
+    .map_err(Error::from)?;
     let bytes = sd_bytes.as_bytes();
 
     let mut dacl = AclEdit::new();
     if !bytes.is_empty() {
-        let view = SdView::parse(bytes)
-            .map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
+        let view =
+            SdView::parse(bytes).map_err(|e| Error::Invalid(format!("parsing SD bytes: {e}")))?;
         if let Some(acl) = view.dacl() {
             for ace in acl.iter() {
                 if strip_inherited && ace.flags().contains(AceFlags::INHERITED) {

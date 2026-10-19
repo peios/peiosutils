@@ -122,7 +122,15 @@ pub fn enumerate(config: &Config) -> Result<Vec<Device>> {
                 let subpath = sub.path();
                 if subpath.join("partition").exists() {
                     let pname = sub.file_name().to_string_lossy().into_owned();
-                    collect_record(&pname, &subpath, Some(&name), true, root, &mounts, &mut records);
+                    collect_record(
+                        &pname,
+                        &subpath,
+                        Some(&name),
+                        true,
+                        root,
+                        &mounts,
+                        &mut records,
+                    );
                 }
             }
         }
@@ -203,7 +211,12 @@ fn collect_record(
 
     records.insert(
         name.to_string(),
-        Record { dev, is_partition, holders, slaves },
+        Record {
+            dev,
+            is_partition,
+            holders,
+            slaves,
+        },
     );
 }
 
@@ -278,8 +291,14 @@ fn assemble(
 
     for child in child_names {
         if records.contains_key(&child) {
-            dev.children
-                .push(assemble(&child, records, partitions_of, inverse, depth + 1, chain));
+            dev.children.push(assemble(
+                &child,
+                records,
+                partitions_of,
+                inverse,
+                depth + 1,
+                chain,
+            ));
         }
     }
 

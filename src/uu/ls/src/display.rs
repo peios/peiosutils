@@ -1071,8 +1071,7 @@ fn calculate_padding_collection(items: &[PathData], config: &Config) -> PaddingC
 
         if config.format == Format::Long {
             let context_len = item.security_context(config).len();
-            let (owner_len, size_len, major_len, minor_len) =
-                display_dir_entry_size(item, config);
+            let (owner_len, size_len, major_len, minor_len) = display_dir_entry_size(item, config);
             padding_collections.owner = owner_len.max(padding_collections.owner);
             if config.context {
                 padding_collections.context = context_len.max(padding_collections.context);

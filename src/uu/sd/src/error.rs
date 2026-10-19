@@ -39,11 +39,11 @@ impl fmt::Display for ErrnoDisplay {
 impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Usage(_) => 1,
-            Error::NotFound(_) => 2,
-            Error::Denied { .. } => 3,
-            Error::Invalid(_) => 4,
-            Error::Syscall { .. } => 5,
+            Self::Usage(_) => 1,
+            Self::NotFound(_) => 2,
+            Self::Denied { .. } => 3,
+            Self::Invalid(_) => 4,
+            Self::Syscall { .. } => 5,
         }
     }
 }
@@ -55,14 +55,14 @@ impl From<PeiosError> for Error {
         // ENOENT to NotFound, everything else to a generic syscall error.
         let raw = e.raw_os_error().unwrap_or(0);
         if raw == libc::EACCES || raw == libc::EPERM {
-            Error::Denied {
+            Self::Denied {
                 what: "kacs SD syscall".to_string(),
                 errno: raw,
             }
         } else if raw == libc::ENOENT {
-            Error::NotFound(format!("kacs SD syscall: {e}"))
+            Self::NotFound(format!("kacs SD syscall: {e}"))
         } else {
-            Error::Syscall {
+            Self::Syscall {
                 op: "kacs SD syscall".to_string(),
                 errno: ErrnoDisplay(raw),
             }

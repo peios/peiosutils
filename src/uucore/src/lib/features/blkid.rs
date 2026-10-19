@@ -295,7 +295,12 @@ unsafe fn lookup(lib: &'static Library, pr: *mut c_void, key: &CStr) -> Option<S
     // SAFETY: documented signature; the out-params are read only on a 0 return.
     unsafe {
         let f: Symbol<
-            unsafe extern "C" fn(*mut c_void, *const c_char, *mut *const c_char, *mut usize) -> c_int,
+            unsafe extern "C" fn(
+                *mut c_void,
+                *const c_char,
+                *mut *const c_char,
+                *mut usize,
+            ) -> c_int,
         > = lib.get(b"blkid_probe_lookup_value\0").ok()?;
         let mut data: *const c_char = std::ptr::null();
         let mut len: usize = 0;
@@ -321,7 +326,11 @@ fn library() -> Result<&'static Library, BlkidError> {
 unsafe fn sym<T>(lib: &'static Library, name: &[u8]) -> Result<Symbol<'static, T>, BlkidError> {
     // SAFETY: the caller guarantees `T` matches the symbol's real signature.
     unsafe { lib.get(name) }.map_err(|_| {
-        BlkidError::MissingSymbol(String::from_utf8_lossy(name).trim_end_matches('\0').to_string())
+        BlkidError::MissingSymbol(
+            String::from_utf8_lossy(name)
+                .trim_end_matches('\0')
+                .to_string(),
+        )
     })
 }
 
@@ -336,16 +345,20 @@ mod tests {
     #[test]
     fn empty_means_no_filesystem_and_no_table() {
         assert!(BlkidInfo::default().is_empty());
-        assert!(!BlkidInfo {
-            pttype: Some("gpt".into()),
-            ..Default::default()
-        }
-        .is_empty());
-        assert!(!BlkidInfo {
-            fstype: Some("ext4".into()),
-            ..Default::default()
-        }
-        .is_empty());
+        assert!(
+            !BlkidInfo {
+                pttype: Some("gpt".into()),
+                ..Default::default()
+            }
+            .is_empty()
+        );
+        assert!(
+            !BlkidInfo {
+                fstype: Some("ext4".into()),
+                ..Default::default()
+            }
+            .is_empty()
+        );
     }
 
     #[test]

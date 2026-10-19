@@ -33,6 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use clap::{Arg, ArgAction, ArgMatches, Command as ClapCommand};
+
 use uucore::error::{UResult, USimpleError};
 
 mod driven;
@@ -245,21 +246,54 @@ fn run(m: &ArgMatches, driven: bool) -> Result<()> {
     let live = root == Path::new("/");
     if m.get_flag("status") {
         if driven {
-            return Err(Error::Usage("--driven reports an upgrade; --status answers a program with --json".into()));
+            return Err(Error::Usage(
+                "--driven reports an upgrade; --status answers a program with --json".into(),
+            ));
         }
         return status::show(&root, live, m.get_flag("json"));
     }
     if driven && m.get_flag("yes") {
         return Err(Error::Usage("--yes is refused with --driven: the program driving upgrade-peios answers peipkg's questions".into()));
     }
-    let on_reboot = m.get_flag("on-reboot") || !live;
-    let check = m.get_flag("check");
-
     let edition = edition(&root)?;
+    let upgrade = Upgrade {
+        root: &root,
+        edition: &edition,
+        driven,
+        on_reboot: m.get_flag("on-reboot") || !live,
+    };
+    if !m.get_flag("seeds-only") && matches!(upgrade.packages(m)?, PackageOutcome::Finished) {
+        return Ok(());
+    }
+    upgrade.seeds()
+}
 
-    if !m.get_flag("seeds-only") {
-        say(driven, &format!("{} {edition}", if check { "checking" } else { "upgrading" }));
-        let mut cmd = peipkg_command(&root, live, &edition, driven);
+struct Upgrade<'a> {
+    root: &'a Path,
+    edition: &'a str,
+    driven: bool,
+    on_reboot: bool,
+}
+
+enum PackageOutcome {
+    ContinueWithSeeds,
+    Finished,
+}
+
+impl Upgrade<'_> {
+    fn packages(&self, m: &ArgMatches) -> Result<PackageOutcome> {
+        let edition = self.edition;
+        let check = m.get_flag("check");
+        say(
+            self.driven,
+            &format!("{} {edition}", if check { "checking" } else { "upgrading" }),
+        );
+        let mut cmd = peipkg_command(
+            self.root,
+            self.root == Path::new("/"),
+            self.edition,
+            self.driven,
+        );
         if m.get_flag("yes") {
             cmd.arg("--yes");
         }
@@ -269,15 +303,17 @@ fn run(m: &ArgMatches, driven: bool) -> Result<()> {
         if check {
             cmd.arg("--dry-run");
         }
-        if driven {
+        if self.driven {
             match driven::peipkg(cmd)? {
                 driven::Ended::Cancelled(reason) => {
                     driven::event(&serde_json::json!({"event": "cancelled", "reason": reason}));
-                    return Ok(());
+                    return Ok(PackageOutcome::Finished);
                 }
                 driven::Ended::Done(summary) if check => {
-                    driven::event(&serde_json::json!({"event": "done", "summary": summary, "edition": edition}));
-                    return Ok(());
+                    driven::event(
+                        &serde_json::json!({"event": "done", "summary": summary, "edition": edition}),
+                    );
+                    return Ok(PackageOutcome::Finished);
                 }
                 driven::Ended::Done(_) => {}
             }
@@ -293,55 +329,71 @@ fn run(m: &ArgMatches, driven: bool) -> Result<()> {
             }
         }
         if check {
+            return Ok(PackageOutcome::Finished);
+        }
+        Ok(PackageOutcome::ContinueWithSeeds)
+    }
+
+    fn seeds(&self) -> Result<()> {
+        let edition = self.edition;
+        let steps = if self.on_reboot { 1 } else { 2 };
+        if self.driven {
+            driven::progress("release-stage", 1, steps);
+        }
+        let seeds = release_seeds(self.root)?;
+        let staged = stage_seeds(self.root, &seeds)?;
+        for name in &staged {
+            say(self.driven, &format!("staged seed {name}"));
+        }
+
+        let finished = |summary: String| {
+            if self.driven {
+                driven::event(&serde_json::json!({"event": "done", "summary": summary,
+                    "edition": edition, "seeds_queued": self.on_reboot && !staged.is_empty()}));
+            }
+        };
+        if self.on_reboot {
+            let line = format!(
+                "{} seed(s) queued; they apply on the next boot",
+                staged.len()
+            );
+            say(self.driven, &line);
+            finished(line);
             return Ok(());
         }
-    }
-
-    let steps = if on_reboot { 1 } else { 2 };
-    if driven {
-        driven::progress("release-stage", 1, steps);
-    }
-    let seeds = release_seeds(&root)?;
-    let staged = stage_seeds(&root, &seeds)?;
-    for name in &staged {
-        say(driven, &format!("staged seed {name}"));
-    }
-
-    let finished = |summary: String| {
-        if driven {
-            driven::event(&serde_json::json!({"event": "done", "summary": summary,
-                "edition": edition, "seeds_queued": on_reboot && !staged.is_empty()}));
+        if staged.is_empty() {
+            finished("the release names no seeds".into());
+            return Ok(());
         }
-    };
-    if on_reboot {
-        let line = format!("{} seed(s) queued; they apply on the next boot", staged.len());
-        say(driven, &line);
-        finished(line);
-        return Ok(());
+        say(self.driven, &format!("applying {} seed(s)", staged.len()));
+        if self.driven {
+            driven::progress("release-apply", 2, steps);
+        }
+        self.apply_seeds()?;
+        finished(format!("applied {} seed(s)", staged.len()));
+        Ok(())
     }
-    if staged.is_empty() {
-        finished("the release names no seeds".into());
-        return Ok(());
-    }
-    say(driven, &format!("applying {} seed(s)", staged.len()));
-    if driven {
-        driven::progress("release-apply", 2, steps);
-    }
-    let mut apply = Command::new("reg");
-    apply.args([
-        "apply",
-        "--dir",
-        &format!("/{AUTOAPPLY_DIR}"),
-        "--once-delete",
-        "--yes",
-    ]);
-    let status = if driven { driven::relayed(apply) } else { apply.status() }
+
+    fn apply_seeds(&self) -> Result<()> {
+        let mut apply = Command::new("reg");
+        apply.args([
+            "apply",
+            "--dir",
+            &format!("/{AUTOAPPLY_DIR}"),
+            "--once-delete",
+            "--yes",
+        ]);
+        let status = if self.driven {
+            driven::relayed(apply)
+        } else {
+            apply.status()
+        }
         .map_err(|e| Error::Usage(format!("cannot run reg: {e}")))?;
-    if !status.success() {
-        return Err(Error::Apply(status.code()));
+        if !status.success() {
+            return Err(Error::Apply(status.code()));
+        }
+        Ok(())
     }
-    finished(format!("applied {} seed(s)", staged.len()));
-    Ok(())
 }
 
 /// The concrete edition identity derived from os-release.
@@ -460,7 +512,10 @@ mod tests {
         assert_eq!(Error::NoRelease(String::new()).code(), "no-release");
         assert_eq!(Error::Seeds(String::new()).code(), "seeds");
         assert_eq!(Error::Apply(Some(1)).code(), "apply");
-        let refused = Error::Refused { code: "stale".into(), message: "x".into() };
+        let refused = Error::Refused {
+            code: "stale".into(),
+            message: "x".into(),
+        };
         assert_eq!((refused.code().as_str(), refused.exit_code()), ("stale", 3));
     }
 

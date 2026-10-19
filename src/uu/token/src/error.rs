@@ -32,11 +32,11 @@ pub enum Error {
 impl Error {
     pub fn exit_code(&self) -> i32 {
         match self {
-            Error::Usage(_) => 1,
-            Error::NotFound(_) => 2,
-            Error::Denied { .. } => 3,
-            Error::InvalidSpec(_) => 4,
-            Error::Syscall { .. } | Error::Decode(_) => 5,
+            Self::Usage(_) => 1,
+            Self::NotFound(_) => 2,
+            Self::Denied { .. } => 3,
+            Self::InvalidSpec(_) => 4,
+            Self::Syscall { .. } | Self::Decode(_) => 5,
         }
     }
 }
@@ -44,9 +44,9 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Usage(m) => write!(f, "{m}"),
-            Error::NotFound(m) => write!(f, "not found: {m}"),
-            Error::Denied {
+            Self::Usage(m) => write!(f, "{m}"),
+            Self::NotFound(m) => write!(f, "not found: {m}"),
+            Self::Denied {
                 op,
                 target,
                 needed_mask,
@@ -63,8 +63,8 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::InvalidSpec(m) => write!(f, "invalid spec: {m}"),
-            Error::Syscall { op, errno, detail } => {
+            Self::InvalidSpec(m) => write!(f, "invalid spec: {m}"),
+            Self::Syscall { op, errno, detail } => {
                 let e = peios::Error::from_raw_os_error(*errno);
                 write!(f, "{op}: {e}")?;
                 if let Some(d) = detail {
@@ -72,7 +72,7 @@ impl fmt::Display for Error {
                 }
                 Ok(())
             }
-            Error::Decode(m) => write!(f, "decode error: {m}"),
+            Self::Decode(m) => write!(f, "decode error: {m}"),
         }
     }
 }
@@ -86,12 +86,12 @@ impl From<peios::Error> for Error {
         // `UnknownDiscriminant` decode variants, so every peios error maps to a
         // syscall error carrying its raw errno.
         match e.raw_os_error() {
-            Some(errno) => Error::Syscall {
+            Some(errno) => Self::Syscall {
                 op: "peios syscall",
                 errno,
                 detail: None,
             },
-            None => Error::Syscall {
+            None => Self::Syscall {
                 op: "peios",
                 errno: 0,
                 detail: Some(e.to_string()),

@@ -132,11 +132,20 @@ pub fn maybe_setup(
         if io.fake {
             return Ok(None);
         }
-        return Ok(Some(LoopGuard { device: dev, handle: None, armed: false }));
+        return Ok(Some(LoopGuard {
+            device: dev,
+            handle: None,
+            armed: false,
+        }));
     }
 
     if io.fake {
-        io.say(|| format!("fake: would attach {} to a loop device", String::from_utf8_lossy(source)));
+        io.say(|| {
+            format!(
+                "fake: would attach {} to a loop device",
+                String::from_utf8_lossy(source)
+            )
+        });
         return Ok(None);
     }
 
@@ -172,14 +181,20 @@ fn attach_auto(io: Io, source: &[u8], offset: u64, sizelimit: u64) -> Result<Opt
         // SAFETY: LOOP_CTL_GET_FREE returns a free device number or <0.
         let n = unsafe { libc::ioctl(control.as_raw_fd(), LOOP_CTL_GET_FREE) };
         if n < 0 {
-            return Err(MountError::from_syscall("LOOP_CTL_GET_FREE", std::io::Error::last_os_error()));
+            return Err(MountError::from_syscall(
+                "LOOP_CTL_GET_FREE",
+                std::io::Error::last_os_error(),
+            ));
         }
         let dev = format!("/dev/loop{n}").into_bytes();
         match attach(io, dev, source, offset, sizelimit) {
             Ok(g) => return Ok(g),
             // The device was grabbed in the GET_FREE→CONFIGURE window — retry.
             Err(MountError::Mount { source: e, .. }) if e.raw_os_error() == Some(libc::EBUSY) => {
-                last_err = Some(MountError::Mount { stage: "LOOP_CONFIGURE", source: e });
+                last_err = Some(MountError::Mount {
+                    stage: "LOOP_CONFIGURE",
+                    source: e,
+                });
             }
             Err(other) => return Err(other),
         }
@@ -235,15 +250,34 @@ fn attach(
         }
     }
 
-    io.say(|| format!("attached {} to {}", String::from_utf8_lossy(source), String::from_utf8_lossy(&device)));
-    Ok(Some(LoopGuard { device, handle: Some(loopdev), armed: true }))
+    io.say(|| {
+        format!(
+            "attached {} to {}",
+            String::from_utf8_lossy(source),
+            String::from_utf8_lossy(&device)
+        )
+    });
+    Ok(Some(LoopGuard {
+        device,
+        handle: Some(loopdev),
+        armed: true,
+    }))
 }
 
 fn attach_legacy(loopdev: &File, backing: &File, info: &LoopInfo64) -> Result<()> {
     // SAFETY: LOOP_SET_FD takes the backing fd as its argument.
-    let rc = unsafe { libc::ioctl(loopdev.as_raw_fd(), LOOP_SET_FD, backing.as_raw_fd() as libc::c_long) };
+    let rc = unsafe {
+        libc::ioctl(
+            loopdev.as_raw_fd(),
+            LOOP_SET_FD,
+            backing.as_raw_fd() as libc::c_long,
+        )
+    };
     if rc < 0 {
-        return Err(MountError::from_syscall("LOOP_SET_FD", std::io::Error::last_os_error()));
+        return Err(MountError::from_syscall(
+            "LOOP_SET_FD",
+            std::io::Error::last_os_error(),
+        ));
     }
     // SAFETY: LOOP_SET_STATUS64 reads a LoopInfo64.
     let rc = unsafe { libc::ioctl(loopdev.as_raw_fd(), LOOP_SET_STATUS64, info) };
@@ -295,11 +329,10 @@ fn read_trimmed(p: &std::path::Path) -> Option<std::ffi::OsString> {
 }
 
 fn is_regular_file(source: &[u8]) -> bool {
-    std::fs::metadata(os(source))
-        .is_ok_and(|m| {
-            let ft = m.file_type();
-            !ft.is_block_device() && !ft.is_char_device() && m.is_file()
-        })
+    std::fs::metadata(os(source)).is_ok_and(|m| {
+        let ft = m.file_type();
+        !ft.is_block_device() && !ft.is_char_device() && m.is_file()
+    })
 }
 
 fn os(b: &[u8]) -> &std::ffi::OsStr {
@@ -321,7 +354,9 @@ pub fn detach_verified(device: &[u8]) -> Result<()> {
     // backing_file); if it's already gone, treat as a no-op.
     let dev_str = String::from_utf8_lossy(device);
     let name = dev_str.rsplit('/').next().unwrap_or(&dev_str);
-    let backing = std::path::Path::new("/sys/block").join(name).join("loop/backing_file");
+    let backing = std::path::Path::new("/sys/block")
+        .join(name)
+        .join("loop/backing_file");
     if read_trimmed(&backing).is_none() {
         return Ok(()); // not currently backing anything — nothing to clear
     }
@@ -333,7 +368,10 @@ pub fn detach_verified(device: &[u8]) -> Result<()> {
     // SAFETY: LOOP_CLR_FD takes no argument.
     let rc = unsafe { libc::ioctl(f.as_raw_fd(), LOOP_CLR_FD) };
     if rc < 0 {
-        return Err(MountError::from_syscall("LOOP_CLR_FD", std::io::Error::last_os_error()));
+        return Err(MountError::from_syscall(
+            "LOOP_CLR_FD",
+            std::io::Error::last_os_error(),
+        ));
     }
     Ok(())
 }

@@ -101,7 +101,7 @@ fn render_query(name: &str, class: TokenClass, bytes: &[u8], _tok: &Token) -> Re
     {
         let v = payload::parse_u32(bytes).map_err(Error::Decode)?;
         json["decoded"] = json!({ "u32": v });
-        lines.detail(format!("u32: 0x{:x} ({})", v, v));
+        lines.detail(format!("u32: 0x{v:x} ({v})"));
     } else if cls == sys::KACS_TOKEN_CLASS_SOURCE {
         let s = payload::parse_source(bytes).map_err(Error::Decode)?;
         json["decoded"] = json!({
@@ -112,12 +112,12 @@ fn render_query(name: &str, class: TokenClass, bytes: &[u8], _tok: &Token) -> Re
     } else if cls == sys::KACS_TOKEN_CLASS_ORIGIN {
         let v = payload::parse_origin(bytes).map_err(Error::Decode)?;
         json["decoded"] = json!({ "origin": format!("0x{:016x}", v) });
-        lines.detail(format!("origin: 0x{:016x}", v));
+        lines.detail(format!("origin: 0x{v:016x}"));
     } else if cls == sys::KACS_TOKEN_CLASS_STATISTICS {
         let s = payload::parse_statistics(bytes).map_err(Error::Decode)?;
         json["decoded"] = json!({ "fields": s.fields.to_vec() });
         for (i, f) in s.fields.iter().enumerate() {
-            lines.detail(format!("field[{i}]: 0x{:016x}", f));
+            lines.detail(format!("field[{i}]: 0x{f:016x}"));
         }
     } else {
         // No typed decoding for this class yet. Hex dump only.
@@ -128,7 +128,7 @@ fn render_query(name: &str, class: TokenClass, bytes: &[u8], _tok: &Token) -> Re
 fn hex_dump_inline(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len() * 2);
     for b in bytes {
-        out.push_str(&format!("{:02x}", b));
+        out.push_str(&format!("{b:02x}"));
     }
     out
 }

@@ -449,3 +449,7 @@ mod test_whoami;
 #[cfg(feature = "yes")]
 #[path = "by-util/test_yes.rs"]
 mod test_yes;
+
+#[cfg(all(unix, feature = "upgrade_peios"))]
+#[path = "by-util/test_upgrade_peios.rs"]
+mod test_upgrade_peios;

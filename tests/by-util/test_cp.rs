@@ -3271,7 +3271,7 @@ fn test_cp_recursive_char_device(#[case] flag: &str) {
         );
         assert_eq!(
             null2_metadata.permissions().mode() & 0o777,
-            mode.bits() as _
+            mode.bits() as u32
         );
     } else {
         print!("Test skipped; copying a char device node requires CAP_MKNOD");

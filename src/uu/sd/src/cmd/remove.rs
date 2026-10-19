@@ -37,9 +37,8 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
     match mode {
         OutputMode::Human => {
             println!(
-                "{}: dropped {} ACE(s) across {} target(s)",
+                "{}: dropped {total_dropped} ACE(s) across {} target(s)",
                 primary.path,
-                total_dropped,
                 targets.len()
             );
             for (p, e) in &errors {
@@ -57,7 +56,7 @@ pub fn run(matches: &ArgMatches) -> Result<()> {
                     "path": primary.path,
                     "targets": targets.len(),
                     "total_dropped": total_dropped,
-                    "principals": principals.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    "principals": principals.iter().map(ToString::to_string).collect::<Vec<_>>(),
                     "errors": err_entries,
                 }))
                 .unwrap()

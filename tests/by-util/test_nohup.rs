@@ -54,6 +54,7 @@ fn test_nohup_multiple_args_and_flags() {
     target_os = "openbsd",
     target_vendor = "apple"
 ))]
+#[ignore = "requires a Peios kernel to set the output security descriptor"]
 fn test_nohup_with_pseudo_terminal_emulation_on_stdin_stdout_stderr_get_replaced() {
     let ts = TestScenario::new(util_name!());
     let result = ts
@@ -90,6 +91,7 @@ fn test_nohup_with_pseudo_terminal_emulation_on_stdin_stdout_stderr_get_replaced
     target_os = "openbsd",
     target_vendor = "apple"
 ))]
+#[ignore = "requires a Peios kernel to set the output security descriptor"]
 fn test_nohup_creates_output_in_cwd() {
     let ts = TestScenario::new(util_name!());
     let at = &ts.fixtures;
@@ -113,6 +115,7 @@ fn test_nohup_creates_output_in_cwd() {
 // detached job logged. Regression for GHSA-5gmx-24pj-xhwv / CVE-2026-35367.
 #[test]
 #[cfg(any(target_os = "linux", target_os = "android"))]
+#[ignore = "requires a Peios kernel to set the output security descriptor"]
 fn test_nohup_output_is_owner_only() {
     use std::os::unix::fs::PermissionsExt;
 
@@ -281,6 +284,7 @@ fn test_nohup_command_not_found() {
     target_os = "openbsd",
     target_vendor = "apple"
 ))]
+#[ignore = "requires a Peios kernel to set the output security descriptor"]
 fn test_nohup_stderr_to_stdout() {
     let ts = TestScenario::new(util_name!());
     let at = &ts.fixtures;

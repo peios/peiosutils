@@ -65,9 +65,7 @@ impl Input {
             InputKind::File(path) if path != &PathBuf::from(text::DEV_STDIN) => {
                 path.canonicalize().ok()
             }
-            InputKind::File(_) | InputKind::Stdin => {
-                PathBuf::from(text::FD0).canonicalize().ok()
-            }
+            InputKind::File(_) | InputKind::Stdin => PathBuf::from(text::FD0).canonicalize().ok(),
         }
     }
 

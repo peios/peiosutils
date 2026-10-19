@@ -69,7 +69,11 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             // clap returns 2 for argument errors; util-linux umount uses exit 1
             // (§10). Help/version stay 0.
             e.print().ok();
-            return if e.use_stderr() { Err(USimpleError::new(1, "")) } else { Ok(()) };
+            return if e.use_stderr() {
+                Err(USimpleError::new(1, ""))
+            } else {
+                Ok(())
+            };
         }
     };
     run(&matches).map_err(|e| USimpleError::new(e.exit_code(), e.to_string()))
@@ -106,7 +110,9 @@ fn run(m: &clap::ArgMatches) -> Result<()> {
         .map(|vs| vs.map(|s| s.as_bytes().to_vec()).collect())
         .unwrap_or_default();
     if operands.is_empty() {
-        return Err(MountError::Usage("a target or source is required".to_string()));
+        return Err(MountError::Usage(
+            "a target or source is required".to_string(),
+        ));
     }
 
     // -N (§13): enter the target mount ns before reading its mountinfo and
@@ -134,9 +140,7 @@ fn run(m: &clap::ArgMatches) -> Result<()> {
     }
     match first_err {
         None => Ok(()),
-        Some(e) if any_ok => Err(MountError::Partial(format!(
-            "some unmounts failed: {e}"
-        ))),
+        Some(e) if any_ok => Err(MountError::Partial(format!("some unmounts failed: {e}"))),
         Some(e) => Err(e),
     }
 }
@@ -200,7 +204,11 @@ fn resolve_targets(
         _ => Err(MountError::Usage(format!(
             "{} is mounted at multiple places; specify a target or use -A:\n  {}",
             String::from_utf8_lossy(raw),
-            points.iter().map(|p| String::from_utf8_lossy(p).into_owned()).collect::<Vec<_>>().join("\n  ")
+            points
+                .iter()
+                .map(|p| String::from_utf8_lossy(p).into_owned())
+                .collect::<Vec<_>>()
+                .join("\n  ")
         ))),
     }
 }
@@ -261,7 +269,10 @@ fn unmount_one(mp: &[u8], entries: &[MountEntry], flags: Flags) -> Result<()> {
             // -r: on failure, try to remount read-only instead (§6.7).
             if flags.read_only {
                 if flags.verbose > 0 {
-                    eprintln!("umount: {}: remounting read-only", String::from_utf8_lossy(mp));
+                    eprintln!(
+                        "umount: {}: remounting read-only",
+                        String::from_utf8_lossy(mp)
+                    );
                 }
                 if remount_ro(mp).is_ok() {
                     return Ok(());
@@ -318,20 +329,92 @@ fn build() -> Command {
     Command::new("umount")
         .version(uucore::crate_version!())
         .about("Detach a filesystem from the Peios mount tree")
-        .arg(boolean(opt::LAZY).short('l').long("lazy").help("Detach now, clean up later (MNT_DETACH)"))
-        .arg(boolean(opt::FORCE).short('f').long("force").help("Force unmount (MNT_FORCE)"))
-        .arg(boolean(opt::RECURSIVE).short('R').long("recursive").help("Unmount the target and everything under it"))
-        .arg(boolean(opt::ALL_TARGETS).short('A').long("all-targets").help("Unmount all mountpoints of the given source"))
-        .arg(boolean(opt::DETACH_LOOP).short('d').long("detach-loop").help("Free the backing loop device after unmount"))
-        .arg(boolean(opt::READ_ONLY).short('r').long("read-only").help("On failure, remount read-only instead"))
-        .arg(boolean(opt::GRACEFUL).short('g').long("graceful").help("Exit 0 if the target is not mounted"))
-        .arg(boolean(opt::QUIET).short('q').long("quiet").help("Suppress 'not mounted' messages"))
-        .arg(boolean(opt::NO_CANONICALIZE).short('c').long("no-canonicalize").help("Do not canonicalize paths (UMOUNT_NOFOLLOW)"))
-        .arg(Arg::new(opt::VERBOSE).short('v').long("verbose").action(ArgAction::Count).help("Say what is being done"))
-        .arg(boolean(opt::FAKE).long("fake").help("Dry run: skip the unmount syscalls"))
-        .arg(Arg::new(opt::NAMESPACE).short('N').long("namespace").value_name("NS").value_parser(clap::value_parser!(std::ffi::OsString)).help("Operate in mount namespace NS"))
-        .arg(boolean(opt::NO_MTAB).short('n').long("no-mtab").help("Accepted and ignored (no mtab on peios)"))
-        .arg(boolean(opt::INTERNAL_ONLY).short('i').long("internal-only").help("Do not invoke a umount.<type> helper"))
+        .arg(
+            boolean(opt::LAZY)
+                .short('l')
+                .long("lazy")
+                .help("Detach now, clean up later (MNT_DETACH)"),
+        )
+        .arg(
+            boolean(opt::FORCE)
+                .short('f')
+                .long("force")
+                .help("Force unmount (MNT_FORCE)"),
+        )
+        .arg(
+            boolean(opt::RECURSIVE)
+                .short('R')
+                .long("recursive")
+                .help("Unmount the target and everything under it"),
+        )
+        .arg(
+            boolean(opt::ALL_TARGETS)
+                .short('A')
+                .long("all-targets")
+                .help("Unmount all mountpoints of the given source"),
+        )
+        .arg(
+            boolean(opt::DETACH_LOOP)
+                .short('d')
+                .long("detach-loop")
+                .help("Free the backing loop device after unmount"),
+        )
+        .arg(
+            boolean(opt::READ_ONLY)
+                .short('r')
+                .long("read-only")
+                .help("On failure, remount read-only instead"),
+        )
+        .arg(
+            boolean(opt::GRACEFUL)
+                .short('g')
+                .long("graceful")
+                .help("Exit 0 if the target is not mounted"),
+        )
+        .arg(
+            boolean(opt::QUIET)
+                .short('q')
+                .long("quiet")
+                .help("Suppress 'not mounted' messages"),
+        )
+        .arg(
+            boolean(opt::NO_CANONICALIZE)
+                .short('c')
+                .long("no-canonicalize")
+                .help("Do not canonicalize paths (UMOUNT_NOFOLLOW)"),
+        )
+        .arg(
+            Arg::new(opt::VERBOSE)
+                .short('v')
+                .long("verbose")
+                .action(ArgAction::Count)
+                .help("Say what is being done"),
+        )
+        .arg(
+            boolean(opt::FAKE)
+                .long("fake")
+                .help("Dry run: skip the unmount syscalls"),
+        )
+        .arg(
+            Arg::new(opt::NAMESPACE)
+                .short('N')
+                .long("namespace")
+                .value_name("NS")
+                .value_parser(clap::value_parser!(std::ffi::OsString))
+                .help("Operate in mount namespace NS"),
+        )
+        .arg(
+            boolean(opt::NO_MTAB)
+                .short('n')
+                .long("no-mtab")
+                .help("Accepted and ignored (no mtab on peios)"),
+        )
+        .arg(
+            boolean(opt::INTERNAL_ONLY)
+                .short('i')
+                .long("internal-only")
+                .help("Do not invoke a umount.<type> helper"),
+        )
         .arg(
             // Append so options may be interspersed with the operands
             // (e.g. `umount /a -f /b`), matching util-linux.

@@ -2,11 +2,12 @@
 // `cmd::*`. The dispatcher parses target/style flags shared across all
 // subcommands and routes to the matching handler.
 
+use clap::ArgMatches;
+
 use crate::error::{Error, Result};
 use crate::render::{CmdOutput, OutputMode};
 use crate::sid_render::SidStyle;
 use crate::target::TargetSpec;
-use clap::ArgMatches;
 
 pub mod accessors;
 pub mod adjust;
@@ -22,13 +23,10 @@ pub mod threads;
 
 /// Top-level dispatch. Returns the rendered output (or an `Error`).
 pub fn dispatch(matches: &ArgMatches) -> Result<()> {
-    let (name, sub) = match matches.subcommand() {
-        Some((n, m)) => (n, m),
-        None => {
-            // Bare `token` → `token show --short` using the top-level
-            // flags (so `token --pid 1` works without typing `show`).
-            return run_show(matches, /* implicit_short */ true);
-        }
+    let Some((name, sub)) = matches.subcommand() else {
+        // Bare `token` → `token show --short` using the top-level
+        // flags (so `token --pid 1` works without typing `show`).
+        return run_show(matches, /* implicit_short */ true);
     };
 
     match name {
@@ -180,6 +178,10 @@ pub fn parse_output_mode(matches: &ArgMatches) -> OutputMode {
 }
 
 /// Print a rendered command output to stdout.
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "rendering completes handlers that share the fallible command Result contract"
+)]
 pub fn emit(out: CmdOutput, mode: OutputMode) -> Result<()> {
     out.print(mode);
     Ok(())

@@ -23,7 +23,7 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
             // clap encodes --help and --version as non-error "errors"
             // whose exit_code() is 0. Honour that so `--version` exits
             // 0 and bad flags exit 1.
-            let code = e.exit_code() as i32;
+            let code = e.exit_code();
             e.print().ok();
             return if code == 0 {
                 Ok(())

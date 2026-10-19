@@ -22,13 +22,15 @@ use crate::error::{MountError, Result};
 /// may be a PID (→ `/proc/<pid>/ns/mnt`), an ns-file path, or a named ns.
 pub fn enter(ns: &[u8]) -> Result<()> {
     let path = resolve(ns);
-    let f = File::open(OsStr::from_bytes(&path)).map_err(|e| {
-        MountError::from_syscall("open namespace", e)
-    })?;
+    let f = File::open(OsStr::from_bytes(&path))
+        .map_err(|e| MountError::from_syscall("open namespace", e))?;
     // SAFETY: setns with a valid ns fd and the mount-ns type.
     let rc = unsafe { libc::setns(f.as_raw_fd(), libc::CLONE_NEWNS) };
     if rc < 0 {
-        return Err(MountError::from_syscall("setns", std::io::Error::last_os_error()));
+        return Err(MountError::from_syscall(
+            "setns",
+            std::io::Error::last_os_error(),
+        ));
     }
     Ok(())
 }

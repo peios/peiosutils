@@ -31,28 +31,43 @@ fn category_a_simple_bits() {
 fn rw_clears_rdonly() {
     let o = p("rw");
     assert_eq!(o.attr_set & libc::MOUNT_ATTR_RDONLY, 0);
-    assert_eq!(o.attr_clr & libc::MOUNT_ATTR_RDONLY, libc::MOUNT_ATTR_RDONLY);
+    assert_eq!(
+        o.attr_clr & libc::MOUNT_ATTR_RDONLY,
+        libc::MOUNT_ATTR_RDONLY
+    );
 }
 
 #[test]
 fn positive_overrides_negative_in_order() {
     let o = p("noexec,exec");
     assert_eq!(o.attr_set & libc::MOUNT_ATTR_NOEXEC, 0);
-    assert_eq!(o.attr_clr & libc::MOUNT_ATTR_NOEXEC, libc::MOUNT_ATTR_NOEXEC);
+    assert_eq!(
+        o.attr_clr & libc::MOUNT_ATTR_NOEXEC,
+        libc::MOUNT_ATTR_NOEXEC
+    );
 }
 
 #[test]
 fn atime_last_wins_and_masks() {
     let o = p("noatime,strictatime");
-    assert_eq!(o.attr_set & libc::MOUNT_ATTR__ATIME, libc::MOUNT_ATTR_STRICTATIME);
-    assert_eq!(o.attr_clr & libc::MOUNT_ATTR__ATIME, libc::MOUNT_ATTR__ATIME);
+    assert_eq!(
+        o.attr_set & libc::MOUNT_ATTR__ATIME,
+        libc::MOUNT_ATTR_STRICTATIME
+    );
+    assert_eq!(
+        o.attr_clr & libc::MOUNT_ATTR__ATIME,
+        libc::MOUNT_ATTR__ATIME
+    );
 }
 
 #[test]
 fn relatime_clears_mask_to_default() {
     let o = p("relatime");
     assert_eq!(o.attr_set & libc::MOUNT_ATTR__ATIME, 0); // RELATIME == 0
-    assert_eq!(o.attr_clr & libc::MOUNT_ATTR__ATIME, libc::MOUNT_ATTR__ATIME);
+    assert_eq!(
+        o.attr_clr & libc::MOUNT_ATTR__ATIME,
+        libc::MOUNT_ATTR__ATIME
+    );
 }
 
 #[test]
@@ -68,12 +83,18 @@ fn ro_layer_qualifiers() {
 
     let rec = p("ro=recursive");
     assert!(rec.recursive_attr);
-    assert_eq!(rec.attr_set & libc::MOUNT_ATTR_RDONLY, libc::MOUNT_ATTR_RDONLY);
+    assert_eq!(
+        rec.attr_set & libc::MOUNT_ATTR_RDONLY,
+        libc::MOUNT_ATTR_RDONLY
+    );
 
     let vfs = p("ro=vfs");
     assert!(!vfs.recursive_attr);
     assert!(vfs.sb_rdonly.is_none());
-    assert_eq!(vfs.attr_set & libc::MOUNT_ATTR_RDONLY, libc::MOUNT_ATTR_RDONLY);
+    assert_eq!(
+        vfs.attr_set & libc::MOUNT_ATTR_RDONLY,
+        libc::MOUNT_ATTR_RDONLY
+    );
 }
 
 #[test]
@@ -122,7 +143,10 @@ fn category_c_fs_params_passthrough() {
 #[test]
 fn key_value_splits_on_first_equals() {
     let o = p("context=a=b=c");
-    assert_eq!(o.fs_params, vec![(b"context".to_vec(), Some(b"a=b=c".to_vec()))]);
+    assert_eq!(
+        o.fs_params,
+        vec![(b"context".to_vec(), Some(b"a=b=c".to_vec()))]
+    );
 }
 
 #[test]
@@ -142,7 +166,10 @@ fn non_utf8_value_passes_through() {
     // 0xff is not valid UTF-8; it must survive losslessly in the value.
     let spec = b"key=\xff\xfevalue";
     let o = ParsedOptions::parse(spec).unwrap();
-    assert_eq!(o.fs_params, vec![(b"key".to_vec(), Some(b"\xff\xfevalue".to_vec()))]);
+    assert_eq!(
+        o.fs_params,
+        vec![(b"key".to_vec(), Some(b"\xff\xfevalue".to_vec()))]
+    );
 }
 
 #[test]
@@ -176,18 +203,36 @@ fn category_d_propagation_order_and_recursive() {
     assert_eq!(
         o.propagation,
         vec![
-            PropChange { kind: PropKind::Private, recursive: false },
-            PropChange { kind: PropKind::Shared, recursive: true },
-            PropChange { kind: PropKind::Unbindable, recursive: false },
+            PropChange {
+                kind: PropKind::Private,
+                recursive: false
+            },
+            PropChange {
+                kind: PropKind::Shared,
+                recursive: true
+            },
+            PropChange {
+                kind: PropKind::Unbindable,
+                recursive: false
+            },
         ]
     );
 }
 
 #[test]
 fn category_e_policy() {
-    assert_eq!(p("policy=deny-missing").policy, Some(PolicyKind::DenyMissing));
-    assert_eq!(p("policy=synth-ephemeral").policy, Some(PolicyKind::SynthEphemeral));
-    assert_eq!(p("policy=synth-persist").policy, Some(PolicyKind::SynthPersist));
+    assert_eq!(
+        p("policy=deny-missing").policy,
+        Some(PolicyKind::DenyMissing)
+    );
+    assert_eq!(
+        p("policy=synth-ephemeral").policy,
+        Some(PolicyKind::SynthEphemeral)
+    );
+    assert_eq!(
+        p("policy=synth-persist").policy,
+        Some(PolicyKind::SynthPersist)
+    );
     assert!(matches!(err("policy=unmanaged"), MountError::Usage(_)));
     assert!(matches!(err("policy=bogus"), MountError::Usage(_)));
 }
@@ -200,7 +245,9 @@ fn category_f_xmount() {
     assert!(p("X-mount.noloop").noloop);
     // A comma-bearing value must be quoted (else the comma splits the token).
     assert_eq!(
-        ParsedOptions::parse(br#"X-mount.auto-fstypes="ext4,xfs""#).unwrap().auto_fstypes,
+        ParsedOptions::parse(br#"X-mount.auto-fstypes="ext4,xfs""#)
+            .unwrap()
+            .auto_fstypes,
         Some(b"ext4,xfs".to_vec())
     );
 
@@ -227,7 +274,10 @@ fn defaults_expands_correctly() {
     assert_eq!(o.attr_set, 0);
     assert_eq!(
         o.attr_clr,
-        libc::MOUNT_ATTR_RDONLY | libc::MOUNT_ATTR_NOSUID | libc::MOUNT_ATTR_NODEV | libc::MOUNT_ATTR_NOEXEC
+        libc::MOUNT_ATTR_RDONLY
+            | libc::MOUNT_ATTR_NOSUID
+            | libc::MOUNT_ATTR_NODEV
+            | libc::MOUNT_ATTR_NOEXEC
     );
     assert_eq!(o.sb_flags, vec![(SbFlag::Synchronous, false)]);
     assert_eq!(o.attr_set & libc::MOUNT_ATTR__ATIME, 0);
@@ -236,8 +286,14 @@ fn defaults_expands_correctly() {
 #[test]
 fn defaults_then_override() {
     let o = p("defaults,ro,noatime");
-    assert_eq!(o.attr_set & libc::MOUNT_ATTR_RDONLY, libc::MOUNT_ATTR_RDONLY);
-    assert_eq!(o.attr_set & libc::MOUNT_ATTR__ATIME, libc::MOUNT_ATTR_NOATIME);
+    assert_eq!(
+        o.attr_set & libc::MOUNT_ATTR_RDONLY,
+        libc::MOUNT_ATTR_RDONLY
+    );
+    assert_eq!(
+        o.attr_set & libc::MOUNT_ATTR__ATIME,
+        libc::MOUNT_ATTR_NOATIME
+    );
 }
 
 #[test]

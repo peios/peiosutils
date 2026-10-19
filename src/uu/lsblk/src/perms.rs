@@ -39,7 +39,10 @@ pub fn read(devpath: &Path) -> Perms {
     // A block device is never executable-marked; the middle slot stays `-`,
     // matching what `ls -l` shows for a device node.
     let mode = format!("{}{}{prot}", type_char(devpath), '-');
-    Perms { owner: sd.owner, mode }
+    Perms {
+        owner: sd.owner,
+        mode,
+    }
 }
 
 /// `b` for a block device, `c` for a char device. We already know from sysfs

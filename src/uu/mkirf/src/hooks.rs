@@ -328,7 +328,7 @@ fn parse_toml_subset(content: &[(usize, String)]) -> Result<Parsed, String> {
                 return Err(format!(
                     "line {lineno}: unknown key `{other}` \
                      (expected `provides`, `contributes`, `requires` or `after`)"
-                ))
+                ));
             }
         };
         if slot.is_some() {
@@ -446,8 +446,8 @@ pub fn resolve(hooks: &[Hook]) -> Result<Resolved, String> {
         for req in &h.requires {
             if !all_supplied.contains(req.as_str()) {
                 return Err(format!(
-                    "hook `{}` requires capability `{}`, which no hook provides",
-                    h.name, req,
+                    "hook `{}` requires capability `{req}`, which no hook provides",
+                    h.name,
                 ));
             }
         }
@@ -455,10 +455,7 @@ pub fn resolve(hooks: &[Hook]) -> Result<Resolved, String> {
 
     let order = kahn_sort(&constrained)?;
 
-    let mut paths: Vec<String> = order
-        .iter()
-        .map(|&i| constrained[i].path.clone())
-        .collect();
+    let mut paths: Vec<String> = order.iter().map(|&i| constrained[i].path.clone()).collect();
     paths.extend(unconstrained.iter().map(|h| h.path.clone()));
 
     // Unconstrained hooks with no block at all get an advisory: a
@@ -633,8 +630,7 @@ pub fn render_seq(order: &[String]) -> Vec<u8> {
 /// exactly the version-1 behaviour. That is what makes the richer format
 /// a superset rather than a replacement.
 pub fn render_seq_v2(hooks: &[Hook], order: &[String]) -> Vec<u8> {
-    let by_path: HashMap<String, &Hook> =
-        hooks.iter().map(|h| (h.path.clone(), h)).collect();
+    let by_path: HashMap<String, &Hook> = hooks.iter().map(|h| (h.path.clone(), h)).collect();
 
     let mut s = String::from(SEQ_V2_VERSION_LINE);
     s.push('\n');

@@ -277,7 +277,14 @@ mod tests {
     // (this is the exact form that failed at boot).
     #[test]
     fn operands_interspersed_with_options() {
-        let r = mount_req(&["-t", "overlay", "overlay", "-o", "lowerdir=/a,upperdir=/b", "/sysroot"]);
+        let r = mount_req(&[
+            "-t",
+            "overlay",
+            "overlay",
+            "-o",
+            "lowerdir=/a,upperdir=/b",
+            "/sysroot",
+        ]);
         assert_eq!(r.verb, Verb::New);
         assert_eq!(r.source.as_deref(), Some(b"overlay".as_slice()));
         assert_eq!(r.target, b"/sysroot");

@@ -1,1 +1,6 @@
-# * using all default `cargo fmt`/`rustfmt` options
+edition = "2024"
+hard_tabs = false
+tab_spaces = 4
+max_width = 100
+newline_style = "Unix"
+reorder_imports = false

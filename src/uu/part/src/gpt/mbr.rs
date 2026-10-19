@@ -105,9 +105,15 @@ mod tests {
     #[test]
     fn size_clamps_rather_than_wrapping_on_huge_disks() {
         let s = protective(0x1_0000_0000, 512);
-        assert_eq!(u32::from_le_bytes(s[458..462].try_into().unwrap()), u32::MAX);
+        assert_eq!(
+            u32::from_le_bytes(s[458..462].try_into().unwrap()),
+            u32::MAX
+        );
         let s = protective(u64::MAX, 512);
-        assert_eq!(u32::from_le_bytes(s[458..462].try_into().unwrap()), u32::MAX);
+        assert_eq!(
+            u32::from_le_bytes(s[458..462].try_into().unwrap()),
+            u32::MAX
+        );
     }
 
     #[test]

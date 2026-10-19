@@ -20,8 +20,18 @@ struct Glyphs {
     space: &'static str,  // ancestor ended
 }
 
-const UNICODE: Glyphs = Glyphs { branch: "├─", last: "└─", vert: "│ ", space: "  " };
-const ASCII: Glyphs = Glyphs { branch: "|-", last: "`-", vert: "| ", space: "  " };
+const UNICODE: Glyphs = Glyphs {
+    branch: "├─",
+    last: "└─",
+    vert: "│ ",
+    space: "  ",
+};
+const ASCII: Glyphs = Glyphs {
+    branch: "|-",
+    last: "`-",
+    vert: "| ",
+    space: "  ",
+};
 
 /// A flattened device with its precomputed NAME tree-prefix.
 struct Row<'a> {
@@ -42,7 +52,9 @@ pub fn render(tree: &[Device], config: &Config) -> Result<()> {
     // A broken pipe (e.g. `| head`) is not an error.
     match r {
         Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-        Err(e) => Err(crate::error::LsblkError::System(format!("write error: {e}"))),
+        Err(e) => Err(crate::error::LsblkError::System(format!(
+            "write error: {e}"
+        ))),
         Ok(()) => Ok(()),
     }
 }
@@ -72,18 +84,32 @@ fn walk<'a>(
     let prefix = if !tree_mode || is_root {
         String::new()
     } else {
-        format!("{parent_prefix}{}", if is_last { glyphs.last } else { glyphs.branch })
+        format!(
+            "{parent_prefix}{}",
+            if is_last { glyphs.last } else { glyphs.branch }
+        )
     };
     rows.push(Row { dev, prefix });
 
     let child_prefix = if !tree_mode || is_root {
         String::new()
     } else {
-        format!("{parent_prefix}{}", if is_last { glyphs.space } else { glyphs.vert })
+        format!(
+            "{parent_prefix}{}",
+            if is_last { glyphs.space } else { glyphs.vert }
+        )
     };
     let n = dev.children.len();
     for (i, child) in dev.children.iter().enumerate() {
-        walk(child, &child_prefix, i + 1 == n, false, glyphs, tree_mode, rows);
+        walk(
+            child,
+            &child_prefix,
+            i + 1 == n,
+            false,
+            glyphs,
+            tree_mode,
+            rows,
+        );
     }
 }
 
@@ -164,7 +190,13 @@ fn col_key(col: Column, config: &Config) -> String {
     if config.shell {
         col.id()
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect()
     } else {
         col.id().to_string()
@@ -175,7 +207,10 @@ fn render_pairs(out: &mut impl Write, tree: &[Device], config: &Config) -> std::
     for row in flatten(tree, config) {
         let mut first = true;
         for col in &config.columns {
-            let val = col.value(row.dev, config).unwrap_or_default().replace('\n', " ");
+            let val = col
+                .value(row.dev, config)
+                .unwrap_or_default()
+                .replace('\n', " ");
             if !first {
                 out.write_all(b" ")?;
             }
@@ -197,7 +232,10 @@ fn render_raw(out: &mut impl Write, tree: &[Device], config: &Config) -> std::io
             .columns
             .iter()
             .map(|c| {
-                let v = c.value(row.dev, config).unwrap_or_default().replace('\n', " ");
+                let v = c
+                    .value(row.dev, config)
+                    .unwrap_or_default()
+                    .replace('\n', " ");
                 // Raw output is whitespace-separated with no quoting, so values
                 // that could contain a space or control char are hex-escaped
                 // (matching upstream) to keep fields parseable.
@@ -234,12 +272,18 @@ fn json_device(
     let n = config.columns.len();
     for (i, col) in config.columns.iter().enumerate() {
         let key = col.id().to_ascii_lowercase();
-        let comma = if i + 1 == n && dev.children.is_empty() { "" } else { "," };
+        let comma = if i + 1 == n && dev.children.is_empty() {
+            ""
+        } else {
+            ","
+        };
         if *col == Column::Mountpoints {
             // MOUNTPOINTS is an array in JSON; empty is `[]` (current upstream).
             let mps = &dev.mountpoints;
-            let items: Vec<String> =
-                mps.iter().map(|m| format!("\"{}\"", escape_json(m))).collect();
+            let items: Vec<String> = mps
+                .iter()
+                .map(|m| format!("\"{}\"", escape_json(m)))
+                .collect();
             writeln!(out, "{inner}\"{key}\": [{}]{comma}", items.join(", "))?;
         } else if col.is_boolean() {
             // Flag columns are bare JSON booleans, not quoted strings.

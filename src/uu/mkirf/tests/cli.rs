@@ -280,7 +280,10 @@ fn the_sequence_directory_is_created_when_the_source_lacks_it() {
     let src = dir.path().join("src");
     fs::create_dir(&src).unwrap();
     sample_tree(&src);
-    assert!(!src.join("system").exists(), "test premise: no system/ in src");
+    assert!(
+        !src.join("system").exists(),
+        "test premise: no system/ in src"
+    );
 
     let out = dir.path().join("initramfs.cpio.gz");
     assert!(
@@ -293,7 +296,10 @@ fn the_sequence_directory_is_created_when_the_source_lacks_it() {
     );
 
     let archive = decompress(&fs::read(&out).unwrap());
-    assert!(contains(&archive, b"system\0"), "no `system` directory entry");
+    assert!(
+        contains(&archive, b"system\0"),
+        "no `system` directory entry"
+    );
     assert!(
         contains(&archive, b"system/prelude\0"),
         "no `system/prelude` directory entry",
@@ -394,7 +400,11 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
 
     // The image opens with an UNCOMPRESSED cpio, not gzip — that is what the
     // kernel's early scanner reads before any decompression.
-    assert_eq!(&bytes[..6], b"070701", "early region must be uncompressed cpio");
+    assert_eq!(
+        &bytes[..6],
+        b"070701",
+        "early region must be uncompressed cpio"
+    );
 
     let (early, gz_start) = walk_early(&bytes);
     let find = |p: &[u8]| early.iter().find(|e| e.name == p);
@@ -403,7 +413,11 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
     // with its bytes intact — the segment label `microcode/` is stripped.
     let mc = find(b"kernel/x86/microcode/GenuineIntel.bin").expect("microcode entry");
     assert_eq!(mc.mode & 0o170_000, 0o100_000, "regular file");
-    assert_eq!(mc.data_off % 16, 0, "microcode payload must be 16-byte aligned");
+    assert_eq!(
+        mc.data_off % 16,
+        0,
+        "microcode payload must be 16-byte aligned"
+    );
     assert_eq!(&bytes[mc.data_off..mc.data_off + mc.size], &blob[..]);
 
     // The ACPI segment rides the same region, also aligned.

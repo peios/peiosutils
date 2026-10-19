@@ -40,7 +40,13 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
     let excludes = walk::Excludes::compile(&cfg.excludes)
         .map_err(|e| USimpleError::new(2, format!("--exclude: {e}")))?;
     let result = if cfg.watch {
-        watch::watch(&cfg.src, &cfg.out, cfg.debounce_secs, &excludes, cfg.compress)
+        watch::watch(
+            &cfg.src,
+            &cfg.out,
+            cfg.debounce_secs,
+            &excludes,
+            cfg.compress,
+        )
     } else {
         build::run(&cfg.src, &cfg.out, &excludes, cfg.compress)
     };

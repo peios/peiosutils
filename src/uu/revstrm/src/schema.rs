@@ -3,7 +3,7 @@
 // For the full copyright and license information, please view the LICENSE
 // file that was distributed with this source code.
 
-// spell-checker:ignore (libs) libevman revstrm (vars) luid ntfe
+// spell-checker:ignore (libs) event_catalogue revstrm (vars) luid ntfe
 
 //! The event catalogue, as `revstrm` uses it: a path in, the declared type out.
 //!
@@ -13,14 +13,14 @@
 //! old key-suffix guesses when there is no catalogue or the path is not in it.
 //!
 //! The dependency runs one way: `revstrm` reads the catalogue through
-//! `libevman`, which knows nothing of the event stream. The pure value
+//! `event_catalogue`, which knows nothing of the event stream. The pure value
 //! formatters live here too, so they can be tested without a msgpack buffer.
 
 use std::fmt::Write as _;
 use std::path::Path;
 
-use libevman::catalogue::{Catalogue, Resolution};
-use libevman::corpus;
+use event_catalogue::catalogue::{Catalogue, Resolution};
+use event_catalogue::corpus;
 
 /// The catalogue as loaded for one run. Empty when none is installed.
 #[derive(Default)]
@@ -68,7 +68,10 @@ impl Schema {
         match cat.resolve(path)? {
             Resolution::Field(e) => spec_of(e),
             // A `-count` of a field is a number of them, not one of them.
-            Resolution::Variant { qualifier: "-count", .. } => None,
+            Resolution::Variant {
+                qualifier: "-count",
+                ..
+            } => None,
             Resolution::Variant { field, .. } => spec_of(field),
             Resolution::Attribute { attribute, .. } => {
                 let ty = match attribute.as_str() {
@@ -89,7 +92,7 @@ impl Schema {
     }
 }
 
-fn spec_of(e: &libevman::catalogue::Entry) -> Option<Spec<'_>> {
+fn spec_of(e: &event_catalogue::catalogue::Entry) -> Option<Spec<'_>> {
     Some(Spec {
         ty: e.record.value("type")?,
         values: e.record.value("values"),
@@ -215,7 +218,11 @@ pub fn format_duration(ns: u64) -> String {
     if ns < 1_000 {
         return format!("{ns}ns");
     }
-    let (div, unit) = UNITS.iter().find(|(d, _)| ns >= *d).copied().unwrap_or((1, "ns"));
+    let (div, unit) = UNITS
+        .iter()
+        .find(|(d, _)| ns >= *d)
+        .copied()
+        .unwrap_or((1, "ns"));
     format!("{ns}ns ({}{unit})", scaled(ns, div))
 }
 
@@ -231,7 +238,11 @@ pub fn format_bytes(n: u64) -> String {
     if n < 1024 {
         return n.to_string();
     }
-    let (div, unit) = UNITS.iter().find(|(d, _)| n >= *d).copied().unwrap_or((1, "B"));
+    let (div, unit) = UNITS
+        .iter()
+        .find(|(d, _)| n >= *d)
+        .copied()
+        .unwrap_or((1, "B"));
     format!("{n} ({}{unit})", scaled(n, div))
 }
 

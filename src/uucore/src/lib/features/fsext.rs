@@ -58,9 +58,7 @@ fn to_nul_terminated_wide_string(s: impl AsRef<OsStr>) -> Vec<u16> {
 }
 
 #[cfg(unix)]
-use libc::{
-    S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, mode_t, strerror,
-};
+use libc::{S_IFBLK, S_IFCHR, S_IFDIR, S_IFIFO, S_IFLNK, S_IFMT, S_IFREG, S_IFSOCK, mode_t, strerror};
 #[cfg(unix)]
 use std::ffi::{CStr, CString};
 #[cfg(not(target_os = "wasi"))]
@@ -217,32 +215,23 @@ impl MountInfo {
         use std::os::unix::ffi::OsStrExt;
         use std::os::unix::ffi::OsStringExt;
 
-        let dev_name;
-        let fs_type;
-        let mount_root;
-        let mount_dir;
-        let mount_option;
-
-        match file_name {
-            // spell-checker:ignore (word) noatime
-            // Format: 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw,errors=continue
-            // "man proc" for more details
-            LINUX_MOUNTINFO => {
-                const FIELDS_OFFSET: usize = 6;
-                let after_fields = raw[FIELDS_OFFSET..]
-                    .iter()
-                    .position(|c| *c == b"-")
-                    .unwrap()
-                    + FIELDS_OFFSET
-                    + 1;
-                dev_name = String::from_utf8_lossy(raw[after_fields + 1]).to_string();
-                fs_type = String::from_utf8_lossy(raw[after_fields]).to_string();
-                mount_root = OsStr::from_bytes(raw[3]).to_owned();
-                mount_dir = OsString::from_vec(replace_special_chars(raw[4]));
-                mount_option = String::from_utf8_lossy(raw[5]).to_string();
-            }
-            _ => return None,
+        const FIELDS_OFFSET: usize = 6;
+        if file_name != LINUX_MOUNTINFO {
+            return None;
         }
+        // Format: 36 35 98:0 /mnt1 /mnt2 rw,noatime master:1 - ext3 /dev/root rw
+        // See proc_pid_mountinfo(5) for optional fields and escaping.
+        let after_fields = raw[FIELDS_OFFSET..]
+            .iter()
+            .position(|field| *field == b"-")
+            .unwrap()
+            + FIELDS_OFFSET
+            + 1;
+        let dev_name = String::from_utf8_lossy(raw[after_fields + 1]).to_string();
+        let fs_type = String::from_utf8_lossy(raw[after_fields]).to_string();
+        let mount_root = OsStr::from_bytes(raw[3]).to_owned();
+        let mount_dir = OsString::from_vec(replace_special_chars(raw[4]));
+        let mount_option = String::from_utf8_lossy(raw[5]).to_string();
 
         let dev_id = mount_dev_id(&mount_dir);
         let dummy = is_dummy_filesystem(&fs_type, &mount_option);
