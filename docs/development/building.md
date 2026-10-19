@@ -131,7 +131,7 @@ commits and uses a pinned Trail compiler to validate Learn documents.
 
 Run `TRAIL=/absolute/path/to/trail tools/check-docs` for the component tree.
 The checker compares external-link diagnostics with a reviewed baseline.
-Use `--context ../panorama/docs` for the merged publication check; this
+Use `--context ../learn` for the merged publication check; this
 separate check resolves links owned by other components.
 
 Bazel inherits source lint levels and `.clippy.toml` from the Cargo workspace.
