@@ -122,6 +122,12 @@ fn find_uucore_locales_dir(utility_locales_dir: &Path) -> Option<PathBuf> {
         .canonicalize()
         .unwrap_or_else(|_| utility_locales_dir.to_path_buf());
 
+    // Installed corpora keep shared messages beside each utility's directory.
+    let installed = normalized_dir.parent()?.join("uucore");
+    if installed.is_dir() {
+        return Some(installed);
+    }
+
     // Walk up: locales -> printenv -> uu -> src
     let uucore_locales = normalized_dir
         .parent()? // printenv
@@ -661,6 +667,22 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    #[test]
+    fn common_messages_support_installed_and_source_layouts() {
+        let root = tempfile::tempdir().unwrap();
+        for (utility, common) in [
+            ("usr/share/locales/sort", "usr/share/locales/uucore"),
+            ("bin/locales/sort", "bin/locales/uucore"),
+            ("src/uu/sort/locales", "src/uucore/locales"),
+        ] {
+            let utility = root.path().join(utility);
+            let common = root.path().join(common);
+            std::fs::create_dir_all(&utility).unwrap();
+            std::fs::create_dir_all(&common).unwrap();
+            assert_eq!(find_uucore_locales_dir(&utility), Some(common));
+        }
+    }
 
     /// Test-specific helper function to create a bundle from test directory only
     #[cfg(test)]
@@ -1507,8 +1529,8 @@ mod fhs_tests {
         let prefix = TempDir::new().unwrap(); // e.g.  /tmp/xyz
         let bin_dir = prefix.path().join("bin"); //        /tmp/xyz/bin
         let share_dir = prefix.path().join("share").join("locales").join("cut"); // /tmp/xyz/share/locales/cut
-        std::fs::create_dir_all(&share_dir).unwrap();
-        std::fs::create_dir_all(&bin_dir).unwrap();
+        fs::create_dir_all(&share_dir).unwrap();
+        fs::create_dir_all(&bin_dir).unwrap();
 
         // 2. Pretend the executable lives in <prefix>/bin
         let exe_dir = bin_dir.as_path();
