@@ -75,7 +75,7 @@ $ logonse create --logon-type interactive --auth-package Negotiate --user-sid S-
 On success `logonse` prints the new session's id. Creating a session is a **privileged** operation — minting authentication records is reserved for the components that legitimately do so.
 
 > [!NOTE]
-> The tool builds the kernel's binary session spec from these fields for you. The underlying [wire format](~peios/advanced-peios/wire-formats-reference/token-and-session-specs) is unchanged; only the command-line surface is typed.
+> The tool builds the kernel's binary session spec from these fields for you. The underlying [wire format](~peios/reference/wire-formats-reference/token-and-session-specs) is unchanged; only the command-line surface is typed.
 
 ### `logonse destroy`
 

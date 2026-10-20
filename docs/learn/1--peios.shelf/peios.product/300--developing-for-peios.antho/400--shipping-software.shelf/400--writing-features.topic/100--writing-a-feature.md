@@ -83,4 +83,4 @@ list, so check its presentation before shipping.
 
 Installing the package makes the feature available; it does not activate the
 feature. For operator commands and state handling, see
-[Managing Features](~peios/peiosutils/feature-tools/managing-features).
+[Managing Features](~peios/using-peios/feature-tools/managing-features).
