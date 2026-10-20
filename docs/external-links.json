@@ -1,1 +1,17 @@
-[]
+[
+  "trail: warning: /peios/developing-for-peios/documenting-configuration/writing-regman-pages: link '~psc/regman-and-evman' names unknown product 'psc'",
+  "trail: warning: /peios/developing-for-peios/documenting-events/writing-evman-pages: link '~psc/regman-and-evman' names unknown product 'psc'",
+  "trail: warning: /peios/developing-for-peios/documenting-events/writing-evman-pages: link '~specifications/pgss/events/the-catalogue' names unknown product 'specifications'",
+  "trail: warning: /peios/using-peios/peiosutils/boot-images/mkirf: link '~peios/using-peios/initramfs-boot/writing-boot-hooks' matches no page in product 'peios'",
+  "trail: warning: /peios/using-peios/peiosutils/disks-and-mounts/inspecting-stratafs: link '~kernel/internals/stratafs' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/registry-tools/backing-up-configuration: link '~kernel/internals/lcs/backup-and-restore/overview' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/registry-tools/reg: link '~kernel/internals/lcs/layers/writing-into-a-layer' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/registry-tools/reg: link '~kernel/internals/lcs/security/the-access-flow' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/inspecting-process-security: link '~kernel/internals/kacs/process-security/psb-fields' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/inspecting-process-security: link '~kernel/userspace/native/kacs/generated-process-and-psb-abi' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/logonse: link '~kernel/internals/kacs/tokens/logonsessions-and-revocation' names unknown product 'kernel'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/passwd: link '~peios/authentication-client/self-service' matches no page in product 'peios'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/passwd: link '~peios/security-tools/my-settings' matches no page in product 'peios'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/token: link '~peios/sdk-tokens/opening-and-creating-tokens' matches no page in product 'peios'",
+  "trail: warning: /peios/using-peios/peiosutils/system-and-processes/token: link '~peios/sdk-tokens/query' matches no page in product 'peios'"
+]

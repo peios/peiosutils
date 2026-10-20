@@ -32,6 +32,16 @@ request and whether the new password meets its policy.
 The command accepts no account name. To administer another local account,
 use `lps password`; see `lps(1)` for that command's requirements.
 
+The local principal source requires an accepted current password for this
+self-service change. An ordinary account without one needs an administrator
+to set its password and choose the appropriate credential policy. A service
+principal does not become a personal account through this operation.
+
+A password change does not mint a replacement token or end existing sessions.
+On the desktop, [My Settings](~peios/security-tools/my-settings) provides a
+client for the same credential-change conversation. For the API, use
+[Self-Service Operations](~peios/authentication-client/self-service).
+
 ## Check the result
 
 A completed change prints `password changed`. If the outcome is unknown,

@@ -37,6 +37,20 @@ subsystem, and keyword search matches names and summaries. Derived names can
 resolve through documented suffix or standard-attribute rules; read which rule
 supplied the result.
 
+For example, look up an access-check event, a field, or a subsystem prefix:
+
+```sh
+evman kacs.audit.access.checked
+evman subject.token.sid
+evman kacs.audit
+```
+
+The field card lists events that carry the field. Use those relationships
+when replacing a field-index lookup. The installed packages determine the
+available definitions; a missing package can mean missing documentation.
+For an older capture, keep the producer's version and catalog with the
+record rather than assuming the current definitions are identical.
+
 Packages supply definitions under `/usr/share/evman`. Catalog validation
 checks consistency across those definitions. A valid catalog describes an
 interface; it does not establish that a particular event was recorded or that

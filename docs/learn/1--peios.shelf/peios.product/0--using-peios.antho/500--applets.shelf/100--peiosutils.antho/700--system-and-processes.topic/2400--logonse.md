@@ -72,3 +72,28 @@ not a way to authenticate a user. `logonse destroy` removes an empty
 session with no remaining token references. `logonse psb` inspects or changes
 process security settings, which have separate permission requirements.
 See `logonse(1)` for these interfaces and the JSON output option.
+
+## Interpret session evidence
+
+A process or thread's token statistics contain `auth_id`, the key used to
+join it to a kernel logon-session record. Looking at primary tokens answers
+which session the processes run under. Looking at effective thread tokens
+answers which session an impersonating request uses. These are different
+counts, neither of which enumerates every open token handle.
+
+SYSTEM session 999 and Anonymous session 998 are bootstrap records, not
+unexpected interactive sign-ins. An authentication record can also exist
+before a token has been attached to a process.
+
+The kernel's `kacs.session.destroyed` event records teardown after the last
+references are released. Its deferred emission can follow disappearance
+from the live list. Collection gaps mean an event stream cannot establish a
+complete session history by itself. Authd does not retain a complete queryable
+record of the grants and policy used for every past authentication.
+
+Token expiration metadata is not a kernel timer or an AccessCheck revocation
+rule. A session-end request coordinates termination of its primary-token
+processes; it does not invalidate a token handle held elsewhere. Use the
+[kernel lifecycle reference](~kernel/internals/kacs/tokens/logonsessions-and-revocation)
+for those limits. For process protection, see
+[Inspecting Process Security](~peios/system-and-processes/inspecting-process-security).

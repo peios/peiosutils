@@ -59,3 +59,34 @@ or a full power-loss durability guarantee.
 `mkirf(1)` defines source layout, hook rules, metadata normalization,
 compression, exclusions, and watch behavior. Validate the resulting image in
 the boot environment before selecting it for deployment.
+
+## Hook discovery and validation
+
+The builder scans regular files directly inside `usr/libexec/prelude/hooks.d`
+and `lcl/libexec/prelude/hooks.d` in the source tree. It does not recurse into
+subdirectories or select a particular extension. A filename identifies one
+hook; an operator copy wins over the vendor copy, with a diagnostic naming
+the replacement. The legacy root-level `hooks` directory is accepted with
+migration warnings.
+
+A hook's metadata opens with exactly `# /// hook` and closes with `# ///`.
+Between those lines, each line is a comment. The supported keys are
+`provides`, `contributes`, `requires`, and `after`, each holding a list of
+double-quoted capability names. Empty lists and trailing commas are accepted.
+This is a restricted declaration format, not arbitrary TOML.
+
+Unknown keys, malformed lists, duplicate or unclosed blocks, missing required
+capabilities, dependency cycles, and mixed provider/contributor definitions
+are build errors. A declared empty block differs from having no metadata.
+Undeclared hooks are warned about and placed after declaring hooks.
+
+Dependency edges place suppliers before consumers. Filename order breaks
+ties between unrelated hooks. The builder materializes implicit
+`initramfs-ready` ordering in the generated manifest, retaining an explicit
+`requires` instead of weakening it to `after`. Prelude then consumes that
+manifest; it does not rediscover or reorder the source directories at boot.
+
+[Writing Boot Hooks](~peios/using-peios/initramfs-boot/writing-boot-hooks)
+explains capability achievement, decline, deferral, and console reporting.
+Image construction checks declarations; boot testing checks whether those
+claims match the hook's behavior.
