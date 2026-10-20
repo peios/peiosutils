@@ -5,7 +5,7 @@ description: >-
   Distinguish marking a file executable from granting permission to run it.
 related:
   - peios/permissions/sd
-  - peios/files-and-directories/overview
+  - peios/files-and-paths/files-names-and-security
 ---
 
 `mkexec` marks a regular file as executable. The mark identifies intended

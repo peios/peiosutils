@@ -7,7 +7,7 @@ description: >-
 related:
   - peios/files-and-volumes/mount
   - peios/files-and-volumes/umount
-  - peios/listing-and-paths/ls
+  - peios/files-and-paths/inspecting-files-and-paths
 ---
 
 `lsblk` shows block devices and their relationships. It helps distinguish a
