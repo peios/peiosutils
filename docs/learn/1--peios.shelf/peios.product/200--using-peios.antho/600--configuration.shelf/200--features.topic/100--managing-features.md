@@ -1,7 +1,9 @@
 ---
-title: Managing Features
+title: Managing Features from the Command Line
 type: how-to
 description: Run feature setup and teardown deliberately, and recover an interrupted phase while its scripts are available.
+related:
+  - peios/features/feature-manager
 ---
 
 A package supplies a feature's definition and scripts. `feat` runs its
