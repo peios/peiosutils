@@ -103,11 +103,11 @@ fn rejects_a_wrong_argument_count() {
 }
 
 #[test]
-fn archive_extracts_with_gnu_cpio() {
+fn archive_extracts_with_cpio() {
     // An independent check against a real cpio reader. Skipped where the
     // `cpio` tool is not installed.
     if Command::new("cpio").arg("--version").output().is_err() {
-        eprintln!("skipping archive_extracts_with_gnu_cpio: `cpio` not found");
+        eprintln!("skipping archive_extracts_with_cpio: `cpio` not found");
         return;
     }
 
@@ -133,18 +133,20 @@ fn archive_extracts_with_gnu_cpio() {
 
     let dest = dir.path().join("extracted");
     fs::create_dir(&dest).unwrap();
+    // From inside the destination, as both GNU's and busybox's `cpio`
+    // extract: only GNU's takes `-D`.
     let extracted = Command::new("sh")
         .arg("-c")
         .arg(format!(
-            "gzip -dc '{}' | cpio -idm -D '{}'",
-            out.display(),
+            "cd '{}' && gzip -dc '{}' | cpio -idm",
             dest.display(),
+            out.display(),
         ))
         .status()
         .unwrap();
     assert!(
         extracted.success(),
-        "GNU cpio failed to extract the archive"
+        "cpio failed to extract the archive"
     );
 
     assert_eq!(fs::read(dest.join("init")).unwrap(), b"#!/bin/sh\n");

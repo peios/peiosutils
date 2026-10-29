@@ -221,7 +221,7 @@ mod tests {
     fn render_unknown_bits_fall_back_to_hex() {
         let mask = FILE_READ | 0x0000_0040; // FR + an advanced bit
         let s = render(mask);
-        assert!(s.starts_with("r"));
+        assert!(s.starts_with('r'));
         assert!(s.contains("0x"));
     }
 

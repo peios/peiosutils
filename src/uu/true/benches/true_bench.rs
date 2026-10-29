@@ -4,7 +4,7 @@
 // file that was distributed with this source code.
 
 use divan::{Bencher, black_box};
-use uu_true::uumain;
+use pu_true::uumain;
 use uucore::benchmark::run_util_function;
 
 /// Benchmark multiple consecutive invocations (avoid less than 1 ns)

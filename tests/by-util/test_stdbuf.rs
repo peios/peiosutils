@@ -72,7 +72,7 @@ fn test_stdbuf_search_order_exe_dir_first() {
     };
     let lib_name = format!("libstdbuf.{lib_extension}");
 
-    // Bazel stages runtime files beside the executable; Cargo uses its deps directory.
+    // pekit places libstdbuf beside the executable; Cargo uses its deps directory.
     let binary_dir = ts
         .bin_path
         .parent()

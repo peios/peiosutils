@@ -945,7 +945,16 @@ pub fn recursive_copy(src: &Path, dest: &Path) -> Result<()> {
                 fs::create_dir(&new_dest)?;
                 recursive_copy(&entry.path(), &new_dest)?;
             } else {
-                fs::copy(entry.path(), new_dest)?;
+                fs::copy(entry.path(), &new_dest)?;
+                // A test's copy is its own to change, whatever the fixture's
+                // mode: a build's sandbox gives its inputs read-only.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mut permissions = fs::metadata(&new_dest)?.permissions();
+                    permissions.set_mode(permissions.mode() | 0o200);
+                    fs::set_permissions(&new_dest, permissions)?;
+                }
             }
         }
     }
