@@ -30,6 +30,57 @@ let TZDATA = "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0
 # dates find by `TZDIR`.
 let ZONEINFO = "/usr/share/zoneinfo"
 
+# The integration tests that need what only a host or a booted system has,
+# by name, each with its reason, which `pekit test` skips. Bazel ran them on
+# the host; they are qualified on a disposable guest (PEI-1621).
+let HOST_ONLY = [
+    # The `attr` tools, `getfattr` and `setfattr`, and extended attributes.
+    "test_cp::test_cp_p_does_not_preserve_xattr_by_default",
+    "test_cp::test_cp_preserve_xattr_readonly_source",
+    "test_mv::test_mv_cross_device_dir_xattr_preserved",
+    # A file system that clones files; it fails on an ext4 host too.
+    "test_cp::test_cp_reflink_always_override",
+    # A `sh` that keeps its name: busybox's runs the applet `argv[0]` names.
+    "test_env::test_env_arg_argv0_overwrite",
+    "test_env::test_env_arg_argv0_overwrite_mixed_with_string_args",
+    "test_env::test_env_overwrite_arg0",
+    # The signal dispositions of an interactive shell; they fail on the host
+    # under Bazel's test runner too.
+    "test_env::test_env_block_signal_flag",
+    "test_env::test_env_default_signal_all_signals",
+    "test_env::test_env_default_signal_pipe",
+    "test_env::test_env_list_signal_handling_reports_ignore",
+    "test_env::test_ignore_signal_pipe_broken_pipe_regression",
+    # A user database naming the user and its groups, and a login. The
+    # first also names `test_groups_username` and its `_multiple`, which
+    # compare with the host's GNU `groups` and so need one too.
+    "test_groups::test_groups",
+    "test_groups::test_groups_username",
+    "test_groups::test_groups_username_multiple",
+    "test_id::test_id_groups_ordering",
+    "test_id::test_id_ignore",
+    "test_id::test_id_no_specified_user_posixly",
+    "test_logname::test_normal",
+    "test_logname::test_output_format",
+    "test_whoami::test_succeeds_on_all_platforms",
+    "test_test::test_file_not_owned_by_egid",
+    "test_test::test_file_not_owned_by_euid",
+    # A host name that resolves.
+    "test_hostname::test_hostname_ip",
+    # Device nodes under `/dev`.
+    "test_ls::test_device_number",
+    # GNU's `truncate`, whose sizes take a sign.
+    "test_ls::test_ls_human_si",
+    # `/bin/sh` on the root file system; a step mounts `/bin` of its own.
+    "test_stat::test_percent_escaping",
+    # A dynamically linked `echo` to preload into; busybox's is static.
+    "test_stdbuf::test_stdbuf_search_order_exe_dir_first",
+    # `/usr/bin/env`, for a script's `#!`.
+    "test_tail::test_stdin_via_script_redirection_and_pipe",
+    # A root directory the user does not own.
+    "test_touch::test_touch_system_fails",
+]
+
 # The members that wrap the C libraries, which their tests link.
 let WRAPPERS = ["peios-reg", "peios-regman", "peios-evman"]
 
@@ -74,6 +125,30 @@ fn ran(tests: List<rust.RustTest>, given: List<{at: String, place: Dir | File}>,
     }
 }
 
+# The test program `test` run as `run_test` runs it, but up to three times,
+# passing if a run does: the retries the repository's CI profile allows
+# (`.config/nextest.toml`), for `tail --follow`'s tests, which time what they
+# watch and can miss it on a loaded machine. A failure that is the code's
+# fails every run.
+#[hermetic]
+fn retried(test: rust.RustTest, given: List<{at: String, place: Dir | File}>, env: List<Entry<String>>, args: List<String>) -> {} {
+    let placed: List<{at: String, place: Dir | File | FileSet}> = [
+        {at = "/"; place = test.rust.runtime},
+        {at = "/work/test"; place = test.program},
+        ...(for each in test.programs { = {at = each.at; place = each.place} }),
+        ...(for each in given { = {at = each.at; place = each.place} }),
+    ]
+    let box = fs.compose(placed).sandbox(cwd = "/work")
+    let ran = box.exec(
+        "/bin/sh",
+        "-c",
+        "for run in 1 2 3; do /work/test \"$@\" && exit 0; done; exit 1",
+        "retried",
+        ...args,
+        env = record([{key = "PATH"; value = "/usr/bin:/bin"}, ...test.env, ...env]),
+    )
+}
+
 # Each member's unit tests, but the multi-call program's and the wrappers',
 # with the translations beside each test program, where uucore's tests of
 # them look.
@@ -111,7 +186,9 @@ fn installed_locales() -> List<{at: String, place: Dir | File}> {
 
 # The multi-call program's own tests, and its integration tests, run
 # against it as installed, with each utility's fixtures, as Bazel ran them,
-# but the GNU test suite's.
+# but the GNU test suite's and those that need a host's or a booted
+# system's userland, `HOST_ONLY`: four tests at a time, and retried as the
+# repository's CI retries them.
 def test peiosutils(
     tests: List<rust.RustTest> = rust.tests(crates(), "peiosutils", features = features()),
     given: List<{at: String, place: Dir | File}> = [
@@ -123,7 +200,16 @@ def test peiosutils(
         {at = "/work/tests/fixtures"; place = dir("tests/fixtures")},
     ],
 ) {
-    = ran(tests, given, env = [{key = "UUTESTS_BINARY_PATH"; value = "{BIN}/peiosutils"}], args = ["--skip", "gnu"])
+    let mut skips = ["--test-threads=4", "--skip", "gnu"]
+    for each in HOST_ONLY {
+        skips := [...skips, "--skip", each]
+    }
+    let env = [
+        {key = "LD_LIBRARY_PATH"; value = LIB},
+        {key = "TZDIR"; value = ZONEINFO},
+        {key = "UUTESTS_BINARY_PATH"; value = "{BIN}/peiosutils"},
+    ]
+    let each = for test in tests { = retried(test, given, env, skips) }
 }
 
 # Each member's documentation tests.

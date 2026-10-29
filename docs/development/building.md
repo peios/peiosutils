@@ -61,11 +61,19 @@ pekit test
 | `peiosutils` | The multicall executable's own tests and the integration tests, run against it as an installation lays it out |
 | `abi` | A C11 program calls each C library through its header, and a C++17 file includes the headers, with every warning an error |
 | `doctests` | Each member's documentation tests |
-| `clippy` | Clippy's checks of every target of every member, with every warning denied and the workspace's `.clippy.toml` |
+| `clippy` | Clippy's checks of every target of every member, tests among them, with every warning denied and the workspace's `.clippy.toml`, but the `cargo` group, which reads the workspace's manifests through Cargo |
 
 The integration tests run the multicall executable, with libstdbuf and the
 translations beside it, and each utility's fixtures. They skip the GNU
-conformance tests, as the maintained suite always has. Tests that run shell
+conformance tests, as the maintained suite always has, and the tests in
+`HOST_ONLY` in `tests.gcsl`. Those need what only a host or a booted system
+has: GNU tools, extended attributes, a user database and login, device
+nodes, a resolvable host name, or files the user does not own. Each is
+listed with its reason; qualify them on a disposable guest. The suite runs
+four tests at a time and is retried up to twice, as the CI profile in
+`.config/nextest.toml` allows: the `tail --follow` tests time what they
+watch and can miss it on a loaded machine. A failure in the code fails
+every run. Tests that run shell
 commands are given busybox's `sh` and tools. A test whose inputs did not
 change is found in the store and not run again. The tests do not qualify
 Peios kernel operations.
