@@ -492,32 +492,35 @@ mod tests {
     fn invalid_header_geometry_is_damage_before_reading_entries() {
         use crate::gpt::header::GptHeader;
 
+        /// A damage, by its name, and how it changes a header.
+        type Damage = (&'static str, fn(&mut GptHeader));
+
         let (_directory, path) = image(8 * 1024 * 1024);
         let mut device = Device::open(&path, true).unwrap();
         let table = Gpt::create(device.geom.sectors, 512).unwrap();
         commit(&mut device, &table).unwrap();
         let original = GptHeader::parse(&device.read_sectors(1, 1).unwrap()).unwrap();
-        let cases: &[(&str, fn(&mut GptHeader))] = &[
+        let cases: &[Damage] = &[
             ("usable range beyond disk", |header| {
-                header.last_usable_lba = u64::MAX
+                header.last_usable_lba = u64::MAX;
             }),
             ("reversed usable range", |header| {
-                header.first_usable_lba = header.last_usable_lba + 1
+                header.first_usable_lba = header.last_usable_lba + 1;
             }),
             ("entry array addition overflow", |header| {
-                header.entry_array_lba = u64::MAX - 16
+                header.entry_array_lba = u64::MAX - 16;
             }),
             ("entry array overlaps header", |header| {
-                header.entry_array_lba = 1
+                header.entry_array_lba = 1;
             }),
             ("entry array overlaps usable space", |header| {
-                header.first_usable_lba = 2
+                header.first_usable_lba = 2;
             }),
             ("backup header beyond disk", |header| {
-                header.alternate_lba = u64::MAX
+                header.alternate_lba = u64::MAX;
             }),
             ("backup overlaps usable space", |header| {
-                header.alternate_lba = header.last_usable_lba
+                header.alternate_lba = header.last_usable_lba;
             }),
             ("wrong primary header location", |header| header.my_lba = 0),
             ("empty entry array", |header| header.num_entries = 0),

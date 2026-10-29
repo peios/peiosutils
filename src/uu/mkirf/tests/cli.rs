@@ -144,10 +144,7 @@ fn archive_extracts_with_cpio() {
         ))
         .status()
         .unwrap();
-    assert!(
-        extracted.success(),
-        "cpio failed to extract the archive"
-    );
+    assert!(extracted.success(), "cpio failed to extract the archive");
 
     assert_eq!(fs::read(dest.join("init")).unwrap(), b"#!/bin/sh\n");
     assert_eq!(
@@ -515,7 +512,7 @@ fn watch_rebuilds_when_the_source_changes() {
     fs::write(src.join("added-file"), b"new content").unwrap();
     let rebuilt = match &first {
         Some(first) => wait_for(Duration::from_secs(20), || {
-            fs::read(&out).map(|now| &now != first).unwrap_or(false)
+            fs::read(&out).is_ok_and(|now| &now != first)
         }),
         None => false,
     };

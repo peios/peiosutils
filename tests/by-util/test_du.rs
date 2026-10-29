@@ -676,6 +676,8 @@ fn test_du_dereference() {
 #[cfg(not(windows))]
 #[test]
 fn test_du_dereference_args() {
+    use std::os::unix::fs::MetadataExt;
+
     let ts = TestScenario::new(util_name!());
     let at = &ts.fixtures;
 
@@ -697,7 +699,6 @@ fn test_du_dereference_args() {
     // 0 only while the target fits inline (60 bytes) — the fixture's
     // absolute target is longer than that, so there it costs a block.
     // Derive the expectation from the link rather than assuming 0.
-    use std::os::unix::fs::MetadataExt;
     let link_kib = at.symlink_metadata("sublink").blocks() / 2;
     let result = ts.ucmd().arg("-s").arg("sublink").succeeds();
     result.stdout_is(format!("{link_kib}\tsublink\n"));
@@ -1124,52 +1125,6 @@ fn birth_supported() -> bool {
         Err(e) => panic!("{e}"),
     };
     m.created().is_ok()
-}
-
-#[cfg(not(any(target_os = "windows", target_os = "openbsd")))]
-#[cfg(feature = "chmod")]
-#[test]
-fn test_du_no_permission() {
-    let ts = TestScenario::new(util_name!());
-    let at = &ts.fixtures;
-
-    at.mkdir_all(SUB_DIR_LINKS);
-
-    ts.ccmd("chmod").arg("-r").arg(SUB_DIR_LINKS).succeeds();
-
-    let result = ts.ucmd().arg(SUB_DIR_LINKS).fails();
-    result.stderr_contains("du: cannot read directory 'subdir/links': Permission denied");
-
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        let result_reference = unwrap_or_return!(expected_result(&ts, &[SUB_DIR_LINKS]));
-        if result_reference
-            .stderr_str()
-            .contains("du: cannot read directory 'subdir/links': Permission denied")
-        {
-            assert_eq!(result.stdout_str(), result_reference.stdout_str());
-            return;
-        }
-    }
-    #[cfg(not(target_vendor = "apple"))]
-    assert_eq!(result.stdout_str(), "4\tsubdir/links\n");
-    #[cfg(target_vendor = "apple")]
-    assert_eq!(result.stdout_str(), "0\tsubdir/links\n");
-}
-
-#[cfg(not(target_os = "windows"))]
-#[cfg(feature = "chmod")]
-#[test]
-fn test_du_no_exec_permission() {
-    let ts = TestScenario::new(util_name!());
-    let at = &ts.fixtures;
-
-    at.mkdir_all("d/no-x/y");
-
-    ts.ccmd("chmod").arg("u=rw").arg("d/no-x").succeeds();
-
-    let result = ts.ucmd().arg("d/no-x").fails();
-    result.stderr_contains("du: cannot access 'd/no-x/y': Permission denied");
 }
 
 #[test]

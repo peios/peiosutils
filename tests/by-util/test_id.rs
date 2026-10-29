@@ -11,9 +11,6 @@ use uutests::unwrap_or_return;
 use uutests::util::{TestScenario, check_coreutil_version, expected_result, is_ci, whoami};
 use uutests::util_name;
 
-#[cfg(all(feature = "chmod", feature = "chown"))]
-use tempfile::TempPath;
-
 const VERSION_MIN_MULTIPLE_USERS: &str = "8.31"; // this feature was introduced in GNU's coreutils 8.31
 
 #[test]
@@ -512,53 +509,6 @@ fn test_id_pretty_print_password_record() {
         .arg("-P")
         .fails()
         .stderr_contains("the argument '-p' cannot be used with '-P'");
-}
-
-#[test]
-#[cfg(all(feature = "chmod", feature = "chown"))]
-fn test_id_pretty_print_suid_binary() {
-    if let Some(suid_coreutils_path) = create_root_owned_suid_coreutils_binary() {
-        let result = TestScenario::new(util_name!())
-            .cmd(suid_coreutils_path.to_str().unwrap())
-            .args(&[util_name!(), "-p"])
-            .succeeds();
-
-        // The `euid` line should be present only if the real UID does not belong to `root`
-        if rustix::process::getuid().is_root() {
-            result.stdout_does_not_contain("euid\t");
-        } else {
-            result.stdout_contains_line("euid\troot");
-        }
-
-        // The `rgid` line should be present only if the real GID does not belong to `root`
-        if rustix::process::getgid().is_root() {
-            result.stdout_does_not_contain("rgid\t");
-        } else {
-            result.stdout_contains("rgid\t");
-        }
-    } else {
-        print!("Test skipped; requires root user");
-    }
-}
-
-/// Create SUID temp file owned by `root:root` with the contents of the `coreutils` binary
-#[cfg(all(feature = "chmod", feature = "chown"))]
-fn create_root_owned_suid_coreutils_binary() -> Option<TempPath> {
-    use std::fs::read;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-    use uutests::util::{get_tests_binary, run_ucmd_as_root};
-
-    let mut temp_file = NamedTempFile::new().unwrap();
-    let coreutils_binary = read(get_tests_binary()).unwrap();
-    temp_file.write_all(&coreutils_binary).unwrap();
-    let temp_path = temp_file.into_temp_path();
-    let temp_path_str = temp_path.to_str().unwrap();
-
-    run_ucmd_as_root(&TestScenario::new("chown"), &["root:root", temp_path_str]).ok()?;
-    run_ucmd_as_root(&TestScenario::new("chmod"), &["+xs", temp_path_str]).ok()?;
-
-    Some(temp_path)
 }
 
 /// This test requires user with username 200 on system

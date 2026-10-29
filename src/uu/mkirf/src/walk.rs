@@ -159,7 +159,7 @@ mod tests {
     }
 
     fn excludes(globs: &[&str]) -> Excludes {
-        Excludes::compile(&globs.iter().map(|g| g.to_string()).collect::<Vec<_>>()).unwrap()
+        Excludes::compile(&globs.iter().map(ToString::to_string).collect::<Vec<_>>()).unwrap()
     }
 
     #[test]
@@ -205,7 +205,7 @@ mod tests {
         symlink("../usr/bin/busybox", dir.path().join("sh")).unwrap();
         match &walk(dir.path(), &no_excludes()).unwrap()[0].body {
             Body::Symlink { target } => {
-                assert_eq!(target.as_slice(), b"../usr/bin/busybox")
+                assert_eq!(target.as_slice(), b"../usr/bin/busybox");
             }
             _ => panic!("expected a symlink entry"),
         }

@@ -665,7 +665,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn strs(v: &[&str]) -> Vec<String> {
-        v.iter().map(|s| s.to_string()).collect()
+        v.iter().map(ToString::to_string).collect()
     }
 
     /// Build a hook with a metadata block present, declaring only the two
