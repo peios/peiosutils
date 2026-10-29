@@ -19,10 +19,10 @@ path = "src/passwd.rs"
 doctest = false
 
 [dependencies]
-auth-core = { git = "https://github.com/peios/authd.git", rev = "a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa" }
-terminal-input = { git = "https://github.com/peios/authd.git", rev = "a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa" }
+auth-core = { git = "https://github.com/peios/authd.git", rev = "89dbfeccf77800a7cd287bde5aab6ba26201a680" }
+terminal-input = { git = "https://github.com/peios/authd.git", rev = "89dbfeccf77800a7cd287bde5aab6ba26201a680" }
 libc = { workspace = true }
-peios-auth = { git = "https://github.com/peios/authd.git", rev = "a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa" }
+peios-auth = { git = "https://github.com/peios/authd.git", rev = "89dbfeccf77800a7cd287bde5aab6ba26201a680" }
 clap = { workspace = true }
 uucore = { workspace = true }
 [[bin]]

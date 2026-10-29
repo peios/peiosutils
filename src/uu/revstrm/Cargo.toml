@@ -31,7 +31,7 @@ libc = { workspace = true }
 # library with no command line, so revstrm does not depend on the evman applet.
 event-catalogue = { path = "../../../crates/event-catalogue" }
 # Peios-native dependency: not coreutils, not tracked against upstream.
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "26ac6968cec4cb7f887198aa3fb9268096660831" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "b2282f654758831e4a2e34c7b35c26e61a6ebe1c" }
 
 [dev-dependencies]
 tempfile = { workspace = true }

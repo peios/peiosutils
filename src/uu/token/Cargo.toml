@@ -25,8 +25,8 @@ uucore = { workspace = true, features = ["sid-render"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "26ac6968cec4cb7f887198aa3fb9268096660831" }
-peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "26ac6968cec4cb7f887198aa3fb9268096660831" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "b2282f654758831e4a2e34c7b35c26e61a6ebe1c" }
+peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "b2282f654758831e4a2e34c7b35c26e61a6ebe1c" }
 
 [[bin]]
 name = "token"
