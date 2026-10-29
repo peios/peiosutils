@@ -128,6 +128,26 @@ manpage` invocation uses today's date unless `SOURCE_DATE_EPOCH` supplies a
 non-negative whole number of seconds since the Unix epoch; the supplied
 timestamp is formatted in UTC. Invalid values fail before writing a manual.
 
+## Building against peiosutils
+
+Peiosutils is a GCSL library as well as a workspace. A workspace whose
+crates depend on `peios-reg`, `peios-regman`, or `peios-evman` gives each
+the C library it links, and gives its programs those libraries, and the
+libpeios libreg loads, when they run:
+
+```text
+import "github.com/peios/peios-rs" as peios_rs
+import "github.com/peios/peiosutils"
+
+rust.workspace(..., crates = [...peios_rs.crate_settings(), ...peiosutils.crate_settings()])
+rust.run_test(test, given = [...peios_rs.runtime(), ...peiosutils.runtime()], env = peiosutils.runtime_env())
+```
+
+`pekit lock` pins peiosutils's commit in the workspace's `pekit.lock`, and
+authd's, whose libauth peiosutils's build imports. The rust library fails
+a build whose `Cargo.lock` takes peiosutils's crates at another commit than
+that, so the wrappers and the libraries they link always agree.
+
 ## Not built with pekit yet
 
 Packages, debug information, and builds with the native Peios toolchain,

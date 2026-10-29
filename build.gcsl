@@ -1,5 +1,13 @@
 # peiosutils's programs and C libraries, each crate compiled on its own
 # (see the rust library's `workspace`), for glibc.
+#
+# peiosutils is a library as well as a workspace: a workspace whose crates
+# depend on `peios-reg`, `peios-regman` or `peios-evman` gives each the C
+# library it links, and gives its programs those libraries when they run:
+#
+#     import "github.com/peios/peiosutils"
+#     rust.workspace(..., crates = [...peios_rs.crate_settings(), ...peiosutils.crate_settings()])
+#     rust.run_test(test, given = [...peios_rs.runtime(), ...peiosutils.runtime()], env = peiosutils.runtime_env())
 import fs
 import "github.com/gcslib/clang"
 import "github.com/gcslib/rust"
@@ -66,30 +74,49 @@ def locales() -> List<{name: String, place: Dir}> {
     = [...found, {name = "uucore"; place = dir("src/uucore/locales")}]
 }
 
-# The workspace with the crates that wrap the C libraries given them:
-# `peios-reg`, `peios-regman` and `peios-evman` link libreg, libregman and
-# libevman, by the directory each build script is told, with libpeios,
-# which libreg needs, beside libreg.
+# The settings of the crates that wrap the C libraries: `peios-reg`,
+# `peios-regman` and `peios-evman` link libreg, libregman and libevman, by
+# the directory each build script is told, with libpeios, which libreg
+# needs, beside libreg.
+def crate_settings() -> List<rust.CrateSettings> {
+    = [
+        {
+            package = "peios-reg"
+            env = [{key = "PEIOS_REG_LIB_DIR"; value = C_LIB}]
+            given = [{at = "{C_LIB}/libreg.so"; place = build libreg()}, ...libpeios_beside()]
+        },
+        {
+            package = "peios-regman"
+            env = [{key = "PEIOS_REGMAN_LIB_DIR"; value = C_LIB}]
+            given = [{at = "{C_LIB}/libregman.so"; place = build libregman()}]
+        },
+        {
+            package = "peios-evman"
+            env = [{key = "PEIOS_EVMAN_LIB_DIR"; value = C_LIB}]
+            given = [{at = "{C_LIB}/libevman.so"; place = build libevman()}]
+        },
+    ]
+}
+
+# What a program that links the C libraries loads: libreg, libregman and
+# libevman, by their sonames, where the wrappers link them from.
+def runtime() -> List<{at: String, place: Dir | File}> {
+    = [
+        {at = "{C_LIB}/libreg.so.1"; place = build libreg()},
+        {at = "{C_LIB}/libregman.so.1"; place = build libregman()},
+        {at = "{C_LIB}/libevman.so.1"; place = build libevman()},
+    ]
+}
+
+# Where such a program finds the C libraries, and libpeios, which libreg
+# loads (see peios-rs's `runtime_env`).
+def runtime_env() -> List<Entry<String>> {
+    = [{key = "LD_LIBRARY_PATH"; value = "/opt/peios/lib:{C_LIB}"}]
+}
+
+# The workspace with the crates that wrap the C libraries given them.
 def linking_c_libraries() -> rust.RustWorkspace {
-    = crates(
-        extra = [
-            {
-                package = "peios-reg"
-                env = [{key = "PEIOS_REG_LIB_DIR"; value = C_LIB}]
-                given = [{at = "{C_LIB}/libreg.so"; place = build libreg()}, ...libpeios_beside()]
-            },
-            {
-                package = "peios-regman"
-                env = [{key = "PEIOS_REGMAN_LIB_DIR"; value = C_LIB}]
-                given = [{at = "{C_LIB}/libregman.so"; place = build libregman()}]
-            },
-            {
-                package = "peios-evman"
-                env = [{key = "PEIOS_EVMAN_LIB_DIR"; value = C_LIB}]
-                given = [{at = "{C_LIB}/libevman.so"; place = build libevman()}]
-            },
-        ],
-    )
+    = crates(extra = crate_settings())
 }
 
 # libpeios, by its soname, beside libreg, which needs it: `peios-reg`'s
