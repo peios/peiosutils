@@ -32,9 +32,7 @@ def sources() -> list[Path]:
     """Enumerate owned source without following build-output symlinks."""
     found = []
     for parent, directories, names in os.walk(ROOT):
-        directories[:] = [
-            name for name in directories if name not in EXCLUDED
-        ]
+        directories[:] = [name for name in directories if name not in EXCLUDED]
         for name in names:
             path = Path(parent) / name
             if path.is_symlink():
@@ -92,11 +90,7 @@ def main() -> None:
             *python,
         ]
     )
-    shell = [
-        str(p)
-        for p in paths
-        if p.suffix == ".sh" or p.name == "check"
-    ]
+    shell = [str(p) for p in paths if p.suffix == ".sh" or p.name == "check"]
     run([str(directory / "shellcheck"), *shell])
     run([str(directory / "shfmt"), "-i", "4", "-w" if args.fix else "-d", *shell])
     run(["cargo", "+1.98.1", "fmt", "--all", *([] if args.fix else ["--", "--check"])])
@@ -119,8 +113,7 @@ def main() -> None:
     data = [
         str(p)
         for p in paths
-        if p.suffix in {".json", ".yaml", ".yml"}
-        and p.name != "package-lock.json"
+        if p.suffix in {".json", ".yaml", ".yml"} and p.name != "package-lock.json"
     ]
     if data:
         run(
