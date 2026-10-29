@@ -1,140 +1,138 @@
 # Building Peiosutils
 
-Bazel is the build and packaging entry point. It compiles workspace Rust crates
-as native targets. Cargo resolves the dependency lockfile and remains available
-for development; Bazel does not run Cargo to compile the workspace.
+Use pekit to build Peiosutils and run its tests. Pekit builds each crate on
+its own, so a change rebuilds only the crates it reaches. The supported
+development host is x86-64 Linux.
 
-The development configuration targets Linux x86_64 with Rust 1.98.1 and Bazel
-8.4.2. The launcher verifies its Bazel download. Install a C/C++ compiler,
-Python 3.11 or later, binutils, libclang, pkg-config, and the development headers
-required by the locked native dependencies.
+## Before you start
 
-## Prepare the development SDK
+You need pekit and Git. Everything else is pinned and fetched by pekit on
+the first build: the Bootlin C toolchain, Rust 1.98.1 with Clippy, busybox,
+libclang, and the crates `Cargo.lock` selects. The first build needs
+network access; later builds find what they need in pekit's store, and
+every step runs without network access in a sandbox that holds only its
+declared inputs.
 
-Use the consolidated `peios-sdk` and maintained `authd` repositories.
-The Rust bindings are pinned in
-`Cargo.lock`; do not substitute the retired PKM workspace.
+The build files use the gcslib libraries named in `workspace.gcsl` and the
+build files, and the libraries of peios-rs, the Peios SDK, and authd.
+`pekit lock` pins their commits in `pekit.lock`. Pekit builds libpeios and
+its headers from the Peios SDK's own files, and libauth from authd's.
+
+## Build
 
 ```sh
-python3 tools/prepare-dev-sdk.py ../peios-sdk /absolute/path/to/development-sdk \
-    --auth-source ../authd
-export PEIOS_SDK=/absolute/path/to/development-sdk
+pekit build peiosutils uudoc libstdbuf libreg libregman libevman include
 ```
 
-The destination must be new and outside the source checkout. The helper builds
-both SDKs with their own Bazel targets, installs matching headers and libraries,
-and records the source commit, local changes, kernel snapshot, and file hashes.
-It includes `libpeios.so.0` and `libauth.so.1`. Use authd revision
-`a014fa4c74f17ce4f67ba964eefce33a1a3dbdfa` to match the Rust client pin.
-This is a host development SDK, not evidence of native OS qualification.
+| Target | Output |
+|---|---|
+| `peiosutils` | The multicall executable, with every utility of a Unix host |
+| `uudoc` | The tool that writes the utilities' manuals and shell completions |
+| `libstdbuf` | The library `stdbuf` preloads into the program it runs |
+| `libreg` | The registry's C library, `libreg.so.1` by its shared object name (SONAME) |
+| `libregman` | The registry manual's C library, `libregman.so.1` by its SONAME |
+| `libevman` | The event manual's C library, `libevman.so.1` by its SONAME |
+| `include` | The C libraries' headers |
 
-## Build binaries and packages
+Pekit prints where each output is, under `pekit-out/<target>/`. The
+multicall executable and `uudoc` are built with the features
+`feat_os_unix`, `feat_external_libstdbuf`, and `uudoc`. They load
+`libpeios.so.0` and `libauth.so.1`, and libreg loads `libpeios.so.0`, by
+their SONAMEs; none carries a runtime search path.
+
+With `feat_external_libstdbuf`, `stdbuf` preloads the installed libstdbuf,
+from beside its executable or from `/usr/lib/x86_64-linux-peios/peiosutils`,
+the directory its build is told. Its build script embeds no library then.
+
+The executables carry each utility's English messages, which uucore's
+build script reads from each utility's `locales` directory. Other languages
+are read at run time from `locales/<utility>/` beside the executable.
+
+## Test
 
 ```sh
-./bazel build //:peiosutils //:uudoc
-./bazel build //:packages
+pekit test
 ```
 
-The multicall executable is `bazel-bin/peiosutils`. For direct execution on a
-host without an installed Peios SDK, add its library directory to
-`LD_LIBRARY_PATH`. Bazel test launchers supply their declared library paths.
+| Test | Check |
+|---|---|
+| `units` | Each member's unit tests, but the multicall executable's and the C library wrappers' |
+| `wrappers` | The unit tests of `peios-reg`, `peios-regman`, and `peios-evman`, linked with the C libraries pekit builds |
+| `peiosutils` | The multicall executable's own tests and the integration tests, run against it as an installation lays it out |
+| `abi` | A C11 program calls each C library through its header, and a C++17 file includes the headers, with every warning an error |
+| `doctests` | Each member's documentation tests |
+| `clippy` | Clippy's checks of every target of every member, tests among them, with every warning denied and the workspace's `.clippy.toml`, but the `cargo` group, which reads the workspace's manifests through Cargo |
 
-`bazel-bin/packages.store` contains content-addressed blobs, canonical PPK
-manifests, and an index with build and package metadata. The family contains:
+The integration tests run the multicall executable, with libstdbuf and the
+translations beside it, and each utility's fixtures. They skip the GNU
+conformance tests, as the maintained suite always has, and the tests in
+`HOST_ONLY` in `tests.gcsl`. Those need what only a host or a booted system
+has: GNU tools, extended attributes, a user database and login, device
+nodes, a resolvable host name, or files the user does not own. Each is
+listed with its reason; qualify them on a disposable guest. The suite runs
+four tests at a time and is retried up to twice, as the CI profile in
+`.config/nextest.toml` allows: the `tail --follow` tests time what they
+watch and can miss it on a loaded machine. A failure in the code fails
+every run. Tests that run shell
+commands are given busybox's `sh` and tools. A test whose inputs did not
+change is found in the store and not run again. The tests do not qualify
+Peios kernel operations.
 
-- `peiosutils`: the multicall executable, applet aliases, and stdbuf preload library.
-- `peiosutils-common`: manuals, shell completions, and translations.
-- `libreg`, `libregman`, and `libevman`: public shared libraries.
-- The corresponding `-devel` packages: headers, linker names, and pkg-config files.
-- `peiosutils-debuginfo`, `peiosutils-debugsource`, and `peiosutils-source`.
-
-Runtime packages require their declared shared-library dependencies. The three
-public libraries use ABI major 1; their release version follows Peiosutils.
-The source package includes the build graph and tools needed to regenerate it.
-
-Development packages are unsigned and explicitly marked as development output.
-The package checks verify ELF properties, debug splits, library names, command
-artifacts, dependency notices, package boundaries, and blob identities. They do
-not establish that privileged operations work on a Peios kernel.
-
-Generated manuals use `SOURCE_DATE_EPOCH=0` during package assembly and gzip
-headers use the same fixed epoch. This is a reproducibility timestamp, not a
-release date. Direct `uudoc manpage` invocation uses today's date unless
-`SOURCE_DATE_EPOCH` supplies a non-negative whole number of seconds since the
-Unix epoch; the supplied timestamp is formatted in UTC. Invalid values fail
-before writing a manual.
-
-## Update dependencies and generated targets
-
-After changing a Cargo manifest, update and review `Cargo.lock`. Then resolve
-and regenerate the native graph using the pinned Cargo version:
+For the full contributor check, install the pinned PSC tools into a
+directory outside the repository, then run the shared entry point:
 
 ```sh
-python3 tools/bazel-graph.py --fetch
-python3 tools/bazel-targets.py --buildifier /absolute/path/to/buildifier
-python3 tools/bazel-graph.py --check
-./bazel test //:generated-targets-test
-```
-
-Use the hash-pinned buildifier from `tools/prepare-style-tools.py`. Without
-`--fetch`, the resolver uses cached sources only. It reads locked metadata and
-production dependency edges so benchmark-only optional dependencies do not
-enter production binaries.
-
-Review changes to `build/crate-graph.json` alongside the manifests. Put
-handwritten root targets in `build/root.BUILD.bazel`; generated workspace
-`BUILD.bazel` files are checked against the graph. The stdbuf preload library
-is a separate build and package target, not a link dependency of the multicall
-executable.
-
-## Run focused checks
-
-```sh
-./bazel test //crates/registry-manual:unit-tests //src/uu/mkuki:unit-tests
-./bazel test //tests/abi:c-tests
-./bazel test //packages:assembly-test //packages:store-test \
-    //packages:licences-test //packages:family-test
-```
-
-The integration harness is `//:integration-tests`. An argument such as
-`--test_arg=test_uudoc` selects a test group. Keep inherited compatibility tests,
-intentional Peios differences, and native-only qualification distinct when
-reviewing results.
-
-## Native build configuration
-
-`--config=peios` selects an explicitly supplied Peios Rust toolchain and SDK.
-Use the isolated native build environment described by that toolchain's
-qualification record. Native package checks additionally require CET and
-packed relocations. Passing host development checks does not qualify this
-configuration or a release image.
-
-## Style and continuous integration
-
-Install the pinned PSC tools outside the source checkout, then run the
-maintained checks:
-
-```sh
-python3 tools/prepare-style-tools.py /absolute/path/to/style-tools
-export PEIOS_STYLE_BIN=/absolute/path/to/style-tools/bin
+python3 tools/prepare-style-tools.py "$HOME/.cache/peiosutils-style"
+export PEIOS_STYLE_BIN="$HOME/.cache/peiosutils-style/bin"
 tools/check
 ```
 
+`tools/check` checks owned source formatting and lint with rustfmt, Ruff,
+ShellCheck, shfmt, clang-format, and Prettier, then runs `pekit test`.
 `tools/style-check.py --fix` applies mechanical formatting. Fixture inputs,
-archived records, dependency notices, and vendored code retain their original
-format. Rust source follows the workspace's pinned rustfmt configuration.
-
-`tools/check` runs the declared Bazel test graph and the rules_rust Clippy
-aspect. Cargo is used for formatting and dependency-graph maintenance, not
-as an alternative compiler driver in CI. CI builds the SDK from recorded
-commits and uses a pinned Trail compiler to validate Learn documents.
+archived records, dependency notices, and vendored code retain their
+original format. GitHub's workflow runs the style checks alone; builds and
+tests run with pekit.
 
 Run `TRAIL=/absolute/path/to/trail tools/check-docs` for the component tree.
 The checker compares external-link diagnostics with a reviewed baseline.
-Use `--context ../learn` for the merged publication check; this
-separate check resolves links owned by other components.
+Use `--context ../learn` for the merged publication check; this separate
+check resolves links owned by other components.
 
-Bazel inherits source lint levels and `.clippy.toml` from the Cargo workspace.
-Cargo metadata lints are omitted inside Bazel compiler actions because those
-actions do not invoke Cargo; locked dependency metadata is checked by the
-graph resolver.
+## How the build is planned
+
+`build.gcsl` plans the Cargo workspace with the gcslib rust library's
+`workspace`: Cargo works out each member's build, unit by unit, and pekit
+compiles each unit as a step. Planning reads the manifests, `Cargo.lock`,
+and which files exist, never the sources, so editing a source plans nothing
+again. Each member's crates are compiled with the lints in the workspace's
+`[lints]` table, as Cargo compiles them. uucore's compiles are given each
+utility's translations, not the utilities' sources, so editing a utility
+does not rebuild uucore.
+
+Keep Rust dependency versions in the Cargo manifests and `Cargo.lock`, and
+update the lockfile deliberately with Cargo. `peios-sys` generates its
+bindings from the SDK's headers with bindgen and links libpeios, and
+`peios-auth` links authd's libauth, so each is given what its library
+provides. The commits `pekit.lock` pins say which SDK, which peios-rs, and
+which authd; the rust library fails a build whose `Cargo.lock` takes their
+crates at another commit than `pekit.lock` pins their libraries at.
+
+The C library wrappers, `peios-reg`, `peios-regman`, and `peios-evman`,
+link the C libraries pekit builds, by the directories their build scripts
+are told. libreg needs libpeios, which `peios-reg`'s build script tells the
+linker to find beside libreg.
+
+Generated manuals use `SOURCE_DATE_EPOCH` when it is set. Direct `uudoc
+manpage` invocation uses today's date unless `SOURCE_DATE_EPOCH` supplies a
+non-negative whole number of seconds since the Unix epoch; the supplied
+timestamp is formatted in UTC. Invalid values fail before writing a manual.
+
+## Not built with pekit yet
+
+Packages, debug information, and builds with the native Peios toolchain,
+which hardens programs with control-flow enforcement technology (CET), are
+not yet built with pekit. The package definitions, their checks, and the
+native build settings from the Bazel build are kept outside this repository
+until they are. Passing host development checks does not qualify the
+native configuration or a release image.

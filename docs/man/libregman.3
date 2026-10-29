@@ -8,6 +8,7 @@ libregman \- registry manual parsing and lookup library
 .B "uint32_t peios_regman_abi_version(void);"
 .B "peios_regman_result *peios_regman_parse(peios_regman_bytes source);"
 .B "peios_regman_result *peios_regman_query(peios_regman_bytes directory, peios_regman_bytes index, uint32_t mode, peios_regman_bytes text);"
+.B "int32_t peios_regman_fold(peios_regman_bytes text, uint8_t *out, size_t capacity, size_t *length);"
 .B "void peios_regman_free(peios_regman_result *);"
 .B "int32_t peios_regman_error(const peios_regman_result *);"
 .B "peios_regman_bytes peios_regman_message(const peios_regman_result *);"
@@ -26,6 +27,23 @@ Queries use PEIOS_REGMAN_EXACT for one anchor, PEIOS_REGMAN_KEY for a key
 and its documented values, or PEIOS_REGMAN_SEARCH for text search.
 Query text is case-folded internally; search terms are separated by whitespace.
 An absent directory or index selects its environment setting or default.
+.PP
+.B peios_regman_fold
+case-folds UTF-8 text as manual names compare, the folding a query applies to
+its text, so that a program can compare names the way the library does.
+It writes the folded text to
+.I out
+and its length to
+.IR length .
+It returns zero, ERANGE with the length needed when
+.I capacity
+is too small, or EINVAL for text that is not UTF-8 or a null
+.IR length .
+A zero
+.I capacity
+with a null
+.I out
+asks only for the length.
 Paths use raw Unix bytes, preserving filenames that are not UTF-8.
 .PP
 Record views contain the provider, source path, anchor, canonical name,

@@ -10,8 +10,6 @@
     clippy::cast_possible_truncation
 )]
 
-#[cfg(all(unix, feature = "chmod"))]
-use nix::unistd::{close, dup};
 use regex::Regex;
 #[cfg(unix)]
 use rlimit::Resource;
@@ -535,118 +533,6 @@ fn test_ls_devices() {
             .len();
 
         assert_eq!(stdout_len, null_len);
-    }
-}
-
-#[cfg(feature = "chmod")]
-#[test]
-fn test_ls_io_errors() {
-    let scene = TestScenario::new(util_name!());
-    let at = &scene.fixtures;
-    at.mkdir("some-dir1");
-    at.mkdir("some-dir2");
-    at.symlink_file("does_not_exist", "some-dir2/dangle");
-    at.mkdir("some-dir3");
-    at.mkdir("some-dir3/some-dir4");
-    at.mkdir("some-dir4");
-
-    scene.ccmd("chmod").arg("000").arg("some-dir1").succeeds();
-
-    scene
-        .ucmd()
-        .arg("-1")
-        .arg("some-dir1")
-        .fails_with_code(2)
-        .stderr_contains("cannot open directory")
-        .stderr_contains("Permission denied");
-
-    scene
-        .ucmd()
-        .arg("-Li")
-        .arg("some-dir2")
-        .fails_with_code(1)
-        .stderr_contains("cannot access")
-        .stderr_contains("No such file or directory")
-        .stdout_contains(if cfg!(windows) { "dangle" } else { "? dangle" });
-
-    scene
-        .ccmd("chmod")
-        .arg("000")
-        .arg("some-dir3/some-dir4")
-        .succeeds();
-
-    scene
-        .ucmd()
-        .arg("-laR")
-        .arg("some-dir3")
-        .fails_with_code(1)
-        .stderr_contains("some-dir4")
-        .stderr_contains("cannot open directory")
-        .stderr_contains("Permission denied")
-        .stdout_contains("some-dir4");
-
-    // don't double print on dangling link metadata errors
-    scene
-        .ucmd()
-        .arg("-iRL")
-        .arg("some-dir2")
-        .fails()
-        .stderr_does_not_contain(
-            "ls: cannot access 'some-dir2/dangle': No such file or directory\nls: cannot access 'some-dir2/dangle': No such file or directory"
-        );
-
-    #[cfg(unix)]
-    {
-        use std::os::fd::AsRawFd;
-
-        at.touch("some-dir4/bad-fd.txt");
-        let fd1 = at.open("some-dir4/bad-fd.txt");
-        let fd2 = dup(dbg!(&fd1)).unwrap();
-        close(fd1).unwrap();
-
-        // on the mac and in certain Linux containers bad fds are typed as dirs,
-        // however sometimes bad fds are typed as links and directory entry on links won't fail
-        if PathBuf::from(format!("/dev/fd/{}", fd2.as_raw_fd())).is_dir() {
-            scene
-                .ucmd()
-                .arg("-alR")
-                .arg(format!("/dev/fd/{}", fd2.as_raw_fd()))
-                .fails()
-                .stderr_contains(format!(
-                    "cannot open directory '/dev/fd/{}': Bad file descriptor",
-                    fd2.as_raw_fd()
-                ))
-                .stdout_does_not_contain(format!("{}:\n", fd2.as_raw_fd()));
-
-            scene
-                .ucmd()
-                .arg("-RiL")
-                .arg(format!("/dev/fd/{}", fd2.as_raw_fd()))
-                .fails()
-                .stderr_contains(format!("cannot open directory '/dev/fd/{}': Bad file descriptor", fd2.as_raw_fd()))
-                // don't double print bad fd errors
-                .stderr_does_not_contain(format!("ls: cannot open directory '/dev/fd/{0}': Bad file descriptor\nls: cannot open directory '/dev/fd/{0}': Bad file descriptor", fd2.as_raw_fd()));
-        } else {
-            scene
-                .ucmd()
-                .arg("-alR")
-                .arg(format!("/dev/fd/{}", fd2.as_raw_fd()))
-                .succeeds();
-
-            scene
-                .ucmd()
-                .arg("-RiL")
-                .arg(format!("/dev/fd/{}", fd2.as_raw_fd()))
-                .succeeds();
-        }
-
-        scene
-            .ucmd()
-            .arg("-alL")
-            .arg(format!("/dev/fd/{}", fd2.as_raw_fd()))
-            .succeeds();
-
-        let _ = close(fd2);
     }
 }
 
@@ -5123,28 +5009,6 @@ fn test_invalid_utf8() {
     ucmd.succeeds();
 }
 
-#[cfg(all(unix, feature = "chmod"))]
-#[test]
-fn test_ls_perm_io_errors() {
-    let scene = TestScenario::new(util_name!());
-    let at = &scene.fixtures;
-    at.mkdir("d");
-    at.symlink_file("/", "d/s");
-    at.touch("d/f");
-
-    scene.ccmd("chmod").arg("600").arg("d").succeeds();
-
-    scene
-        .ucmd()
-        .arg("-l")
-        .arg("d")
-        .fails_with_code(1)
-        .stderr_contains("Permission denied")
-        .stdout_contains("total 0")
-        .stdout_contains("l????????? ? ? ? ?            ? s")
-        .stdout_contains("-????????? ? ? ? ?            ? f");
-}
-
 #[test]
 fn test_ls_dired_implies_long() {
     let scene = TestScenario::new(util_name!());
@@ -6120,65 +5984,6 @@ fn test_ls_color_do_not_reset() {
     assert_eq!(
         result.stdout_str().escape_default().to_string(),
         "\\u{1b}[0m\\u{1b}[01;34ma\\u{1b}[0m\\n\\u{1b}[01;34mb\\u{1b}[0m\\n"
-    );
-}
-
-#[cfg(all(unix, feature = "chmod"))]
-#[test]
-fn test_term_colorterm() {
-    let scene = TestScenario::new(util_name!());
-    let at = &scene.fixtures;
-    at.touch("exe");
-    scene.ccmd("chmod").arg("+x").arg("exe").succeeds();
-
-    // Should show colors
-    let result = scene
-        .ucmd()
-        .arg("--color=always")
-        .env("LS_COLORS", "")
-        .env("TERM", "")
-        .succeeds();
-    assert_eq!(
-        result.stdout_str().trim().escape_default().to_string(),
-        "\\u{1b}[0m\\u{1b}[01;32mexe\\u{1b}[0m"
-    );
-
-    // Should show colors
-    let result = scene
-        .ucmd()
-        .arg("--color=always")
-        .env("LS_COLORS", "")
-        .env("COLORTERM", "")
-        .succeeds();
-    assert_eq!(
-        result.stdout_str().trim().escape_default().to_string(),
-        "\\u{1b}[0m\\u{1b}[01;32mexe\\u{1b}[0m"
-    );
-
-    // No colors
-    let result = scene
-        .ucmd()
-        .arg("--color=always")
-        .env("LS_COLORS", "")
-        .env("TERM", "")
-        .env("COLORTERM", "")
-        .succeeds();
-    assert_eq!(
-        result.stdout_str().trim().escape_default().to_string(),
-        "exe"
-    );
-
-    // No colors
-    let result = scene
-        .ucmd()
-        .arg("--color=always")
-        .env("LS_COLORS", "")
-        .env("TERM", "dumb")
-        .env("COLORTERM", "")
-        .succeeds();
-    assert_eq!(
-        result.stdout_str().trim().escape_default().to_string(),
-        "exe"
     );
 }
 

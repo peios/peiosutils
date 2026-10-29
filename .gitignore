@@ -26,8 +26,12 @@ commands.md
 # Historical build output
 /out/
 
-/bazel-*
-/.ci-sdk/
 /docs/learn/dist/
 **/__pycache__/
 **/.ruff_cache/
+
+# pekit build output.
+/pekit-out/
+
+# Libraries pekit fetches for the pins in `pekit.lock`.
+/.gcsl/

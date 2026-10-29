@@ -8,5 +8,6 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+libc.workspace = true
 utility-ffi = { path = "../utility-ffi" }
 utility-client = { path = "../utility-client" }

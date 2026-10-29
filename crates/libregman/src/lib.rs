@@ -114,6 +114,43 @@ pub unsafe extern "C" fn peios_regman_query(
     Reply::finish(result)
 }
 
+/// Case-fold UTF-8 text as manual names compare, the folding a query applies
+/// to its text, into `out`. Stores the folded length in `length` and returns
+/// zero, `ERANGE` with the length needed when `capacity` is too small, or
+/// `EINVAL` for text that is not UTF-8 or a null `length`.
+/// # Safety
+/// The input span must be readable for its stated length, `out` writable for
+/// `capacity` bytes unless `capacity` is zero, and `length` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn peios_regman_fold(
+    input: Bytes,
+    out: *mut u8,
+    capacity: usize,
+    length: *mut usize,
+) -> i32 {
+    // SAFETY: input is borrowed under the public input contract.
+    let folded = match unsafe { text(input) } {
+        Ok(input) => fold::fold(input),
+        Err(fault) => return fault.code,
+    };
+    // SAFETY: the caller supplies a writable length or null.
+    let Some(length) = (unsafe { length.as_mut() }) else {
+        return libc::EINVAL;
+    };
+    *length = folded.len();
+    if folded.len() > capacity {
+        return libc::ERANGE;
+    }
+    if !folded.is_empty() {
+        if out.is_null() {
+            return libc::EINVAL;
+        }
+        // SAFETY: out is writable for capacity bytes, which the folded text fits.
+        unsafe { std::ptr::copy_nonoverlapping(folded.as_ptr(), out, folded.len()) };
+    }
+    0
+}
+
 /// Release a result and every view it owns. Null is accepted.
 /// # Safety
 /// A non-null handle must be exclusively owned and freed exactly once.

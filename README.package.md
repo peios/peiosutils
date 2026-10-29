@@ -1,7 +1,7 @@
 # Peiosutils applet crate
 
 This crate belongs to Peiosutils, a maintained fork of uutils/coreutils for
-Peios. Build and package the workspace through its Bazel entry point.
+Peios. Build and test the workspace with pekit.
 
 The `pu_` prefix identifies Peios applet crates. It does not mean an applet
 has no inherited implementation. Shared helpers may retain their upstream

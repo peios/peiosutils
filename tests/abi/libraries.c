@@ -56,6 +56,16 @@ static void registry_manual(void) {
     assert(previous.body.data == record.body.data);
     peios_regman_free(manual);
 
+    const char *name = "Machine\\KMES";
+    size_t length = 0;
+    assert(peios_regman_fold((peios_regman_bytes){(const uint8_t *)name, strlen(name)}, NULL, 0,
+                             &length) == ERANGE);
+    assert(length == strlen(name));
+    uint8_t folded[16];
+    assert(peios_regman_fold((peios_regman_bytes){(const uint8_t *)name, strlen(name)}, folded,
+                             sizeof(folded), &length) == 0);
+    assert(length == 12 && memcmp(folded, "machine\\kmes", 12) == 0);
+
     const uint8_t invalid_utf8[] = {0xff};
     manual = peios_regman_parse((peios_regman_bytes){invalid_utf8, sizeof(invalid_utf8)});
     assert(peios_regman_error(manual) == EINVAL);

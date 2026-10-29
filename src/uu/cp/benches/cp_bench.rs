@@ -7,7 +7,7 @@ use divan::{Bencher, black_box};
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
-use uu_cp::uumain;
+use pu_cp::uumain;
 use uucore::benchmark::{binary_data, fs_tree, fs_utils, run_util_function};
 
 fn bench_cp_directory<F>(bencher: Bencher, args: &[&str], setup_source: F)

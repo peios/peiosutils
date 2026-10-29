@@ -444,8 +444,8 @@ mod tests {
         let out = render(body, 80, Style::plain());
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], "Title");
-        assert!(lines.iter().any(|l| *l == "  - first item"));
-        assert!(lines.iter().any(|l| *l == "  - second item"));
+        assert!(lines.contains(&"  - first item"));
+        assert!(lines.contains(&"  - second item"));
     }
 
     /// A bullet's continuation lines are part of the bullet: they hang under

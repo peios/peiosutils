@@ -1,0 +1,291 @@
+# peiosutils's tests: each member's unit tests, as `cargo test -p` builds
+# them, the multi-call program's integration tests, run against it, each
+# member's documentation tests, as `cargo test --doc` runs them, Clippy's
+# checks, as `cargo clippy --all-targets -- -Dwarnings` makes them with the
+# workspace's `.clippy.toml`, and the C libraries' headers and ABI.
+#
+# A test's own code runs in a hermetic step of its own, so what it plans,
+# builds or fetches is in its parameters' defaults.
+import fs
+import toolchain
+import unpack from archive
+import Toolchain from toolchain
+import BuildEnv from "github.com/gcslib/buildenv"
+import "github.com/gcslib/rust"
+import "github.com/peios/peios-rs" as peios_rs
+import build libauth from "github.com/peios/authd"
+
+# Where a test has the shared libraries it loads.
+let LIB = "/opt/peios/lib"
+
+# Where the integration tests have the multi-call program, its translations
+# and libstdbuf, as an installation lays them out beside it.
+let BIN = "/opt/peiosutils"
+
+# The IANA time zone database, compiled, as the `tzdata` Python package
+# ships it, pinned by its SHA-256.
+let TZDATA = "https://files.pythonhosted.org/packages/0a/66/9a06c2227fedfd4919f0eaaa8b94377d9730882a7e4f95823c9a331ab5e1/tzdata-2026.6-py2.py3-none-any.whl"
+
+# Where a test has the time zone database, which the utilities that read
+# dates find by `TZDIR`.
+let ZONEINFO = "/usr/share/zoneinfo"
+
+# The integration tests that need what only a host or a booted system has,
+# by name, each with its reason, which `pekit test` skips. Bazel ran them on
+# the host; they are qualified on a disposable guest (PEI-1621).
+let HOST_ONLY = [
+    # The `attr` tools, `getfattr` and `setfattr`, and extended attributes.
+    "test_cp::test_cp_p_does_not_preserve_xattr_by_default",
+    "test_cp::test_cp_preserve_xattr_readonly_source",
+    "test_mv::test_mv_cross_device_dir_xattr_preserved",
+    # A file system that clones files; it fails on an ext4 host too.
+    "test_cp::test_cp_reflink_always_override",
+    # A `sh` that keeps its name: busybox's runs the applet `argv[0]` names.
+    "test_env::test_env_arg_argv0_overwrite",
+    "test_env::test_env_arg_argv0_overwrite_mixed_with_string_args",
+    "test_env::test_env_overwrite_arg0",
+    # The signal dispositions of an interactive shell; they fail on the host
+    # under Bazel's test runner too.
+    "test_env::test_env_block_signal_flag",
+    "test_env::test_env_default_signal_all_signals",
+    "test_env::test_env_default_signal_pipe",
+    "test_env::test_env_list_signal_handling_reports_ignore",
+    "test_env::test_ignore_signal_pipe_broken_pipe_regression",
+    # A user database naming the user and its groups, and a login. The
+    # first also names `test_groups_username` and its `_multiple`, which
+    # compare with the host's GNU `groups` and so need one too.
+    "test_groups::test_groups",
+    "test_groups::test_groups_username",
+    "test_groups::test_groups_username_multiple",
+    "test_id::test_id_groups_ordering",
+    "test_id::test_id_ignore",
+    "test_id::test_id_no_specified_user_posixly",
+    "test_logname::test_normal",
+    "test_logname::test_output_format",
+    "test_whoami::test_succeeds_on_all_platforms",
+    "test_test::test_file_not_owned_by_egid",
+    "test_test::test_file_not_owned_by_euid",
+    # A host name that resolves.
+    "test_hostname::test_hostname_ip",
+    # Device nodes under `/dev`.
+    "test_ls::test_device_number",
+    # GNU's `truncate`, whose sizes take a sign.
+    "test_ls::test_ls_human_si",
+    # `/bin/sh` on the root file system; a step mounts `/bin` of its own.
+    "test_stat::test_percent_escaping",
+    # A dynamically linked `echo` to preload into; busybox's is static.
+    "test_stdbuf::test_stdbuf_search_order_exe_dir_first",
+    # `/usr/bin/env`, for a script's `#!`.
+    "test_tail::test_stdin_via_script_redirection_and_pipe",
+    # A root directory the user does not own.
+    "test_touch::test_touch_system_fails",
+]
+
+# The members that wrap the C libraries, which their tests link.
+let WRAPPERS = ["peios-reg", "peios-regman", "peios-evman"]
+
+# The members built with features of their own: the multi-call program's,
+# and stdbuf's, which preloads the installed libstdbuf.
+fn features_of(member: String) -> List<String> {
+    = if member == "peiosutils" { features() } else if member == "pu_stdbuf" { ["feat_external_libstdbuf"] } else { [] }
+}
+
+# The workspace's members, by their names.
+fn members(ws: rust.RustWorkspace) -> List<String> {
+    = for each in ws.metadata.packages if ws.metadata.workspace_members.contains(each.id) { = each.name }
+}
+
+# What every test is given: libpeios and authd's libauth, by their sonames,
+# which the members that link them load.
+def loaded() -> List<{at: String, place: Dir | File}> {
+    = [
+        {at = "{LIB}/libpeios.so.0"; place = peios_rs.runtime()[0].place},
+        {at = "{LIB}/libauth.so.1"; place = build libauth()},
+    ]
+}
+
+# What a test of the utilities is given besides: busybox's `/bin/sh` and
+# tools, which some run, and the time zone database, which some read.
+def shell() -> List<{at: String, place: Dir | File}> {
+    let env: BuildEnv = toolchain.get(Toolchain::BuildEnv)
+    let wheel = fetch(TZDATA, sha256 = "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec")
+    = [{at = "/bin"; place = env.root.dir("bin")}, {at = ZONEINFO; place = unpack(wheel).dir("tzdata/zoneinfo")}]
+}
+
+# Runs each of `tests`, given `given`, with `env` besides where the
+# libraries are, and `args`.
+fn ran(tests: List<rust.RustTest>, given: List<{at: String, place: Dir | File}>, env: List<Entry<String>> = [], args: List<String> = []) -> {} {
+    let each = for test in tests {
+        = rust.run_test(
+            test,
+            given = given,
+            env = [{key = "LD_LIBRARY_PATH"; value = LIB}, {key = "TZDIR"; value = ZONEINFO}, ...env],
+            args = args,
+        )
+    }
+}
+
+# The test program `test` run as `run_test` runs it, but up to three times,
+# passing if a run does: the retries the repository's CI profile allows
+# (`.config/nextest.toml`), for `tail --follow`'s tests, which time what they
+# watch and can miss it on a loaded machine. A failure that is the code's
+# fails every run.
+#[hermetic]
+fn retried(test: rust.RustTest, given: List<{at: String, place: Dir | File}>, env: List<Entry<String>>, args: List<String>) -> {} {
+    let placed: List<{at: String, place: Dir | File | FileSet}> = [
+        {at = "/"; place = test.rust.runtime},
+        {at = "/work/test"; place = test.program},
+        ...(for each in test.programs { = {at = each.at; place = each.place} }),
+        ...(for each in given { = {at = each.at; place = each.place} }),
+    ]
+    let box = fs.compose(placed).sandbox(cwd = "/work")
+    let ran = box.exec(
+        "/bin/sh",
+        "-c",
+        "for run in 1 2 3; do /work/test \"$@\" && exit 0; done; exit 1",
+        "retried",
+        ...args,
+        env = record([{key = "PATH"; value = "/usr/bin:/bin"}, ...test.env, ...env]),
+    )
+}
+
+# Each member's unit tests, but the multi-call program's and the wrappers',
+# with the translations beside each test program, where uucore's tests of
+# them look.
+def test units(
+    tests: List<List<rust.RustTest>> = for each in members(crates()) if each != "peiosutils" and not WRAPPERS.contains(each) {
+        = rust.tests(crates(), each, features = features_of(each))
+    },
+    given: List<{at: String, place: Dir | File}> = [
+        ...loaded(),
+        ...shell(),
+        ...(for each in locales() { = {at = "/work/locales/{each.name}"; place = each.place} }),
+    ],
+) {
+    let each = for some in tests { = ran(some, given) }
+}
+
+# The wrappers' unit tests, which link the C libraries pekit builds.
+def test wrappers(
+    tests: List<List<rust.RustTest>> = for each in WRAPPERS { = rust.tests(linking_c_libraries(), each) },
+    given: List<{at: String, place: Dir | File}> = [
+        ...loaded(),
+        {at = "{LIB}/libreg.so.1"; place = build libreg()},
+        {at = "{LIB}/libregman.so.1"; place = build libregman()},
+        {at = "{LIB}/libevman.so.1"; place = build libevman()},
+    ],
+) {
+    let each = for some in tests { = ran(some, given) }
+}
+
+# Each utility's translations, at `locales/<utility>/` beside the program,
+# where it looks for them, and uucore's at `locales/uucore/`.
+fn installed_locales() -> List<{at: String, place: Dir | File}> {
+    = for each in locales() { = {at = "{BIN}/locales/{each.name}"; place = each.place} }
+}
+
+# The multi-call program's own tests, and its integration tests, run
+# against it as installed, with each utility's fixtures, as Bazel ran them,
+# but the GNU test suite's and those that need a host's or a booted
+# system's userland, `HOST_ONLY`: four tests at a time, and retried as the
+# repository's CI retries them.
+def test peiosutils(
+    tests: List<rust.RustTest> = rust.tests(crates(), "peiosutils", features = features()),
+    given: List<{at: String, place: Dir | File}> = [
+        ...loaded(),
+        ...shell(),
+        {at = "{BIN}/peiosutils"; place = build peiosutils()},
+        {at = "{BIN}/libstdbuf.so"; place = build libstdbuf()},
+        ...installed_locales(),
+        {at = "/work/tests/fixtures"; place = dir("tests/fixtures")},
+    ],
+) {
+    let mut skips = ["--test-threads=4", "--skip", "gnu"]
+    for each in HOST_ONLY {
+        skips := [...skips, "--skip", each]
+    }
+    let env = [
+        {key = "LD_LIBRARY_PATH"; value = LIB},
+        {key = "TZDIR"; value = ZONEINFO},
+        {key = "UUTESTS_BINARY_PATH"; value = "{BIN}/peiosutils"},
+    ]
+    let each = for test in tests { = retried(test, given, env, skips) }
+}
+
+# Each member's documentation tests.
+def test doctests(
+    ran: List<List<{}>> = [
+        ...(for each in members(crates()) if not WRAPPERS.contains(each) {
+            = rust.doctests(crates(), each, given = loaded(), env = [{key = "LD_LIBRARY_PATH"; value = LIB}])
+        }),
+        ...(for each in WRAPPERS { = rust.doctests(linking_c_libraries(), each, given = loaded(), env = [{key = "LD_LIBRARY_PATH"; value = LIB}]) }),
+    ],
+) {}
+
+# Clippy's checks of each member, every warning denied, but the `cargo`
+# group's, which read the workspace's manifests through Cargo, which a
+# check of one crate does not run. Bazel's checks left them out too.
+def test clippy(
+    checked: List<List<{}>> = [
+        ...(for each in members(crates()) if not WRAPPERS.contains(each) {
+            = rust.clippy(crates(), each, features = features_of(each), flags = ["-Dwarnings", "-Aclippy::cargo"])
+        }),
+        ...(for each in WRAPPERS { = rust.clippy(linking_c_libraries(), each, flags = ["-Dwarnings", "-Aclippy::cargo"]) }),
+    ],
+) {}
+
+# The tool `name` of the C toolchain `c`, by its path in a sandbox that has
+# the toolchain at `/opt/cc`: `x86_64-linux-g++` beside `x86_64-linux-gcc`.
+fn tool(c: toolchain.CToolchain, name: String): String {
+    let cc = c.cc.path.strip_prefix(c.root.path).strip_prefix("/")
+    = "/opt/cc/{cc.strip_suffix("gcc")}{name}"
+}
+
+# The C libraries' ABI: `tests/abi/libraries.c`, which calls each library
+# through its header, compiled as C11 with every warning an error, linked
+# with the three libraries and run; and `tests/abi/headers.cc`, which
+# includes the headers, compiled as C++17 the same way.
+def test abi(
+    libraries: List<{at: String, place: Dir | File}> = [
+        {at = "{LIB}/libreg.so"; place = build libreg()},
+        {at = "{LIB}/libreg.so.1"; place = build libreg()},
+        {at = "{LIB}/libregman.so"; place = build libregman()},
+        {at = "{LIB}/libregman.so.1"; place = build libregman()},
+        {at = "{LIB}/libevman.so"; place = build libevman()},
+        {at = "{LIB}/libevman.so.1"; place = build libevman()},
+        ...loaded(),
+    ],
+    sources: List<{at: String, place: Dir | File}> = [
+        {at = "/work/include"; place = build include()},
+        {at = "/work/libraries.c"; place = file("tests/abi/libraries.c")},
+        {at = "/work/headers.cc"; place = file("tests/abi/headers.cc")},
+    ],
+    c: toolchain.CToolchain = toolchain.get(Toolchain::C),
+) {
+    let home = working_dir().path
+    let made = fs.mkdir("{home}/out")
+    let placed: List<{at: String, place: Dir | File | FileSet}> = [
+        {at = "/"; place = c.runtime},
+        {at = "/opt/cc"; place = c.root},
+        {at = "/work/out"; place = dir("{home}/out")},
+        ...(for each in libraries { = {at = each.at; place = each.place} }),
+        ...(for each in sources { = {at = each.at; place = each.place} }),
+    ]
+    let box = fs.compose(placed).sandbox(cwd = "/work", env = {LD_LIBRARY_PATH = LIB})
+    let warnings = ["-Wall", "-Wextra", "-Werror", "-I/work/include"]
+    let compiled = box.exec(
+        tool(c, "gcc"),
+        "-std=c11",
+        ...warnings,
+        "/work/libraries.c",
+        "-L{LIB}",
+        "-lreg",
+        "-lregman",
+        "-levman",
+        "-Wl,-rpath-link,{LIB}",
+        "-o",
+        "/work/out/libraries",
+    )
+    let ran = box.exec("/work/out/libraries")
+    let headers = box.exec(tool(c, "g++"), "-std=c++17", ...warnings, "-c", "/work/headers.cc", "-o", "/work/out/headers.o")
+}

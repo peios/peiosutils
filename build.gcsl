@@ -1,0 +1,135 @@
+# peiosutils's programs and C libraries, each crate compiled on its own
+# (see the rust library's `workspace`), for glibc.
+import fs
+import "github.com/gcslib/clang"
+import "github.com/gcslib/rust"
+import "github.com/peios/peios-rs" as peios_rs
+import build libauth from "github.com/peios/authd"
+
+# The features of the multi-call program and of `uudoc`: every utility of a
+# Unix host, with libstdbuf installed beside it, not embedded, and the
+# documentation tools.
+let FEATURES = ["feat_os_unix", "feat_external_libstdbuf", "uudoc"]
+
+# Where stdbuf is told libstdbuf is installed.
+let LIBSTDBUF_DIR = "/usr/lib/x86_64-linux-peios/peiosutils"
+
+# Where `peios-auth`'s build script is told libauth is.
+let AUTH_LIB = "/opt/auth/lib"
+
+# Where the crates that wrap the C libraries are told they are.
+let C_LIB = "/opt/peiosutils/lib"
+
+# The features of the multi-call program, for the tests.
+def features() -> List<String> {
+    = FEATURES
+}
+
+# The peiosutils workspace, planned, without the C libraries: what they are
+# built from, and every member that does not link them. `peios-sys` binds
+# libpeios with bindgen and links it, so it, and every crate that depends on
+# it, is given what peios-rs's library says it needs: libpeios and its
+# headers, built from the Peios SDK's own files. `peios-auth` links authd's
+# libauth, built from authd's own files. uucore embeds every utility's
+# English messages, which its build script reads from each utility's
+# `locales` directory. `extra` are settings of further packages.
+def crates(extra: List<rust.CrateSettings> = []) -> rust.RustWorkspace {
+    = rust.workspace(
+        dir("."),
+        rust.vendored(file("Cargo.lock")),
+        crates = [
+            ...peios_rs.crate_settings(),
+            {
+                package = "peios-auth"
+                env = [{key = "PEIOS_AUTH_LIB_DIR"; value = AUTH_LIB}]
+                given = [{at = "{AUTH_LIB}/libauth.so"; place = build libauth()}]
+            },
+            {
+                package = "uucore"
+                env = [{key = "LANG"; value = "en_US.UTF-8"}]
+                data = for each in locales() if each.name != "uucore" { = {at = "src/uu/{each.name}/locales"; place = each.place} }
+            },
+            {package = "pu_stdbuf"; env = [{key = "LIBSTDBUF_DIR"; value = LIBSTDBUF_DIR}]},
+            ...extra,
+        ],
+        libclang = [clang.libclang_18()],
+    )
+}
+
+# Each utility's translations, its `locales` directory, by the utility's
+# name, and uucore's: base64's and basenc's are links to base32's, which
+# placing the directory follows, as listing its files would not.
+def locales() -> List<{name: String, place: Dir}> {
+    let root = dir(".").path
+    let names = (for each in dir("src/uu").files() { = each.path.strip_prefix("{root}/src/uu/").split("/")[0] }).unique()
+    let found = for name in names if fs.exists("{root}/src/uu/{name}/locales") { = {name = name; place = dir("src/uu/{name}/locales")} }
+    = [...found, {name = "uucore"; place = dir("src/uucore/locales")}]
+}
+
+# The workspace with the crates that wrap the C libraries given them:
+# `peios-reg`, `peios-regman` and `peios-evman` link libreg, libregman and
+# libevman, by the directory each build script is told, with libpeios,
+# which libreg needs, beside libreg.
+def linking_c_libraries() -> rust.RustWorkspace {
+    = crates(
+        extra = [
+            {
+                package = "peios-reg"
+                env = [{key = "PEIOS_REG_LIB_DIR"; value = C_LIB}]
+                given = [{at = "{C_LIB}/libreg.so"; place = build libreg()}, ...libpeios_beside()]
+            },
+            {
+                package = "peios-regman"
+                env = [{key = "PEIOS_REGMAN_LIB_DIR"; value = C_LIB}]
+                given = [{at = "{C_LIB}/libregman.so"; place = build libregman()}]
+            },
+            {
+                package = "peios-evman"
+                env = [{key = "PEIOS_EVMAN_LIB_DIR"; value = C_LIB}]
+                given = [{at = "{C_LIB}/libevman.so"; place = build libevman()}]
+            },
+        ],
+    )
+}
+
+# libpeios, by its soname, beside libreg, which needs it: `peios-reg`'s
+# build script tells the linker to look for libreg's own dependencies
+# there.
+fn libpeios_beside() -> List<{at: String, place: Dir | File}> {
+    = [{at = "{C_LIB}/libpeios.so.0"; place = peios_rs.runtime()[0].place}]
+}
+
+# The multi-call program, every utility in one.
+def build peiosutils() {
+    = rust.bin(crates(), "peiosutils", features = FEATURES)
+}
+
+# The tool that writes the utilities' manual pages and completions.
+def build uudoc() {
+    = rust.bin(crates(), "peiosutils", name = "uudoc", features = FEATURES)
+}
+
+# The library stdbuf preloads into the program it runs.
+def build libstdbuf() {
+    = rust.library(crates(), "pu_stdbuf_libstdbuf")
+}
+
+# The registry's C library, `libreg.so.1` by its soname.
+def build libreg() {
+    = rust.library(crates(), "libreg")
+}
+
+# The registry manual's C library, `libregman.so.1` by its soname.
+def build libregman() {
+    = rust.library(crates(), "libregman")
+}
+
+# The event manual's C library, `libevman.so.1` by its soname.
+def build libevman() {
+    = rust.library(crates(), "libevman")
+}
+
+# The C libraries' headers.
+def build include() {
+    = dir("include")
+}

@@ -5,9 +5,6 @@
 // spell-checker:ignore (ToDO) bindeps dylib libstdbuf deps liblibstdbuf
 
 use std::env;
-use std::fs;
-use std::path::Path;
-use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
@@ -32,6 +29,18 @@ fn main() {
             std::process::exit(1);
         }
     }
+
+    // stdbuf preloads the installed library then, so none is embedded.
+    #[cfg(not(feature = "feat_external_libstdbuf"))]
+    embed();
+}
+
+/// Builds libstdbuf and places it in `OUT_DIR`, for stdbuf to embed.
+#[cfg(not(feature = "feat_external_libstdbuf"))]
+fn embed() {
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
 
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let target = env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
@@ -139,40 +148,4 @@ fn main() {
         found,
         "Could not find built libstdbuf library. Searched in: {possible_paths:?}."
     );
-
-    // Create a symlink to libstdbuf in the main target directory for development convenience
-    // This allows running stdbuf directly from the build directory (e.g., target/debug/coreutils)
-    // without needing to install the library to LIBSTDBUF_DIR. This is particularly useful for
-    // running tests and manual testing during development.
-    #[cfg(all(unix, feature = "feat_external_libstdbuf"))]
-    {
-        use std::path::PathBuf;
-
-        // Get the main target directory (e.g., target/debug or target/release)
-        // OUT_DIR is something like target/debug/build/uu_stdbuf-<hash>/out
-        let out_dir_path = PathBuf::from(&out_dir);
-        if let Some(target_dir) = out_dir_path
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-        {
-            let lib_filename = format!("libstdbuf{dylib_ext}");
-            let source = target_dir.join("deps").join(&lib_filename);
-            let dest = target_dir.join(&lib_filename);
-
-            // Remove old symlink if it exists (in case it points to the wrong place)
-            let _ = fs::remove_file(&dest);
-
-            // Create symlink if the source exists
-            if source.exists() {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::symlink;
-                    if let Err(e) = symlink(&source, &dest) {
-                        eprintln!("Warning: Failed to create symlink for libstdbuf: {e}");
-                    }
-                }
-            }
-        }
-    }
 }

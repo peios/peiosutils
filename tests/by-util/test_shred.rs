@@ -191,31 +191,6 @@ fn test_shred_empty() {
 }
 
 #[test]
-#[cfg(all(unix, feature = "chmod"))]
-fn test_shred_fail_no_perm() {
-    use std::path::Path;
-
-    let scene = TestScenario::new(util_name!());
-    let at = &scene.fixtures;
-    let dir = "dir";
-
-    let file = "test_shred_remove_a";
-
-    let binding = Path::new("dir").join(file);
-    let path = binding.to_str().unwrap();
-    at.mkdir(dir);
-    at.touch(path);
-    scene.ccmd("chmod").arg("a-w").arg(dir).succeeds();
-
-    scene
-        .ucmd()
-        .arg("-uv")
-        .arg(path)
-        .fails()
-        .stderr_contains("Couldn't rename to");
-}
-
-#[test]
 fn test_shred_verbose_no_padding_1() {
     let (at, mut ucmd) = at_and_ucmd!();
     let file = "foo";

@@ -8,7 +8,5 @@
     "files": {
         "tests/peiosutils/lsblk-partitions.test.lua": "tests/peiosutils/lsblk-partitions.test.lua"
     },
-    "tests": [
-        "tests/peiosutils/lsblk-partitions.test.lua"
-    ]
+    "tests": ["tests/peiosutils/lsblk-partitions.test.lua"]
 }

@@ -122,7 +122,7 @@ mod tests {
     #[test]
     fn ancestors_walk_outermost_first() {
         let p = KeyPath::parse("Machine/System/Network/TcpIp/PortReservations").unwrap();
-        let got: Vec<String> = p.ancestors().iter().map(|a| a.to_abi()).collect();
+        let got: Vec<String> = p.ancestors().iter().map(KeyPath::to_abi).collect();
         assert_eq!(
             got,
             vec![
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn ancestors_exclude_the_path_itself() {
         let p = KeyPath::parse("Machine/System").unwrap();
-        let got: Vec<String> = p.ancestors().iter().map(|a| a.to_abi()).collect();
+        let got: Vec<String> = p.ancestors().iter().map(KeyPath::to_abi).collect();
         assert_eq!(got, vec!["Machine"]);
     }
 

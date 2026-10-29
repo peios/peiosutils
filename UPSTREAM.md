@@ -105,11 +105,11 @@ against the sources and diffing it against the file is a mechanical step; the de
 
 ## Validation and releases
 
-A release requires green CI on the exact release commit. The maintained
-workflow runs PSC checks, native Bazel builds, Clippy, unit and integration
-tests, public-library checks, package validation, and documentation checks.
-The pinned SDK dependencies come from `peios-sdk` and `authd`; they no longer
-come from PKM or a Pekit recipe.
+A release requires a green `tools/check` on the exact release commit. It
+runs PSC checks, then `pekit test`: the build, Clippy, unit and integration
+tests, and the public libraries' checks. The pinned SDK dependencies come
+from the GCSL libraries of `peios-sdk` and `authd`, which `pekit.lock` pins;
+they no longer come from PKM.
 
 The default suite runs on Linux. It skips GNU-conformance tests and retains
 explicitly documented ignores for tests that require Peios kernel behavior
