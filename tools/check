@@ -1,0 +1,9 @@
+#!/bin/bash
+# The contributor check: owned source style, then pekit's tests, which build
+# every member, run its unit tests, the integration tests against the
+# multi-call program, the C libraries' ABI tests and the documentation
+# tests, and check every member with Clippy.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+python3 tools/style-check.py
+pekit test

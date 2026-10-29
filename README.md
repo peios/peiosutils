@@ -11,27 +11,25 @@ internal code lives in `src/uucore/` and `crates/`.
 
 ## Build and check
 
-Bazel compiles native Rust targets and assembles PPK blobs and manifests.
-Prepare a development SDK as described in
-[Building Peiosutils](docs/development/building.md), then run:
+Pekit builds the multicall executable and the C libraries and runs the
+tests, as [Building Peiosutils](docs/development/building.md) describes:
 
 ```sh
-export PEIOS_SDK=/absolute/path/to/development-sdk
-./bazel build //:peiosutils //:packages
-./bazel test //...
+pekit build peiosutils
+pekit test
 ```
 
-`tools/check` also checks PSC formatting and runs Clippy through Bazel.
-Development builds run on Linux x86_64. They do not qualify Peios kernel
-operations or establish release readiness.
+`tools/check` also checks PSC formatting. Development builds run on Linux
+x86_64. They do not qualify Peios kernel operations or establish release
+readiness.
 
 ## Documentation and libraries
 
 - [User and developer guides](docs/learn/) form part of Learn Peios.
 - Installed applet manuals describe command options and exit behavior.
 - [Library manuals](docs/man/) document `libreg`, `libregman`, and `libevman`.
-- [Development guide](docs/development/building.md) covers SDK inputs,
-  packages, generated targets, and validation.
+- [Development guide](docs/development/building.md) covers the pekit
+  build, its tests, and validation.
 - [Style adoption](docs/development/style.md) records compatibility exceptions.
 
 The three public libraries ship shared objects and C headers. Their safe

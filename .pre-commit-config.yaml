@@ -7,7 +7,7 @@ repos:
             entry: python3 tools/style-check.py
             language: system
             pass_filenames: false
-          - id: peios-bazel-check
+          - id: peios-check
             name: Peios build and tests
             entry: tools/check
             language: system
