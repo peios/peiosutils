@@ -43,6 +43,9 @@ peios_regman_result *peios_regman_parse(peios_regman_bytes source);
  * Queries are case-folded internally. SEARCH splits text on whitespace. */
 peios_regman_result *peios_regman_query(peios_regman_bytes directory, peios_regman_bytes index,
                                         uint32_t mode, peios_regman_bytes text);
+/* Case-folds UTF-8 text as manual names compare, into out; stores the folded
+ * length and returns 0, ERANGE with the length needed, or EINVAL. */
+int32_t peios_regman_fold(peios_regman_bytes text, uint8_t *out, size_t capacity, size_t *length);
 void peios_regman_free(peios_regman_result *);
 int32_t peios_regman_error(const peios_regman_result *);
 peios_regman_bytes peios_regman_message(const peios_regman_result *);

@@ -2147,6 +2147,7 @@ dependencies = [
 name = "peios-regman"
 version = "0.8.18"
 dependencies = [
+ "libc",
  "utility-client",
  "utility-ffi",
 ]

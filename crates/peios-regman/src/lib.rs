@@ -1,6 +1,7 @@
 //! Owned Rust records backed by libregman.so parsing and lookup.
 
 use std::ffi::{OsString, c_void};
+use std::ptr;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 
@@ -16,6 +17,7 @@ pub use utility_client::Error;
 unsafe extern "C" {
     fn peios_regman_parse(source: Bytes) -> *mut c_void;
     fn peios_regman_query(directory: Bytes, index: Bytes, mode: u32, text: Bytes) -> *mut c_void;
+    fn peios_regman_fold(text: Bytes, out: *mut u8, capacity: usize, length: *mut usize) -> i32;
     fn peios_regman_free(handle: *mut c_void);
     fn peios_regman_error(handle: *const c_void) -> i32;
     fn peios_regman_message(handle: *const c_void) -> Bytes;
@@ -50,6 +52,59 @@ pub struct Record {
     pub body: String,
     /// Zero-based byte offset of the record fence within the UTF-8 source.
     pub fence_offset: u64,
+}
+
+/// Whether a record documents a key or a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A key, which carries no value metadata.
+    Key,
+    /// A value, which carries a type, default, accepted values or when a change applies.
+    Value,
+}
+
+impl Record {
+    /// Whether the record documents a key or a value: a value's record carries
+    /// at least one field only values have.
+    pub fn kind(&self) -> Kind {
+        if self.type_name.is_some()
+            || self.default_value.is_some()
+            || self.valid.is_some()
+            || self.applies.is_some()
+        {
+            Kind::Value
+        } else {
+            Kind::Key
+        }
+    }
+
+    /// The first non-empty line of the body: the one-line summary.
+    pub fn summary(&self) -> &str {
+        self.body
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .unwrap_or("")
+    }
+
+    /// The value's name, without the canonical path of the key `key` it is
+    /// under, compared as manual names compare; when the record's canonical
+    /// name does not begin with that key, the name after its last space.
+    pub fn value_name(&self, key: &str) -> Result<&str, Error> {
+        let prefix = key.len() + 1;
+        if self.canonical.len() > prefix
+            && self.canonical.is_char_boundary(key.len())
+            && self.canonical.is_char_boundary(prefix)
+            && self.canonical.as_bytes()[key.len()] == b' '
+            && fold(&self.canonical[..key.len()])? == fold(key)?
+        {
+            return Ok(&self.canonical[prefix..]);
+        }
+        Ok(self
+            .canonical
+            .rsplit_once(' ')
+            .map_or(self.canonical.as_str(), |(_, name)| name))
+    }
 }
 
 /// A recoverable parser problem at a one-based source line.
@@ -189,6 +244,40 @@ pub fn query(locations: Locations<'_>, kind: Query, text: &str) -> Result<Manual
     }
 }
 
+/// `text` case-folded as manual names compare: the folding a query applies to
+/// its text, so that names compare as the library compares them.
+pub fn fold(text: &str) -> Result<String, Error> {
+    let mut length = 0usize;
+    // SAFETY: text is borrowed for the call; zero capacity with a null output
+    // only asks for the folded length, which the library writes to `length`.
+    let code = unsafe { peios_regman_fold(Bytes::text(text), ptr::null_mut(), 0, &raw mut length) };
+    if code != 0 && code != libc::ERANGE {
+        return Err(Error::from_code(code));
+    }
+    let mut out = vec![0u8; length];
+    // SAFETY: out is writable for its whole length, the length the library asked for.
+    let code = unsafe {
+        peios_regman_fold(
+            Bytes::text(text),
+            out.as_mut_ptr(),
+            out.len(),
+            &raw mut length,
+        )
+    };
+    if code != 0 {
+        return Err(Error::from_code(code));
+    }
+    out.truncate(length);
+    String::from_utf8(out).map_err(|_| Error::from_code(libc::EINVAL))
+}
+
+/// Look up a key and its documented values in the installed manuals: the
+/// directory and index `REGMAN_DIR` and `REGMAN_INDEX` name, or their
+/// defaults.
+pub fn resolve_key_default(path: &str) -> Result<Manual, Error> {
+    query(Locations::default(), Query::Key, path)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -201,5 +290,23 @@ mod tests {
         assert_eq!(manual.records[0].body, "Description.");
         assert!(manual.records[0].type_name.is_none());
         assert!(manual.issues.is_empty());
+    }
+
+    #[test]
+    fn names_fold_and_records_say_their_kind() {
+        assert_eq!(super::fold("Machine\\KMES").unwrap(), "machine\\kmes");
+        let manual = super::parse(
+            "--- machine\\kmes\ncanonical: Machine\\KMES\n\nThe subtree.\n\n\
+             --- machine\\kmes buffer capacity\ncanonical: Machine\\KMES Buffer Capacity\n\
+             type: REG_QWORD\n\nRing buffer capacity.\n",
+        )
+        .unwrap();
+        assert_eq!(manual.records[0].kind(), super::Kind::Key);
+        assert_eq!(manual.records[1].kind(), super::Kind::Value);
+        assert_eq!(
+            manual.records[1].value_name("machine\\kmes").unwrap(),
+            "Buffer Capacity"
+        );
+        assert_eq!(manual.records[1].summary(), "Ring buffer capacity.");
     }
 }
