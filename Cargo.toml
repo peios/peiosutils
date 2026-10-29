@@ -366,7 +366,6 @@ test = ["pu_test"]
 resolver = "3"
 members = [
   "crates/*",
-  "build/feature-set",
   ".",
   "src/uu/*",
   "src/uu/stdbuf/src/libstdbuf",
