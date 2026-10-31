@@ -61,7 +61,8 @@ pekit test
 | `peiosutils` | The multicall executable's own tests and the integration tests, run against it as an installation lays it out |
 | `abi` | A C11 program calls each C library through its header, and a C++17 file includes the headers, with every warning an error |
 | `doctests` | Each member's documentation tests |
-| `clippy` | Clippy's checks of every target of every member, tests among them, with every warning denied and the workspace's `.clippy.toml`, but the `cargo` group, which reads the workspace's manifests through Cargo |
+| `clippy` | Clippy's checks of every target of every member, tests among them, with every warning denied and the workspace's `.clippy.toml` |
+| `cargo_lints` | Clippy's `cargo` lints of the whole workspace, which read its manifests through Cargo, with every warning denied |
 
 The integration tests run the multicall executable, with libstdbuf and the
 translations beside it, and each utility's fixtures. They skip the GNU

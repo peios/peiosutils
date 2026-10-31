@@ -136,9 +136,10 @@ fn retried(test: rust.RustTest, given: List<{at: String, place: Dir | File}>, en
         {at = "/"; place = test.rust.runtime},
         {at = "/work/test"; place = test.program},
         ...(for each in test.programs { = {at = each.at; place = each.place} }),
+        ...(for each in test.placed { = {at = each.at; place = each.place} }),
         ...(for each in given { = {at = each.at; place = each.place} }),
     ]
-    let box = fs.compose(placed).sandbox(cwd = "/work")
+    let box = fs.compose(placed).sandbox(cwd = test.at)
     let ran = box.exec(
         "/bin/sh",
         "-c",
@@ -197,7 +198,6 @@ def test peiosutils(
         {at = "{BIN}/peiosutils"; place = build peiosutils()},
         {at = "{BIN}/libstdbuf.so"; place = build libstdbuf()},
         ...installed_locales(),
-        {at = "/work/tests/fixtures"; place = dir("tests/fixtures")},
     ],
 ) {
     let mut skips = ["--test-threads=4", "--skip", "gnu"]
@@ -222,17 +222,19 @@ def test doctests(
     ],
 ) {}
 
-# Clippy's checks of each member, every warning denied, but the `cargo`
-# group's, which read the workspace's manifests through Cargo, which a
-# check of one crate does not run. Bazel's checks left them out too.
+# Clippy's checks of each member, every warning denied.
 def test clippy(
     checked: List<List<{}>> = [
         ...(for each in members(crates()) if not WRAPPERS.contains(each) {
-            = rust.clippy(crates(), each, features = features_of(each), flags = ["-Dwarnings", "-Aclippy::cargo"])
+            = rust.clippy(crates(), each, features = features_of(each), flags = ["-Dwarnings"])
         }),
-        ...(for each in WRAPPERS { = rust.clippy(linking_c_libraries(), each, flags = ["-Dwarnings", "-Aclippy::cargo"]) }),
+        ...(for each in WRAPPERS { = rust.clippy(linking_c_libraries(), each, flags = ["-Dwarnings"]) }),
     ],
 ) {}
+
+# Clippy's `cargo` lints, which read the workspace's manifests through Cargo,
+# so check the workspace whole, every warning denied.
+def test cargo_lints(checked: {} = rust.cargo_lints(crates(), flags = ["-Dwarnings"])) {}
 
 # The tool `name` of the C toolchain `c`, by its path in a sandbox that has
 # the toolchain at `/opt/cc`: `x86_64-linux-g++` beside `x86_64-linux-gcc`.
