@@ -22,7 +22,7 @@ workspace = true
 path = "src/lib/lib.rs"
 
 [dependencies]
-peios-auth = { git = "https://github.com/peios/authd.git", rev = "89dbfeccf77800a7cd287bde5aab6ba26201a680", optional = true }
+peios-auth = { git = "https://github.com/peios/authd.git", rev = "2967575498d176cf7154170d050ec44a3fc74523", optional = true }
 bstr = { workspace = true, optional = true }
 clap = { workspace = true }
 uucore_procs = { workspace = true }
@@ -57,7 +57,7 @@ os_display = "0.1.3"
 
 # Peios SD-creation flag group (`sd-control` feature) and attribute
 # preservation (`preserve` feature).
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "b2282f654758831e4a2e34c7b35c26e61a6ebe1c", optional = true }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116", optional = true }
 filetime = { workspace = true, optional = true }
 
 # Benchmark dependencies (optional)
@@ -103,7 +103,7 @@ unic-langid = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-auth-core = { git = "https://github.com/peios/authd.git", rev = "89dbfeccf77800a7cd287bde5aab6ba26201a680" }
+auth-core = { git = "https://github.com/peios/authd.git", rev = "2967575498d176cf7154170d050ec44a3fc74523" }
 tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
