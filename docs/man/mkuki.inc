@@ -8,10 +8,12 @@ The command line is literal or read from a file. Trailing carriage returns and
 newlines are trimmed, embedded NUL bytes are rejected, and a final NUL is
 added. Kernel and initramfs payloads must be nonempty.
 .PP
-Directory\-based kernel selection requires exactly one regular matching image
-beneath a release directory. Missing or ambiguous matches fail that build
-instead of selecting an arbitrary kernel. The bundled stub's provenance is
-available through the stub\-info operation.
+Directory\-based kernel selection reads
+.B vmlinuz
+directly in the selected directory, normally
+.IR /usr/lib/modules .
+A missing image fails that build. The bundled stub's provenance is available
+through the stub\-info operation.
 .SH NOTES
 The assembled output is written through an exclusively created sibling
 temporary file, then renamed into place. Staging\-name collisions do not open
@@ -20,9 +22,9 @@ without publishing a partial image.
 .PP
 Watch mode observes concrete inputs through parent\-directory watches so
 atomic replacement is visible. Kernel\-directory selection watches the whole
-selected tree and resolves the candidate on each rebuild. Output locations
-that would retrigger the watch are refused. A failed rebuild is logged while
-the loop continues.
+selected directory nonrecursively and reads its image on each rebuild.
+Output locations that would retrigger the watch are refused. A failed rebuild
+is logged while the loop continues.
 .PP
 The command does not sign the result. A completed image still requires
 separate signing and boot qualification appropriate to the deployment.

@@ -22,15 +22,16 @@ Command-line input can come from a literal value or a file. Trailing line
 endings are removed and a terminator is added. Embedded zero bytes are
 rejected rather than silently shortening the command line.
 
-## Select a concrete kernel or a release directory
+## Select a kernel image
 
-A concrete image path selects exactly that file. Directory selection looks for
-a unique release-named kernel image. Zero matches indicate missing input, and
-multiple matches are ambiguous; neither case selects an arbitrary candidate.
+A concrete image path selects exactly that file. Directory selection reads
+`vmlinuz` directly in the selected directory, normally `/usr/lib/modules`.
+A Peios system closure has one kernel, at `/usr/lib/modules/vmlinuz`, with
+modules in the same directory and no release subdirectory.
 
-Directory selection suits package replacement because the watcher can resolve
-the release again after a directory changes. A transient ambiguous state makes
-that rebuild fail while leaving the watcher available to retry.
+Directory selection reads the image again after a directory changes. A
+missing image makes that rebuild fail while leaving the watcher available to
+retry.
 
 ## Publication and signing are separate
 
@@ -45,9 +46,9 @@ boot qualification are separate steps.
 ## Watch the inputs without watching the output
 
 Concrete input files are observed through their parent directories so that
-atomic file replacement is visible. A kernel release directory is watched
-recursively. Output paths that feed back into those watched locations are
-rejected.
+atomic file replacement is visible. Directory selection watches the selected
+directory nonrecursively. Output paths that feed back into those watched
+locations are rejected.
 
 After changes settle, the watcher rebuilds. Failure is logged rather than
 ending the loop, so the last output can remain older than the inputs. Monitor

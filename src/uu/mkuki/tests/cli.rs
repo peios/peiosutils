@@ -93,7 +93,7 @@ fn write_fake_stub(path: &Path) {
 fn writes_a_uki_from_boot_inputs() {
     let dir = tempdir().unwrap();
     let stub = dir.path().join("stub.efi");
-    let kernel = dir.path().join("vmlinuz");
+    let kernel = dir.path().join("custom-kernel-image");
     let initramfs = dir.path().join("initramfs.cpio.gz");
     let out = dir.path().join("boot/efi/EFI/BOOT/BOOTX64.EFI");
 
@@ -169,15 +169,14 @@ fn writes_a_uki_with_the_embedded_default_stub() {
 }
 
 #[test]
-fn resolves_a_unique_kernel_from_a_release_directory() {
+fn resolves_the_kernel_from_a_flat_modules_directory() {
     let dir = tempdir().unwrap();
     let modules = dir.path().join("usr/lib/modules");
-    let release = modules.join("7.0.9-peios-0.8.3");
-    let kernel = release.join("vmlinuz-7.0.9-peios-0.8.3");
+    let kernel = modules.join("vmlinuz");
     let initramfs = dir.path().join("initramfs.cpio.zst");
     let out = dir.path().join("BOOTX64.EFI");
 
-    fs::create_dir_all(&release).unwrap();
+    fs::create_dir_all(&modules).unwrap();
     fs::write(&kernel, b"unique-directory-kernel").unwrap();
     fs::write(&initramfs, b"initramfs").unwrap();
 
@@ -206,7 +205,7 @@ fn resolves_a_unique_kernel_from_a_release_directory() {
 }
 
 #[test]
-fn refuses_to_guess_between_multiple_directory_kernels() {
+fn refuses_a_directory_without_a_flat_kernel() {
     let dir = tempdir().unwrap();
     let modules = dir.path().join("usr/lib/modules");
     let initramfs = dir.path().join("initramfs.cpio.zst");
@@ -234,25 +233,21 @@ fn refuses_to_guess_between_multiple_directory_kernels() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("2 kernels found"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("no kernel found at"));
     assert!(!out.exists());
 }
 
 #[test]
-fn watch_adopts_a_replaced_release_directory() {
+fn watch_adopts_an_atomically_replaced_kernel() {
     let dir = tempdir().unwrap();
     let modules = dir.path().join("usr/lib/modules");
-    let old_release = modules.join("7.0.9-peios-0.8.2");
-    let new_release = modules.join("7.0.9-peios-0.8.3");
+    let kernel = modules.join("vmlinuz");
+    let replacement = modules.join("vmlinuz.next");
     let initramfs = dir.path().join("initramfs.cpio.zst");
     let out = dir.path().join("boot/efi/EFI/BOOT/BOOTX64.EFI");
 
-    fs::create_dir_all(&old_release).unwrap();
-    fs::write(
-        old_release.join("vmlinuz-7.0.9-peios-0.8.2"),
-        b"old-directory-kernel",
-    )
-    .unwrap();
+    fs::create_dir_all(&modules).unwrap();
+    fs::write(&kernel, b"old-directory-kernel").unwrap();
     fs::write(&initramfs, b"initramfs").unwrap();
 
     let child = Command::new(MKUKI)
@@ -275,13 +270,8 @@ fn watch_adopts_a_replaced_release_directory() {
 
     wait_for_payload(&out, b"old-directory-kernel");
 
-    fs::create_dir_all(&new_release).unwrap();
-    fs::write(
-        new_release.join("vmlinuz-7.0.9-peios-0.8.3"),
-        b"new-directory-kernel",
-    )
-    .unwrap();
-    fs::remove_dir_all(&old_release).unwrap();
+    fs::write(&replacement, b"new-directory-kernel").unwrap();
+    fs::rename(&replacement, &kernel).unwrap();
 
     wait_for_payload(&out, b"new-directory-kernel");
 }
