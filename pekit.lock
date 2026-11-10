@@ -82,8 +82,8 @@
       "path": "github.com/gcslib/rust",
       "git": "https://github.com/gcslib/rust",
       "dir": "",
-      "commit": "a6428e662ddbf0dc59a381c82f41648c7e08df10",
-      "tree": "7c08d3ff3627e8f9197c56c2ec2f557ebf9053699e780e6b5a3b3d87f1f576de"
+      "commit": "a9faccee54a0a15ab62bf3d4db53977d25316c64",
+      "tree": "8f39266d619e88b2bd9672654853ce3be8d71076640acb4c6bf2e74a7b783fa9"
     },
     {
       "path": "github.com/peios/authd",

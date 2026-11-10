@@ -151,8 +151,8 @@ fn retried(test: rust.RustTest, given: List<{at: String, place: Dir | File}>, en
 }
 
 # Each member's unit tests, but the multi-call program's and the wrappers',
-# with the translations beside each test program, where uucore's tests of
-# them look.
+# with the translations beside each test program, in `/work/deps`, where
+# `run_test` runs it, since uucore's tests look for them there.
 def test units(
     tests: List<List<rust.RustTest>> = for each in members(crates()) if each != "peiosutils" and not WRAPPERS.contains(each) {
         = rust.tests(crates(), each, features = features_of(each))
@@ -160,7 +160,7 @@ def test units(
     given: List<{at: String, place: Dir | File}> = [
         ...loaded(),
         ...shell(),
-        ...(for each in locales() { = {at = "/work/locales/{each.name}"; place = each.place} }),
+        ...(for each in locales() { = {at = "/work/deps/locales/{each.name}"; place = each.place} }),
     ],
 ) {
     let each = for some in tests { = ran(some, given) }
