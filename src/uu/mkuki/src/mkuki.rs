@@ -128,7 +128,7 @@ pub fn uu_app() -> Command {
                 .conflicts_with("kernel")
                 .value_parser(clap::value_parser!(PathBuf))
                 .help(
-                    "directory containing one */vmlinuz-* kernel; with --watch, resolve it again after directory changes",
+                    "directory containing vmlinuz; with --watch, rebuild after directory changes",
                 ),
         )
         .arg(
@@ -230,26 +230,16 @@ fn print_stub_info() {
 /// manager's job, like mkirf's watch mode.
 ///
 /// A concrete input's *parent directory* is watched non-recursively, not the
-/// file itself: that survives atomic temp+rename writes. `--kernel-dir` is the
-/// exception: its tree is watched recursively, and the unique `*/vmlinuz-*`
-/// kernel is resolved again for every rebuild. That lets a package upgrade
-/// replace a release-named directory without stranding the watcher on the old
-/// path. During an upgrade, zero or multiple candidates merely make that
-/// rebuild fail; the resident watcher retries after the next directory event.
+/// file itself: that survives atomic temp+rename writes. `--kernel-dir` watches
+/// the selected directory non-recursively and reads its `vmlinuz` on every
+/// rebuild. A missing image makes that rebuild fail; the resident watcher
+/// retries after the next directory event.
 fn watch(cfg: &Config, debounce_secs: u64) -> Result<(), Box<dyn Error>> {
     let targets = watch_targets(cfg);
 
-    // Guard the one self-retriggering case the non-recursive watch can't avoid:
-    // --out sitting directly in a non-recursive watched directory, or anywhere
-    // below a recursively watched kernel directory.
+    // An output directly in a watched directory would retrigger every build.
     if let Some(out_parent) = cfg.out.parent()
-        && targets.iter().any(|target| {
-            if target.recursive {
-                out_parent.starts_with(&target.path)
-            } else {
-                out_parent == target.path
-            }
-        })
+        && targets.iter().any(|target| out_parent == target)
     {
         return Err(format!(
             "--watch: --out {} sits directly in a watched input directory; \
@@ -265,14 +255,9 @@ fn watch(cfg: &Config, debounce_secs: u64) -> Result<(), Box<dyn Error>> {
         let _ = tx.send(event);
     })?;
     for target in &targets {
-        let mode = if target.recursive {
-            RecursiveMode::Recursive
-        } else {
-            RecursiveMode::NonRecursive
-        };
         watcher
-            .watch(&target.path, mode)
-            .map_err(|e| format!("cannot watch {}: {e}", target.path.display()))?;
+            .watch(target, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("cannot watch {}: {e}", target.display()))?;
     }
 
     // Arm every watch before the initial build. Otherwise an input update in
@@ -310,18 +295,13 @@ fn rebuild(cfg: &Config) {
     }
 }
 
-struct WatchTarget {
-    path: PathBuf,
-    recursive: bool,
-}
-
 /// Directories whose changes should trigger a rebuild. A literal `--cmdline`
 /// is static, so only a `--cmdline-file` is watchable.
-fn watch_targets(cfg: &Config) -> Vec<WatchTarget> {
+fn watch_targets(cfg: &Config) -> Vec<PathBuf> {
     let mut targets = Vec::new();
     match &cfg.kernel {
         Kernel::File(path) => add_parent_target(&mut targets, path),
-        Kernel::Directory(path) => add_target(&mut targets, path.clone(), true),
+        Kernel::Directory(path) => add_target(&mut targets, path.clone()),
     }
     add_parent_target(&mut targets, &cfg.initramfs);
     if let Cmdline::File(path) = &cfg.cmdline {
@@ -330,19 +310,17 @@ fn watch_targets(cfg: &Config) -> Vec<WatchTarget> {
     targets
 }
 
-fn add_parent_target(targets: &mut Vec<WatchTarget>, path: &Path) {
+fn add_parent_target(targets: &mut Vec<PathBuf>, path: &Path) {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {
-        add_target(targets, parent.to_path_buf(), false);
+        add_target(targets, parent.to_path_buf());
     }
 }
 
-fn add_target(targets: &mut Vec<WatchTarget>, path: PathBuf, recursive: bool) {
-    if let Some(existing) = targets.iter_mut().find(|target| target.path == path) {
-        existing.recursive |= recursive;
-    } else {
-        targets.push(WatchTarget { path, recursive });
+fn add_target(targets: &mut Vec<PathBuf>, path: PathBuf) {
+    if !targets.contains(&path) {
+        targets.push(path);
     }
 }
 
@@ -387,52 +365,11 @@ fn resolve_kernel(kernel: &Kernel) -> Result<PathBuf, Box<dyn Error>> {
     match kernel {
         Kernel::File(path) => Ok(path.clone()),
         Kernel::Directory(path) => {
-            let mut candidates = Vec::new();
-            for release in fs::read_dir(path)
-                .map_err(|e| format!("cannot read kernel directory {}: {e}", path.display()))?
-            {
-                let release = release.map_err(|e| {
-                    format!(
-                        "cannot read entry in kernel directory {}: {e}",
-                        path.display()
-                    )
-                })?;
-                if !release
-                    .file_type()
-                    .map_err(|e| format!("cannot inspect {}: {e}", release.path().display()))?
-                    .is_dir()
-                {
-                    continue;
-                }
-                for entry in fs::read_dir(release.path()).map_err(|e| {
-                    format!(
-                        "cannot read kernel release directory {}: {e}",
-                        release.path().display()
-                    )
-                })? {
-                    let entry = entry.map_err(|e| {
-                        format!("cannot read entry in {}: {e}", release.path().display())
-                    })?;
-                    if entry.file_name().to_string_lossy().starts_with("vmlinuz-")
-                        && entry
-                            .file_type()
-                            .map_err(|e| format!("cannot inspect {}: {e}", entry.path().display()))?
-                            .is_file()
-                    {
-                        candidates.push(entry.path());
-                    }
-                }
+            let image = path.join("vmlinuz");
+            if !image.is_file() {
+                return Err(format!("no kernel found at {}", image.display()).into());
             }
-            candidates.sort();
-            match candidates.len() {
-                1 => Ok(candidates.remove(0)),
-                0 => Err(format!("no kernel found under {}/*/vmlinuz-*", path.display()).into()),
-                count => Err(format!(
-                    "{count} kernels found under {}/*/vmlinuz-*; refusing to guess",
-                    path.display()
-                )
-                .into()),
-            }
+            Ok(image)
         }
     }
 }
@@ -910,7 +847,7 @@ mod tests {
     }
 
     #[test]
-    fn kernel_directory_requires_exactly_one_image() {
+    fn kernel_directory_requires_a_flat_image() {
         let dir = tempfile::tempdir().unwrap();
         let modules = dir.path().join("modules");
         fs::create_dir_all(modules.join("7.0.9-peios-0.8.3")).unwrap();
@@ -923,25 +860,29 @@ mod tests {
                 .contains("no kernel found")
         );
 
-        let expected = modules
-            .join("7.0.9-peios-0.8.3")
-            .join("vmlinuz-7.0.9-peios-0.8.3");
-        fs::write(&expected, b"kernel").unwrap();
-        assert_eq!(resolve_kernel(&kernel).unwrap(), expected);
-
-        let second_release = modules.join("7.0.9-peios-0.8.4");
-        fs::create_dir_all(&second_release).unwrap();
-        fs::write(second_release.join("vmlinuz-7.0.9-peios-0.8.4"), b"kernel").unwrap();
+        // A release-named image cannot substitute for the closure's image.
+        fs::write(
+            modules.join("7.0.9-peios-0.8.3/vmlinuz-7.0.9-peios-0.8.3"),
+            b"old layout",
+        )
+        .unwrap();
         assert!(
             resolve_kernel(&kernel)
                 .unwrap_err()
                 .to_string()
-                .contains("2 kernels found")
+                .contains("no kernel found")
         );
+
+        let expected = modules.join("vmlinuz");
+        fs::create_dir(&expected).unwrap();
+        assert!(resolve_kernel(&kernel).is_err());
+        fs::remove_dir(&expected).unwrap();
+        fs::write(&expected, b"kernel").unwrap();
+        assert_eq!(resolve_kernel(&kernel).unwrap(), expected);
     }
 
     #[test]
-    fn kernel_directory_is_watched_recursively() {
+    fn kernel_directory_is_watched_nonrecursively() {
         let cfg = Config {
             stub: None,
             kernel: Kernel::Directory(PathBuf::from("/usr/lib/modules")),
@@ -951,20 +892,9 @@ mod tests {
         };
         let targets = watch_targets(&cfg);
 
-        assert!(
-            targets
-                .iter()
-                .any(|target| { target.path == Path::new("/usr/lib/modules") && target.recursive })
-        );
-        assert!(
-            targets
-                .iter()
-                .any(|target| { target.path == Path::new("/system/boot") && !target.recursive })
-        );
-        assert!(
-            targets
-                .iter()
-                .any(|target| { target.path == Path::new("/lcl/etc/boot") && !target.recursive })
+        assert_eq!(
+            targets,
+            ["/usr/lib/modules", "/system/boot", "/lcl/etc/boot"].map(PathBuf::from)
         );
     }
 }
