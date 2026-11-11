@@ -2153,6 +2153,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "peios-skeleton"
+version = "0.8.18"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "peios-sys"
 version = "0.3.0"
 source = "git+https://github.com/peios/peios-rs.git?rev=4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116#4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116"
@@ -2270,6 +2277,7 @@ dependencies = [
  "pu_sha512sum",
  "pu_shred",
  "pu_shuf",
+ "pu_skeleton",
  "pu_sleep",
  "pu_sort",
  "pu_split",
@@ -3507,6 +3515,17 @@ dependencies = [
  "rand_chacha 0.10.0",
  "rustc-hash 2.1.2",
  "sha3",
+ "uucore",
+]
+
+[[package]]
+name = "pu_skeleton"
+version = "0.8.18"
+dependencies = [
+ "clap",
+ "peios",
+ "peios-skeleton",
+ "tempfile",
  "uucore",
 ]
 

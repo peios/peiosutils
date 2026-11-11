@@ -145,6 +145,7 @@ feat_common_core = [
   "seq",
   "shred",
   "shuf",
+  "skeleton",
   "sleep",
   "sort",
   "split",
@@ -665,6 +666,7 @@ stratafs = { optional = true, version = "0.8.0", package = "pu_stratafs", path =
 seq = { optional = true, version = "0.8.0", package = "pu_seq", path = "src/uu/seq" }
 shred = { optional = true, version = "0.8.0", package = "pu_shred", path = "src/uu/shred" }
 shuf = { optional = true, version = "0.8.0", package = "pu_shuf", path = "src/uu/shuf" }
+skeleton = { optional = true, version = "0.8.0", package = "pu_skeleton", path = "src/uu/skeleton" }
 sleep = { optional = true, version = "0.8.0", package = "pu_sleep", path = "src/uu/sleep" }
 sort = { optional = true, version = "0.8.0", package = "pu_sort", path = "src/uu/sort" }
 split = { optional = true, version = "0.8.0", package = "pu_split", path = "src/uu/split" }
