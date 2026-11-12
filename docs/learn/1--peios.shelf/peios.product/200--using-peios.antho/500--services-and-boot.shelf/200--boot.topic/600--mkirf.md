@@ -38,12 +38,22 @@ deterministic archive does not itself prove a bootable or trusted image.
 
 ## Early segments precede compression
 
-The reserved `++` directory groups content consumed before the main archive is
-decompressed, such as microcode data. Its child directory names label
-segments; they do not appear as those labels in the archive root.
+The kernel reads some content before it decompresses the main archive: CPU
+microcode and ACPI table overrides. This content forms the early part of the
+initramfs. Packages place it in `/usr/lib/earlyirf/`, and an administrator
+can place it in `/lcl/lib/earlyirf/`. Each child directory is one segment,
+and its contents map onto the archive root. For example,
+`/usr/lib/earlyirf/intel-ucode/kernel/x86/microcode/GenuineIntel.bin`
+becomes `kernel/x86/microcode/GenuineIntel.bin`.
 
-The segments are combined into an uncompressed early archive. Conflicting
-entries are rejected rather than silently choosing a copy.
+A segment in `/lcl/lib/earlyirf/` replaces the segment of the same name in
+`/usr/lib/earlyirf/`, and mkirf warns about the replacement. mkirf still
+reads segments from the old `++` directory at the root of the tree and warns
+about each one.
+
+The segments are combined into an uncompressed early archive ahead of the
+main archive, which does not hold them. Conflicting entries are rejected
+rather than silently choosing a copy.
 
 ## Watch mode is a build loop
 

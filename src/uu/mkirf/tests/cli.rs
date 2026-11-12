@@ -375,14 +375,14 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
     fs::create_dir(&src).unwrap();
     sample_tree(&src);
 
-    // Two early segments that share the `kernel/` parent — microcode and an
-    // ACPI table override. The segment dir name (`microcode`/`acpi`) is a
-    // label and must not appear in the cpio paths.
+    // Two early segments that share the `kernel/` parent — packaged microcode
+    // and the operator's ACPI table override. The segment dir name
+    // (`microcode`/`acpi`) is a label and must not appear in the cpio paths.
     let blob = vec![0xABu8; 4099]; // odd size, so data alignment is non-trivial
-    let uc = src.join("++/microcode/kernel/x86/microcode");
+    let uc = src.join("usr/lib/earlyirf/microcode/kernel/x86/microcode");
     fs::create_dir_all(&uc).unwrap();
     fs::write(uc.join("GenuineIntel.bin"), &blob).unwrap();
-    let acpi = src.join("++/acpi/kernel/firmware/acpi");
+    let acpi = src.join("lcl/lib/earlyirf/acpi/kernel/firmware/acpi");
     fs::create_dir_all(&acpi).unwrap();
     fs::write(acpi.join("ssdt.aml"), b"FAKEAML").unwrap();
 
@@ -430,7 +430,7 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
         "shared parent dir must be de-duplicated",
     );
 
-    // The gzip main archive follows, and it does NOT carry the `++` tree.
+    // The main archive follows, and it does NOT carry the early directories.
     assert_eq!(
         &bytes[gz_start..gz_start + 4],
         &[0x28, 0xb5, 0x2f, 0xfd],
@@ -442,8 +442,8 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
         "main archive still carries the real tree",
     );
     assert!(
-        !main.windows(2).any(|w| w == b"++"),
-        "the ++ tree must not leak into the compressed main archive",
+        !main.windows(b"earlyirf".len()).any(|w| w == b"earlyirf"),
+        "the early directories must not leak into the compressed main archive",
     );
     assert!(
         !main
@@ -454,8 +454,61 @@ fn early_segments_become_an_aligned_uncompressed_prefix() {
 }
 
 #[test]
+fn the_operators_segment_replaces_a_packaged_one_and_legacy_segments_warn() {
+    let dir = tempdir().unwrap();
+    let src = dir.path().join("src");
+    fs::create_dir(&src).unwrap();
+    sample_tree(&src);
+
+    // The same segment, `intel-ucode`, packaged and the operator's: the
+    // operator's wins whole. A segment in the legacy `++` is still read.
+    let microcode = "kernel/x86/microcode";
+    for (tier, body) in [("usr", &b"PACKAGED"[..]), ("lcl", &b"OPERATOR"[..])] {
+        let at = src.join(format!("{tier}/lib/earlyirf/intel-ucode/{microcode}"));
+        fs::create_dir_all(&at).unwrap();
+        fs::write(at.join("GenuineIntel.bin"), body).unwrap();
+    }
+    let legacy = src.join(format!("++/amd-ucode/{microcode}"));
+    fs::create_dir_all(&legacy).unwrap();
+    fs::write(legacy.join("AuthenticAMD.bin"), b"LEGACY").unwrap();
+
+    let out = dir.path().join("initramfs.cpio.zst");
+    let run = Command::new(MKIRF).arg(&src).arg(&out).output().unwrap();
+    assert!(run.status.success());
+    let stderr = String::from_utf8_lossy(&run.stderr);
+    assert!(
+        stderr.contains(
+            "early segment `intel-ucode` in /usr/lib/earlyirf is shadowed by \
+             /lcl/lib/earlyirf/intel-ucode"
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("early segment `amd-ucode` is in the legacy /++ directory"),
+        "{stderr}"
+    );
+
+    let bytes = fs::read(&out).unwrap();
+    let (early, gz_start) = walk_early(&bytes);
+    let body = |p: &[u8]| {
+        let e = early.iter().find(|e| e.name == p).expect("early entry");
+        &bytes[e.data_off..e.data_off + e.size]
+    };
+    assert_eq!(body(b"kernel/x86/microcode/GenuineIntel.bin"), b"OPERATOR");
+    assert_eq!(body(b"kernel/x86/microcode/AuthenticAMD.bin"), b"LEGACY");
+
+    let main = decompress(&bytes[gz_start..]);
+    for leaked in [&b"PACKAGED"[..], b"OPERATOR", b"LEGACY"] {
+        assert!(
+            !main.windows(leaked.len()).any(|w| w == leaked),
+            "early content must not be in the main archive",
+        );
+    }
+}
+
+#[test]
 fn no_early_segments_is_a_plain_gzip() {
-    // Without a `++/` tree the output is byte-for-byte the v1 single gzip.
+    // Without early segments the output is a single compressed member.
     let dir = tempdir().unwrap();
     let src = dir.path().join("src");
     fs::create_dir(&src).unwrap();

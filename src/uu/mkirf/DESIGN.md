@@ -4,7 +4,7 @@
 initramfs cpio — the in-memory root filesystem the kernel unpacks at
 boot.
 
-**Status:** v1 + hook DAG + early-region (`++/`) implemented.
+**Status:** v1 + hook DAG + early region (`/usr/lib/earlyirf/`) implemented.
 
 ---
 
@@ -31,8 +31,9 @@ mode: rebuild whenever the source tree changes (§9). That is what lets
 `/boot/initramfs/` behave like an ordinary directory — edit a file,
 the initramfs is current again — rather than a build artifact.
 
-A third thing it does, conditionally: the reserved `++/` subdirectory
-(§10) is lifted out of the main archive and emitted as an **uncompressed
+A third thing it does, conditionally: the early directories,
+`/usr/lib/earlyirf/` and `/lcl/lib/earlyirf/` (§10), are lifted out of the
+main archive and emitted as an **uncompressed
 cpio prepended ahead of it** — the kernel's "early initramfs" region, for
 content read before decompression (CPU microcode, ACPI table overrides).
 
@@ -249,7 +250,7 @@ service manager's job, and Peios has none yet, so `--watch` is built but
 not yet wired into the running system (boot-design.md §5.9). Recursive
 watching is handled by the `notify` crate.
 
-## 10. The early region — `++/`
+## 10. The early region — `/usr/lib/earlyirf/`
 
 The Linux kernel accepts an initramfs that is **several cpio archives
 concatenated**, and it reads any *leading uncompressed* archive before it
@@ -262,22 +263,33 @@ decompresses the rest. Two kernel facilities consume that early region:
 
 Both are read *before* decompression, so they cannot live in the
 (compressed) main archive — they need their own uncompressed cpio out
-front. mkirf produces that from a reserved source subdirectory:
+front. mkirf produces that from the early directories, in precedence order:
 
 ```
-<src>/++/<segment>/<files…>
-  ++/microcode/kernel/x86/microcode/GenuineIntel.bin
-  ++/acpi/kernel/firmware/acpi/ssdt.aml
+<src>/lcl/lib/earlyirf/<segment>/<files…>   what the operator puts there
+<src>/usr/lib/earlyirf/<segment>/<files…>   what packages ship
+<src>/++/<segment>/<files…>                 legacy, warned about
+  usr/lib/earlyirf/intel-ucode/kernel/x86/microcode/GenuineIntel.bin
+  lcl/lib/earlyirf/acpi/kernel/firmware/acpi/ssdt.aml
 ```
+
+"irf" is Peios's word for the initramfs, as in mkirf itself: `earlyirf` is
+the early part of it. The directories mirror the hook directories (§8): `/usr` because a package ships only `/usr`, `/lcl` for the
+operator's own. `++/` at the archive root is where the old package format
+installed segments, before packages were confined to `/usr`; it is read
+last, with a warning per segment, so the move needs no flag day.
 
 ### 10.1 What mkirf does with it
 
-- `++/` is **excluded from the main archive** entirely.
-- Each immediate child of `++/` is one **segment**, whose own contents map
-  onto the cpio root — the segment directory name (`microcode`, `acpi`) is
-  a human label and **does not appear** in the archive. So
-  `++/microcode/kernel/x86/microcode/GenuineIntel.bin` becomes the cpio
-  entry `kernel/x86/microcode/GenuineIntel.bin`.
+- The early directories are **excluded from the main archive** entirely.
+- Each immediate child of an early directory is one **segment**, whose own
+  contents map onto the cpio root — the segment directory name
+  (`intel-ucode`, `acpi`) is a label and **does not appear** in the
+  archive. So `usr/lib/earlyirf/intel-ucode/kernel/x86/microcode/GenuineIntel.bin`
+  becomes the cpio entry `kernel/x86/microcode/GenuineIntel.bin`.
+- A name identifies a segment: the same name in two directories is one
+  segment, and the earlier directory's copy wins whole, with a warning
+  naming the one it shadows — as a hook's does.
 - All segments **merge into one uncompressed cpio** with a single trailer,
   written ahead of the gzip main archive on the same stream. Segments
   share parent directories (`kernel/`); duplicates collapse, and a genuine
@@ -306,10 +318,11 @@ initrd), so a 16-byte file offset is a 16-byte physical alignment.
 mkirf stays **format-agnostic**: it knows "early segments", never
 "microcode" or "ACPI". The kernel-ABI specifics — the magic
 `kernel/x86/microcode/` path, the per-vendor blob assembly — live in the
-*packages* that drop a tree into `++/` (e.g. `intel-ucode`, `amd-ucode`),
+*packages* that drop a tree into `/usr/lib/earlyirf/` (e.g. `intel-ucode`,
+`amd-ucode`),
 not in the tool. And because the convention is a directory the composed
 tree already carries, nothing downstream changes: `mkuki` embeds the
 combined image as a single `.initrd` (no bootloader needed to stack
 initrds), and `--watch` regenerates correctly when a package install drops
-a new segment into `++/`. Packages express *what*; mkirf expresses *how it
+a new segment into `/usr/lib/earlyirf/`. Packages express *what*; mkirf expresses *how it
 is framed*.
