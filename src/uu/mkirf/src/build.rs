@@ -29,9 +29,10 @@ pub fn run(src: &Path, out: &Path, excludes: &Excludes, compress: Compress) -> R
     validate_layout(src)?;
 
     let mut entries = walk::walk(src, excludes).map_err(|e| Error::Io(e.to_string()))?;
-    // The `++/` tree is not part of the main (compressed) archive — it becomes
-    // the uncompressed early region prepended ahead of it (see collect_early).
-    entries.retain(|e| e.name != EARLY_DIR && !starts_with_early(&e.name));
+    // The early directories are not part of the main (compressed) archive —
+    // they become the uncompressed early region prepended ahead of it (see
+    // collect_early).
+    entries.retain(|e| !is_early(&e.name));
 
     // Resolve the hook DAG and inject the generated sequence manifests as
     // synthetic entries — they are not files in the source tree.
@@ -66,7 +67,10 @@ pub fn run(src: &Path, out: &Path, excludes: &Excludes, compress: Compress) -> R
     // archive order (every directory before its descendants).
     entries.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let early = collect_early(src)?;
+    let (early, early_warnings) = collect_early(src)?;
+    for w in &early_warnings {
+        eprintln!("mkirf: warning: {w}");
+    }
 
     // Write to a sibling temp file and rename into place.
     let tmp = temp_path(out);
@@ -130,73 +134,110 @@ fn add_missing_ancestors(entries: &mut Vec<cpio::Entry>, dir: &str) {
     }
 }
 
-/// The reserved source subdirectory holding early-initramfs segments.
-const EARLY_DIR: &[u8] = b"++";
+/// The directories holding the early region's segments, in precedence
+/// order, as [`hooks::HOOK_DIRS`] holds the hooks: `/usr` is what packages
+/// ship and `/lcl` what the operator puts there by hand. A segment in `/lcl`
+/// replaces the one of the same name in `/usr`, so a package's microcode can
+/// be overridden without deleting its payload.
+///
+/// The legacy `++/` at the archive root, from before packages could ship
+/// only `/usr`, is read last and warned about.
+const EARLY_DIRS: &[&str] = &["lcl/lib/earlyirf", "usr/lib/earlyirf", LEGACY_EARLY_DIR];
 
-/// True if `name` is a path inside the reserved `++/` early-segment tree.
-fn starts_with_early(name: &[u8]) -> bool {
-    name.starts_with(b"++/")
+/// The one in [`EARLY_DIRS`] that is on its way out.
+const LEGACY_EARLY_DIR: &str = "++";
+
+/// True if `name` is one of [`EARLY_DIRS`] or a path inside one: the early
+/// region's, not the main archive's.
+fn is_early(name: &[u8]) -> bool {
+    EARLY_DIRS.iter().any(|dir| {
+        let dir = dir.as_bytes();
+        name == dir || (name.starts_with(dir) && name.get(dir.len()) == Some(&b'/'))
+    })
 }
 
-/// Collect the early-initramfs segments from `<src>/++/`.
+/// Collect the early region's segments from [`EARLY_DIRS`], with any
+/// advisories.
 ///
-/// `++/` is the reserved, deliberately-odd directory for content the kernel
-/// consumes *before* it decompresses the main initramfs — CPU microcode and
-/// ACPI table overrides. Each immediate child is one segment whose own
+/// The early region is the content the kernel consumes *before* it
+/// decompresses the main initramfs: CPU microcode and ACPI table overrides.
+/// Each immediate child of an early directory is one segment whose own
 /// contents map onto the cpio root, so
-/// `++/microcode/kernel/x86/microcode/GenuineIntel.bin` becomes
-/// `kernel/x86/microcode/GenuineIntel.bin`. The segment directory name
-/// (`microcode`, `acpi`, …) is just a human label and never appears in the
-/// archive. All segments merge into one uncompressed cpio prepended ahead of
-/// the main archive. See DESIGN.md §10.
+/// `usr/lib/earlyirf/intel-ucode/kernel/x86/microcode/GenuineIntel.bin`
+/// becomes `kernel/x86/microcode/GenuineIntel.bin`. The segment directory
+/// name (`intel-ucode`, `acpi`, …) is just a label and never appears in the
+/// archive. A name identifies a segment, so the same name in two directories
+/// is one segment, and the earlier directory's wins. All segments merge into
+/// one uncompressed cpio prepended ahead of the main archive. See DESIGN.md
+/// §10.
 ///
 /// mkirf stays format-agnostic: it knows "early segments", never "microcode".
-fn collect_early(src: &Path) -> Result<Vec<cpio::Entry>> {
-    let plus = src.join("++");
-    let Ok(meta) = fs::symlink_metadata(&plus) else {
-        return Ok(Vec::new()); // no `++/` — no early region
-    };
-    if !meta.is_dir() {
-        return Err(Error::Layout(format!(
-            "{}: `++` must be a directory of early segments",
-            plus.display(),
-        )));
-    }
-
+fn collect_early(src: &Path) -> Result<(Vec<cpio::Entry>, Vec<String>)> {
     let no_excludes = Excludes::compile(&[]).map_err(|e| Error::Io(e.to_string()))?;
-
-    // Sort segment directories for deterministic merge order.
-    let mut children: Vec<PathBuf> = fs::read_dir(&plus)
-        .map_err(|e| Error::Io(format!("{}: {e}", plus.display())))?
-        .map(|d| d.map(|d| d.path()))
-        .collect::<std::result::Result<_, _>>()
-        .map_err(|e| Error::Io(format!("{}: {e}", plus.display())))?;
-    children.sort();
-
     let mut entries: Vec<cpio::Entry> = Vec::new();
-    for child in children {
-        let cmeta = fs::symlink_metadata(&child)
-            .map_err(|e| Error::Io(format!("{}: {e}", child.display())))?;
-        if !cmeta.is_dir() {
+    let mut warnings: Vec<String> = Vec::new();
+    // Each segment taken, by name, with where it was taken from.
+    let mut taken: Vec<(std::ffi::OsString, String)> = Vec::new();
+
+    for dest in EARLY_DIRS {
+        let dir = src.join(dest);
+        let Ok(meta) = fs::symlink_metadata(&dir) else {
+            continue;
+        };
+        if !meta.is_dir() {
             return Err(Error::Layout(format!(
-                "{}: every `++` entry must be a directory (one per early segment) — `{}` is not. \
-                 An early segment is a tree (e.g. microcode/kernel/x86/microcode/), not a file.",
-                plus.display(),
-                child.file_name().unwrap_or_default().to_string_lossy(),
+                "{}: `{dest}` must be a directory of early segments",
+                src.display(),
             )));
         }
-        let seg = walk::walk(&child, &no_excludes).map_err(|e| Error::Io(e.to_string()))?;
-        entries.extend(seg);
+
+        // Sort segment directories for deterministic merge order.
+        let mut children: Vec<PathBuf> = fs::read_dir(&dir)
+            .map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?
+            .map(|d| d.map(|d| d.path()))
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| Error::Io(format!("{}: {e}", dir.display())))?;
+        children.sort();
+
+        for child in children {
+            let name = child.file_name().unwrap_or_default().to_owned();
+            let label = name.to_string_lossy().into_owned();
+            let cmeta = fs::symlink_metadata(&child)
+                .map_err(|e| Error::Io(format!("{}: {e}", child.display())))?;
+            if !cmeta.is_dir() {
+                return Err(Error::Layout(format!(
+                    "{}: every entry of `{dest}` must be a directory (one per early segment) — \
+                     `{label}` is not. An early segment is a tree (e.g. \
+                     intel-ucode/kernel/x86/microcode/), not a file.",
+                    src.display(),
+                )));
+            }
+            if let Some((_, winner)) = taken.iter().find(|(n, _)| *n == name) {
+                warnings.push(format!(
+                    "early segment `{label}` in /{dest} is shadowed by /{winner}/{label}"
+                ));
+                continue;
+            }
+            if *dest == LEGACY_EARLY_DIR {
+                warnings.push(format!(
+                    "early segment `{label}` is in the legacy /{LEGACY_EARLY_DIR} directory; \
+                     move it to /usr/lib/earlyirf (packaged) or /lcl/lib/earlyirf (local)"
+                ));
+            }
+            let seg = walk::walk(&child, &no_excludes).map_err(|e| Error::Io(e.to_string()))?;
+            entries.extend(seg);
+            taken.push((name, (*dest).to_owned()));
+        }
     }
 
     // Segments share parent directories (e.g. both microcode and acpi root at
     // `kernel/`). Merge into archive order, then drop duplicate directory
     // entries; a genuine file collision between segments is an error.
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    dedup_segment_dirs(entries)
+    Ok((dedup_segment_dirs(entries)?, warnings))
 }
 
-/// Deduplicate the shared parent directories produced when several `++`
+/// Deduplicate the shared parent directories produced when several early
 /// segments are merged. Two identical directory entries collapse to one; two
 /// entries with the same name where either is not a directory is a real
 /// conflict between segments and fails the build. Input must be sorted.
@@ -211,7 +252,7 @@ fn dedup_segment_dirs(entries: Vec<cpio::Entry>) -> Result<Vec<cpio::Entry>> {
                     continue; // shared parent dir — keep one
                 }
                 return Err(Error::Layout(format!(
-                    "++ segments both define `{}`",
+                    "early segments both define `{}`",
                     String::from_utf8_lossy(&e.name),
                 )));
             }
