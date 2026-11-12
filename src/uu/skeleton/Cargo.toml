@@ -1,0 +1,32 @@
+[package]
+name = "pu_skeleton"
+description = "skeleton ~ (peiosutils) apply a Peios root skeleton file"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/skeleton"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/skeleton.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116" }
+peios-skeleton = { path = "../../../crates/peios-skeleton" }
+
+[[bin]]
+name = "skeleton"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

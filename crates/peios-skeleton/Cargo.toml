@@ -1,0 +1,14 @@
+[package]
+name = "peios-skeleton"
+description = "Read and apply a Peios root skeleton file (PSPU 11)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -121,12 +121,12 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "auth-abi"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=2967575498d176cf7154170d050ec44a3fc74523#2967575498d176cf7154170d050ec44a3fc74523"
+source = "git+https://github.com/peios/authd.git?rev=dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003#dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003"
 
 [[package]]
 name = "auth-core"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=2967575498d176cf7154170d050ec44a3fc74523#2967575498d176cf7154170d050ec44a3fc74523"
+source = "git+https://github.com/peios/authd.git?rev=dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003#dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003"
 dependencies = [
  "libc",
 ]
@@ -2122,7 +2122,7 @@ dependencies = [
 [[package]]
 name = "peios-auth"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=2967575498d176cf7154170d050ec44a3fc74523#2967575498d176cf7154170d050ec44a3fc74523"
+source = "git+https://github.com/peios/authd.git?rev=dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003#dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003"
 dependencies = [
  "auth-abi",
 ]
@@ -2150,6 +2150,13 @@ dependencies = [
  "libc",
  "utility-client",
  "utility-ffi",
+]
+
+[[package]]
+name = "peios-skeleton"
+version = "0.8.18"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]
@@ -2270,6 +2277,7 @@ dependencies = [
  "pu_sha512sum",
  "pu_shred",
  "pu_shuf",
+ "pu_skeleton",
  "pu_sleep",
  "pu_sort",
  "pu_split",
@@ -3511,6 +3519,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pu_skeleton"
+version = "0.8.18"
+dependencies = [
+ "clap",
+ "peios",
+ "peios-skeleton",
+ "tempfile",
+ "uucore",
+]
+
+[[package]]
 name = "pu_sleep"
 version = "0.8.18"
 dependencies = [
@@ -4509,7 +4528,7 @@ dependencies = [
 [[package]]
 name = "terminal-input"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=2967575498d176cf7154170d050ec44a3fc74523#2967575498d176cf7154170d050ec44a3fc74523"
+source = "git+https://github.com/peios/authd.git?rev=dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003#dc1ff5bb0b1c4b29b6d88a72cdcb86f0de7e5003"
 dependencies = [
  "auth-core",
  "libc",
