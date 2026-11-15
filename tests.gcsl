@@ -166,6 +166,19 @@ def test units(
     let each = for some in tests { = ran(some, given) }
 }
 
+# Authentication and identity clients, without building every utility.
+def test authentication_clients(
+    tests: List<List<rust.RustTest>> = for each in ["pu_passwd", "pu_logonse", "uucore"] {
+        = rust.tests(crates(), each, features = if each == "uucore" { ["sid-resolver"] } else { [] })
+    },
+    given: List<{at: String, place: Dir | File}> = [
+        ...loaded(), ...shell(),
+        ...(for each in locales() { = {at = "/work/deps/locales/{each.name}"; place = each.place} }),
+    ],
+) {
+    let each = for some in tests { = ran(some, given) }
+}
+
 # The wrappers' unit tests, which link the C libraries pekit builds.
 def test wrappers(
     tests: List<List<rust.RustTest>> = for each in WRAPPERS { = rust.tests(linking_c_libraries(), each) },
