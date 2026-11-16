@@ -16,7 +16,7 @@
       "prefix": "github.com/peios/authd",
       "git": "https://github.com/peios/authd",
       "dir": "",
-      "rev": "af88d8959d1a3354e421a03523807f0b423670eb"
+      "rev": "5e3b2ea133d6ffd3c6b9d7b7c2ae52cd06589be1"
     },
     {
       "prefix": "github.com/gcslib/rust",
@@ -89,8 +89,8 @@
       "path": "github.com/peios/authd",
       "git": "https://github.com/peios/authd",
       "dir": "",
-      "commit": "af88d8959d1a3354e421a03523807f0b423670eb",
-      "tree": "2f96d0f653ea10fc682220c4886b81809aa65b325e48ec6e51de0898d776d834"
+      "commit": "5e3b2ea133d6ffd3c6b9d7b7c2ae52cd06589be1",
+      "tree": "7a7ffd22320da4c6dd27d346b5b32d9738efb6697ef9349ba721d9d17a02a80c"
     },
     {
       "path": "github.com/peios/peios-rs",
