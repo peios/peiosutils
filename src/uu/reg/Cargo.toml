@@ -25,10 +25,10 @@ uucore = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "3950d35950c46cb3538885b7cf05bde059393def" }
 # The batch document, which other programs take too.
 registry-docs = { path = "../../../crates/registry-docs" }
-peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116" }
+peios-sys = { git = "https://github.com/peios/peios-rs.git", rev = "3950d35950c46cb3538885b7cf05bde059393def" }
 
 [[bin]]
 name = "reg"

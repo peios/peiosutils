@@ -121,12 +121,12 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "auth-abi"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4#3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4"
+source = "git+https://github.com/peios/authd.git?rev=ea3c9f90c48052ff0c0757d88032c9c706964b9a#ea3c9f90c48052ff0c0757d88032c9c706964b9a"
 
 [[package]]
 name = "auth-core"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4#3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4"
+source = "git+https://github.com/peios/authd.git?rev=ea3c9f90c48052ff0c0757d88032c9c706964b9a#ea3c9f90c48052ff0c0757d88032c9c706964b9a"
 dependencies = [
  "libc",
 ]
@@ -2112,7 +2112,7 @@ dependencies = [
 [[package]]
 name = "peios"
 version = "0.4.0"
-source = "git+https://github.com/peios/peios-rs.git?rev=4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116#4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116"
+source = "git+https://github.com/peios/peios-rs.git?rev=3950d35950c46cb3538885b7cf05bde059393def#3950d35950c46cb3538885b7cf05bde059393def"
 dependencies = [
  "bitflags",
  "libc",
@@ -2122,7 +2122,7 @@ dependencies = [
 [[package]]
 name = "peios-auth"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4#3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4"
+source = "git+https://github.com/peios/authd.git?rev=ea3c9f90c48052ff0c0757d88032c9c706964b9a#ea3c9f90c48052ff0c0757d88032c9c706964b9a"
 dependencies = [
  "auth-abi",
 ]
@@ -2162,7 +2162,7 @@ dependencies = [
 [[package]]
 name = "peios-sys"
 version = "0.3.0"
-source = "git+https://github.com/peios/peios-rs.git?rev=4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116#4c9c0106550e3b7d8b4a98dfd0d7a5490fcf0116"
+source = "git+https://github.com/peios/peios-rs.git?rev=3950d35950c46cb3538885b7cf05bde059393def#3950d35950c46cb3538885b7cf05bde059393def"
 dependencies = [
  "bindgen 0.70.1",
  "pkg-config",
@@ -4528,7 +4528,7 @@ dependencies = [
 [[package]]
 name = "terminal-input"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4#3f42589dcb738c4fe9d2cdd6b26df92f61c6a2c4"
+source = "git+https://github.com/peios/authd.git?rev=ea3c9f90c48052ff0c0757d88032c9c706964b9a#ea3c9f90c48052ff0c0757d88032c9c706964b9a"
 dependencies = [
  "auth-core",
  "libc",
