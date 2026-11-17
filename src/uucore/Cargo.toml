@@ -22,7 +22,7 @@ workspace = true
 path = "src/lib/lib.rs"
 
 [dependencies]
-peios-auth = { git = "https://github.com/peios/authd.git", rev = "ea3c9f90c48052ff0c0757d88032c9c706964b9a", optional = true }
+peios-auth = { git = "https://github.com/peios/authd.git", rev = "b2b4d18ab639dac0e2990f3ccdd8e718d544b353", optional = true }
 bstr = { workspace = true, optional = true }
 clap = { workspace = true }
 uucore_procs = { workspace = true }
@@ -103,7 +103,7 @@ unic-langid = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-auth-core = { git = "https://github.com/peios/authd.git", rev = "ea3c9f90c48052ff0c0757d88032c9c706964b9a" }
+auth-core = { git = "https://github.com/peios/authd.git", rev = "b2b4d18ab639dac0e2990f3ccdd8e718d544b353" }
 tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
