@@ -507,7 +507,31 @@ fn touch_file(
             return Ok(());
         }
 
-        if let Err(e) = create_without_truncate(path) {
+        // With the --sd* flags the file is created carrying its descriptor,
+        // in one native create, so it never exists with the descriptor it
+        // would have inherited instead. A link at `path`, which can only be
+        // a dangling one here, is not followed: that is an error, as
+        // creating through it would put the descriptor somewhere else.
+        let created = match &opts.creator_sd {
+            Some(sd) => match sd.create_file(path) {
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                    if path.is_symlink() {
+                        Err(Error::new(
+                            ErrorKind::AlreadyExists,
+                            translate!("touch-error-dangling-link"),
+                        ))
+                    } else {
+                        // Made by something else since the check above: it
+                        // is an existing file now, and its descriptor is not
+                        // ours to set.
+                        Ok(())
+                    }
+                }
+                created => created,
+            },
+            None => create_without_truncate(path).map(drop),
+        };
+        if let Err(e) = created {
             // we need to check if the path is the path to a directory (ends with a separator)
             // we can't use File::create to create a directory
             // we cannot use path.is_dir() because it calls fs::metadata which we already called
@@ -531,17 +555,6 @@ fn touch_file(
             }
             show!(e);
             return Ok(());
-        }
-
-        // The file was just created — apply the creator SD, if the
-        // --sd* flags requested one (create-then-set; see
-        // peios/sd-creation-design.md). On failure remove the file so
-        // nothing half-secured is left behind.
-        if let Some(sd) = &opts.creator_sd
-            && let Err(e) = sd.apply_to(path)
-        {
-            let _ = fs::remove_file(path);
-            return Err(e);
         }
 
         // Minor optimization: if no reference time, timestamp, or date was specified, we're done.

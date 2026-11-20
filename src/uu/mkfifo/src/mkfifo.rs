@@ -9,7 +9,7 @@
 //! A FIFO is created with the Linux `mkfifo()` namespace syscall — KACS
 //! computes its Security Descriptor from the parent directory's
 //! inheritable ACEs. The `--sd*` flag group (see `uucore::sd_control`)
-//! overrides that, applied post-create with `libp_sd::set_sd`.
+//! overrides that, applied post-create with `peios::file::set_sd`.
 
 use clap::{Arg, ArgAction, Command};
 use nix::sys::stat::Mode;
@@ -68,9 +68,9 @@ pub fn uu_app() -> Command {
 ///
 /// The FIFO is created with the Linux `mkfifo()` namespace syscall —
 /// KACS-native open does not create special nodes — so the descriptor
-/// is applied afterward with `libp_sd::set_sd` (create-then-set; see
-/// `peios/sd-creation-design.md`). If the descriptor cannot be applied
-/// the FIFO is removed, leaving nothing half-secured behind.
+/// is applied afterward with `peios::file::set_sd` (create-then-set). If
+/// the descriptor cannot be applied the FIFO is removed, leaving nothing
+/// half-secured behind.
 fn make_fifo(path: &str, sd: Option<&CreatorSd>) -> UResult<()> {
     // The raw Linux inode mode is compatibility metadata only on Peios;
     // KACS computes the FIFO's real Security Descriptor.

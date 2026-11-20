@@ -8,7 +8,7 @@
 //! A shared clap argument group + parser for the object-creation commands
 //! (`mkdir`, `mkfifo`, `mknod`, `touch`). It replaces the POSIX `-m` / umask
 //! permission surface with flags that specify a newly created object's
-//! Security Descriptor directly. See `peios/sd-creation-design.md`.
+//! Security Descriptor directly.
 //!
 //! | Flag | Argument | Effect |
 //! |---|---|---|
@@ -20,19 +20,32 @@
 //!
 //! `--sddl` is mutually exclusive with the four shortcuts (enforced by
 //! clap). [`creator_sd_from_matches`] turns parsed [`ArgMatches`] into an
-//! optional [`CreatorSd`]; the command creates the object, then
-//! [`CreatorSd::apply_to`] writes the descriptor with `peios::file::set_sd`.
+//! optional [`CreatorSd`].
 //!
-//! Applying is always post-create. The atomic `kacs_open` create path is
-//! unusable for restrictive descriptors — §11.2's post-create strict
-//! AccessCheck rolls back a create whose new SD does not self-grant the
-//! creator a data right (`--no-inherit` being the obvious case). See the
-//! design doc.
+//! A regular file or directory is created carrying its descriptor, in one
+//! native create ([`CreatorSd::create_file`], [`CreatorSd::create_dir`]),
+//! so it never exists with the descriptor it would have inherited
+//! instead. The kernel grants the creating open what it asks for even
+//! where the new descriptor would refuse it, so a restrictive descriptor,
+//! `--no-inherit` included, creates as readily as any other. See "The
+//! creator's access" in the kernel's KACS native-open reference,
+//! <https://learn.peios.org/kernel/internals/kacs/file-security/kacs-native-open>.
+//!
+//! `--label` is the exception. A descriptor supplied at creation carries
+//! a full SACL, which takes `SeSecurityPrivilege`, while setting a label
+//! alone takes only `WRITE_OWNER`. So the label is set just after the
+//! create, through the creating handle rather than by name. Until then
+//! the new object has the label it inherited.
+//!
+//! A FIFO or device node cannot be made by a native create, so `mkfifo`
+//! and `mknod` create the node and then apply the descriptor by name
+//! ([`CreatorSd::apply_to_created`]).
 
+use std::io;
 use std::path::Path;
 
 use clap::{Arg, ArgAction, ArgMatches};
-use peios::file::{self, SecInfo};
+use peios::file::{self, CreateOptions, Disposition, FileAccess, OpenFlags, OpenOptions, SecInfo};
 use peios::security::{
     AclBuilder, Control, IntegrityLevel, LabelPolicy, SdBuilder, SdView, SecurityDescriptor, Sid,
     sddl,
@@ -104,14 +117,68 @@ pub fn args() -> [Arg; 5] {
 pub struct CreatorSd {
     sd: SecurityDescriptor,
     info: SecInfo,
+    /// What a native create is given: `sd` without a `--label` SACL, or
+    /// `None` where the label is all there is.
+    creation: Option<SecurityDescriptor>,
 }
 
 impl CreatorSd {
-    /// Apply the descriptor to a just-created object at `path` via
-    /// `peios::file::set_sd`.
+    /// Create the directory `path` carrying this descriptor.
     ///
-    /// `path` must already exist — this is the create-then-set step. On
-    /// failure the caller is expected to unlink the half-secured object.
+    /// Fails with `EEXIST` if something is already there, a symlink
+    /// included: a link at `path` is never followed.
+    pub fn create_dir(&self, path: &Path) -> io::Result<()> {
+        self.create(path, CreateOptions::DIRECTORY, true)
+    }
+
+    /// Create the empty regular file `path` carrying this descriptor.
+    ///
+    /// Fails with `EEXIST` if something is already there, a symlink
+    /// included: a link at `path` is never followed.
+    pub fn create_file(&self, path: &Path) -> io::Result<()> {
+        self.create(path, CreateOptions::empty(), false)
+    }
+
+    fn create(&self, path: &Path, options: CreateOptions, directory: bool) -> io::Result<()> {
+        let label = self.info.contains(SecInfo::LABEL);
+        // A control handle: nothing is read or written through it. The
+        // label write takes WRITE_OWNER, which the creating open is
+        // granted because it asked.
+        let mut access = FileAccess::READ_ATTRIBUTES | FileAccess::SYNCHRONIZE;
+        if label {
+            access |= FileAccess::WRITE_OWNER;
+        }
+        let mut open = OpenOptions::new();
+        open.desired_access(access)
+            .disposition(Disposition::Create)
+            .options(options)
+            .flags(OpenFlags::SYMLINK_NOFOLLOW);
+        if let Some(creation) = &self.creation {
+            open.creator_sd(creation);
+        }
+        let (handle, _) = open.create(None, path).map_err(io::Error::from)?;
+        if label && let Err(e) = handle.fd_set_sd(SecInfo::LABEL, &self.sd) {
+            drop(handle);
+            let _ = if directory {
+                std::fs::remove_dir(path)
+            } else {
+                std::fs::remove_file(path)
+            };
+            let e = io::Error::from(e);
+            return Err(io::Error::new(
+                e.kind(),
+                format!("setting the integrity label: {e}"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Apply the descriptor to an existing object at `path` via
+    /// `peios::file::set_sd`, following a symlink there.
+    ///
+    /// For an object this process just created, use
+    /// [`CreatorSd::create_file`] or [`CreatorSd::create_dir`] instead, or
+    /// [`CreatorSd::apply_to_created`] where no native create can make it.
     pub fn apply_to(&self, path: &Path) -> UResult<()> {
         self.set(path, 0)
     }
@@ -119,8 +186,8 @@ impl CreatorSd {
     /// Apply the descriptor to an object this process just created at
     /// `path`, without following a symlink at the final component.
     ///
-    /// The create-then-set step is a TOCTOU window: `mkdir`/`mkfifo`/
-    /// `mknod` create the object, then name it a second time to stamp the
+    /// The create-then-set step is a TOCTOU window: `mkfifo` and `mknod`
+    /// create the node, then name it a second time to stamp the
     /// descriptor on it. In an attacker-writable directory the object can
     /// be replaced by a symlink in between, and a following `set_sd` would
     /// write the caller's owner/DACL/label onto whatever the link points
@@ -155,7 +222,10 @@ pub fn creator_sd_from_sddl(sddl_str: &str) -> UResult<CreatorSd> {
     let sd =
         sddl::parse(sddl_str).map_err(|e| USimpleError::new(1, format!("invalid SDDL: {e}")))?;
     let info = info_from_blob(sd.as_bytes(), false)?;
-    Ok(CreatorSd { sd, info })
+    // An `S:` section here is a full SACL, which takes the same privilege
+    // at creation as set afterwards, so it is created with the rest.
+    let creation = Some(sd.clone());
+    Ok(CreatorSd { sd, info, creation })
 }
 
 /// Parse the `--sd*` flags from `matches` into an optional [`CreatorSd`].
@@ -200,6 +270,16 @@ pub fn creator_sd_from_matches(matches: &ArgMatches) -> UResult<Option<CreatorSd
             .dacl(&dacl)
             .control(Control::DACL_PROTECTED, Control::empty());
     }
+    let build = |builder: &SdBuilder| {
+        builder
+            .build()
+            .map_err(|e| USimpleError::new(1, format!("building security descriptor: {e}")))
+    };
+    // The descriptor a native create is given has no label: see the
+    // module documentation.
+    let creation = (owner.is_some() || group.is_some() || no_inherit)
+        .then(|| build(&builder))
+        .transpose()?;
     if let Some(level) = label {
         let sacl = AclBuilder::new()
             .label(label_rid(level), LabelPolicy::NO_WRITE_UP)
@@ -208,14 +288,12 @@ pub fn creator_sd_from_matches(matches: &ArgMatches) -> UResult<Option<CreatorSd
         builder.sacl(&sacl);
     }
 
-    let sd = builder
-        .build()
-        .map_err(|e| USimpleError::new(1, format!("building security descriptor: {e}")))?;
+    let sd = build(&builder)?;
     // The shortcuts never build a full audit SACL — the only SACL they
     // can produce is the `--label` mandatory-label ACE, so SACL presence
     // maps to LABEL (rather than full SACL) security information.
     let info = info_from_blob(sd.as_bytes(), true)?;
-    Ok(Some(CreatorSd { sd, info }))
+    Ok(Some(CreatorSd { sd, info, creation }))
 }
 
 /// Resolve a `--owner` / `--group` SID argument, prefixing parse errors

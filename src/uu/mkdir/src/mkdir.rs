@@ -151,16 +151,18 @@ fn create_dir(path: &Path, config: &Config) -> UResult<()> {
     create_one(path, config, config.creator_sd.as_ref())
 }
 
-/// Create exactly one directory and, when `sd` is given, apply it.
+/// Create exactly one directory, carrying `sd` when one is given.
 ///
-/// The directory is created with the ordinary `mkdir()` namespace
-/// syscall — KACS computes its inherited SD — and the descriptor, if
-/// any, is applied afterward (create-then-set; see
-/// `peios/sd-creation-design.md`). If the descriptor cannot be applied
-/// the just-created directory is removed so no half-secured directory is
-/// left behind.
+/// Without `sd` the directory is created with the ordinary `mkdir()`
+/// namespace syscall, and KACS computes its inherited SD. With one it is
+/// a native create carrying the descriptor, so the directory never exists
+/// with the descriptor it would have inherited instead.
 fn create_one(path: &Path, config: &Config, sd: Option<&CreatorSd>) -> UResult<()> {
-    match fs::create_dir(path) {
+    let created = match sd {
+        Some(sd) => sd.create_dir(path),
+        None => fs::create_dir(path),
+    };
+    match created {
         Ok(()) => {}
         // Under `-p`, losing a creation race (or a `..`-laden path that
         // resolves to an existing directory) is success, not an error.
@@ -174,16 +176,6 @@ fn create_one(path: &Path, config: &Config, sd: Option<&CreatorSd>) -> UResult<(
             "{}",
             translate!("mkdir-verbose-created-directory", "util_name" => "mkdir", "path" => path.quote())
         )?;
-    }
-
-    // `apply_to_created`, not `apply_to`: the directory was just created,
-    // so a symlink at that name can only be one an attacker swapped in,
-    // and following it would stamp our descriptor on their target instead.
-    if let Some(sd) = sd
-        && let Err(e) = sd.apply_to_created(path)
-    {
-        let _ = fs::remove_dir(path);
-        return Err(e);
     }
 
     Ok(())

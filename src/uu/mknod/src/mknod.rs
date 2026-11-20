@@ -12,7 +12,7 @@
 //! The node is created with the Linux `mknod()` namespace syscall — KACS
 //! computes its Security Descriptor from the parent directory's
 //! inheritable ACEs. The `--sd*` flag group (see `uucore::sd_control`)
-//! overrides that, applied post-create with `libp_sd::set_sd`.
+//! overrides that, applied post-create with `peios::file::set_sd`.
 
 use clap::{Arg, Command, value_parser};
 use nix::sys::stat::{Mode, SFlag, mknod as nix_mknod};
@@ -124,9 +124,9 @@ pub fn uu_app() -> Command {
 ///
 /// The node is created with the Linux `mknod()` namespace syscall —
 /// KACS-native open does not create special nodes — so the descriptor
-/// is applied afterward with `libp_sd::set_sd` (create-then-set; see
-/// `peios/sd-creation-design.md`). If the descriptor cannot be applied
-/// the node is removed, leaving nothing half-secured behind.
+/// is applied afterward with `peios::file::set_sd` (create-then-set). If
+/// the descriptor cannot be applied the node is removed, leaving nothing
+/// half-secured behind.
 fn make_node(name: &str, file_type: &FileType, dev: u64, sd: Option<&CreatorSd>) -> UResult<()> {
     // The raw Linux inode mode is compatibility metadata only on Peios;
     // KACS computes the node's real Security Descriptor.

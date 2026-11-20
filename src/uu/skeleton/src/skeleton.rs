@@ -14,11 +14,10 @@
 //
 // A directory with a descriptor is created with it, in one native create
 // (kacs_open), never created and then given it: there is no moment at which
-// it has the descriptor it would inherit instead. That create rolls back if
-// the new descriptor grants its creator no data right, so whoever applies a
-// skeleton must be granted one by each descriptor in it; the skeleton's
-// descriptors all grant SYSTEM full control, and root builders run as SYSTEM.
-// A directory without one is created plainly, and inherits from its parent.
+// it has the descriptor it would inherit instead. The creating open is
+// granted what it asks for whatever the new descriptor says, so a
+// descriptor need not grant whoever applies the skeleton anything. A
+// directory without one is created plainly, and inherits from its parent.
 
 use clap::{Arg, ArgAction, Command};
 use peios::file::{CreateOptions, Disposition, FileAccess, OpenFlags, OpenOptions};
@@ -143,8 +142,8 @@ fn descriptors(skeleton: &Skeleton) -> Result<HashMap<&str, SecurityDescriptor>,
 /// is an error, not a way to create elsewhere.
 fn create_with(at: &Path, sd: &SecurityDescriptor) -> io::Result<()> {
     OpenOptions::new()
-        // Every native open asks for a data right; for a directory, listing.
-        .desired_access(FileAccess::LIST_DIRECTORY)
+        // A control handle, with no data right: nothing is read from it.
+        .desired_access(FileAccess::READ_ATTRIBUTES | FileAccess::SYNCHRONIZE)
         .disposition(Disposition::Create)
         .options(CreateOptions::DIRECTORY)
         .flags(OpenFlags::SYMLINK_NOFOLLOW)

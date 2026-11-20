@@ -42,8 +42,7 @@ A directory with a descriptor in the file is created with that descriptor in
 the same native create call. It never exists with an inherited descriptor
 first. A directory without one inherits from its parent.
 
-The create fails if the new descriptor grants its creator no right to read the
-directory. The skeleton's descriptors grant SYSTEM full control, and root
-builders run as SYSTEM.
+A descriptor doesn't need to grant whoever applies the skeleton any access.
+The create succeeds even if the new descriptor would deny its creator.
 
 The file's format is specified in PSPU 11.
