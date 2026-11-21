@@ -113,3 +113,31 @@ pub fn set_created_at_fd(fd: BorrowedFd<'_>, created_at: Option<SystemTime>) -> 
     file::set_created_at(Some(fd), Path::new(""), created_at, libc::AT_EMPTY_PATH)
         .map_err(io::Error::from)
 }
+
+/// Delete the read-only regular file `path`, without following a symbolic
+/// link there. KACS refuses a plain unlink of a read-only file; this deletes
+/// it through a handle, with a delete disposition that sets the flag aside.
+/// That needs `DELETE` and `FILE_WRITE_ATTRIBUTES` on the file, the right
+/// that would clear the flag. For a caller that has decided the file goes,
+/// read-only or not, as a move does once the file is copied elsewhere.
+pub fn delete_read_only(path: &Path) -> io::Result<()> {
+    let mut options = file::OpenOptions::new();
+    options
+        .desired_access(
+            file::FileAccess::DELETE
+                | file::FileAccess::WRITE_ATTRIBUTES
+                | file::FileAccess::SYNCHRONIZE,
+        )
+        .disposition(file::Disposition::Open)
+        .share_access(
+            file::ShareAccess::READ | file::ShareAccess::WRITE | file::ShareAccess::DELETE,
+        )
+        .flags(file::OpenFlags::SYMLINK_NOFOLLOW);
+    let handle = options.open(None, path)?;
+    handle.set_delete_disposition(
+        file::DeleteDisposition::DELETE
+            | file::DeleteDisposition::POSIX_SEMANTICS
+            | file::DeleteDisposition::IGNORE_READONLY,
+    )?;
+    Ok(())
+}

@@ -36,6 +36,7 @@ use uucore::fs::{
 };
 use uucore::parser::shortcut_value_parser::ShortcutValueParser;
 use uucore::preserve::{self, Attributes, Preserve, copy_attributes};
+use uucore::special_attributes;
 use uucore::translate;
 use uucore::update_control;
 
@@ -1025,7 +1026,7 @@ fn rename_dir_fallback(
     }
 
     // Remove the source directory after successful copy
-    fs::remove_dir_all(from)?;
+    remove_moved_tree(from)?;
 
     Ok(())
 }
@@ -1229,7 +1230,7 @@ fn rename_file_fallback(
         {
             // Create a hardlink to the first moved file instead of copying
             fs::hard_link(&existing_target, to)?;
-            fs::remove_file(from)?;
+            remove_moved_file(from)?;
             return Ok(());
         }
     }
@@ -1242,9 +1243,55 @@ fn rename_file_fallback(
         let _ = fs::remove_file(to);
     })?;
 
-    fs::remove_file(from)
+    remove_moved_file(from)
         .map_err(|err| io::Error::new(err.kind(), translate!("mv-error-permission-denied")))?;
     Ok(())
+}
+
+// A move on one filesystem is a rename, which a read-only flag does not
+// prevent. A move to another copies the file and then deletes it, which
+// the flag does. So that the two do not differ, the source of a move is
+// deleted read-only or not: see `special_attributes::delete_read_only`.
+
+/// Remove the source file of a cross-filesystem move.
+fn remove_moved_file(from: &Path) -> io::Result<()> {
+    match fs::remove_file(from) {
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied && is_read_only(from) => {
+            special_attributes::delete_read_only(from)
+        }
+        result => result,
+    }
+}
+
+/// Remove the source tree of a cross-filesystem move. Should a read-only
+/// file in it stop that, those are deleted and the rest removed again.
+fn remove_moved_tree(from: &Path) -> io::Result<()> {
+    match fs::remove_dir_all(from) {
+        Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+            delete_read_only_files(from)?;
+            fs::remove_dir_all(from)
+        }
+        result => result,
+    }
+}
+
+/// Delete every read-only regular file under `dir`, following no links.
+fn delete_read_only_files(dir: &Path) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let path = entry.path();
+        if file_type.is_dir() {
+            delete_read_only_files(&path)?;
+        } else if file_type.is_file() && is_read_only(&path) {
+            special_attributes::delete_read_only(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn is_read_only(path: &Path) -> bool {
+    special_attributes::read(path, false).is_ok_and(|attrs| attrs.read_only)
 }
 
 fn is_empty_dir(path: &Path) -> bool {
