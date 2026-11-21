@@ -19,7 +19,7 @@ path = "src/logonse.rs"
 doctest = false
 
 [dependencies]
-peios-auth = { git = "https://github.com/peios/authd.git", rev = "70e1b852d6caef635ba296e58a91f19072f6c8ba" }
+peios-auth = { git = "https://github.com/peios/authd.git", rev = "327ce68648e1594331c88a457afb261f9000b4c3" }
 clap = { workspace = true }
 libc = { workspace = true }
 uucore = { workspace = true, features = ["sid-render"] }
@@ -27,12 +27,12 @@ jiff = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "55fee6acb5ff23b97296d97ee966fa7c9f30a173" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "623520bc0405fdd4526bab45f45882e7f19b1ab1" }
 
 [[bin]]
 name = "logonse"
 path = "src/main.rs"
 
 [dev-dependencies]
-auth-core = { git = "https://github.com/peios/authd.git", rev = "70e1b852d6caef635ba296e58a91f19072f6c8ba" }
+auth-core = { git = "https://github.com/peios/authd.git", rev = "327ce68648e1594331c88a457afb261f9000b4c3" }
 tempfile = { workspace = true }

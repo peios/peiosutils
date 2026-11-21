@@ -21,7 +21,7 @@ doctest = false
 [dependencies]
 clap = { workspace = true }
 uucore = { workspace = true }
-peios = { git = "https://github.com/peios/peios-rs.git", rev = "55fee6acb5ff23b97296d97ee966fa7c9f30a173" }
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "623520bc0405fdd4526bab45f45882e7f19b1ab1" }
 peios-skeleton = { path = "../../../crates/peios-skeleton" }
 
 [[bin]]
