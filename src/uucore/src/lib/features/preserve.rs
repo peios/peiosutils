@@ -989,13 +989,16 @@ pub fn copy_attributes(source: &Path, dest: &Path, attributes: &Attributes) -> P
 ///
 /// Nothing is done if the source has no date at all, or `dest` is on a
 /// filesystem with nowhere to keep one: there, as for a copy made anywhere
-/// else, the copy's creation date is its own birth time. Symlinks are
-/// skipped; Created At is a property of the file a link reaches.
+/// else, the copy's creation date is its own birth time. Only regular files
+/// and directories are copied with one: the record is read and written
+/// through their ordinary descriptors, as the kernel refuses an anchor here
+/// (`EBADF`), and a symlink's Created At would be a property of the file it
+/// reaches.
 fn copy_creation_date(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
-    if source.is_symlink() || dest.is_symlink() {
+    let (Some(source_file), Some(dest_file)) = (&source.file, &dest.file) else {
         return Ok(());
-    }
-    let created = match special_attributes::creation_time_fd(source.anchor.as_fd()) {
+    };
+    let created = match special_attributes::creation_time_fd(source_file.as_fd()) {
         Ok(created) => created,
         Err(e) if special_attributes::is_unsupported(&e) => source.metadata().created().ok(),
         Err(e) => {
@@ -1011,7 +1014,7 @@ fn copy_creation_date(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> Preserv
     let Some(created) = created else {
         return Ok(());
     };
-    match special_attributes::set_created_at_fd(dest.anchor.as_fd(), Some(created)) {
+    match special_attributes::set_created_at_fd(dest_file.as_fd(), Some(created)) {
         Err(e) if !special_attributes::is_unsupported(&e) => Err(PreserveError::IoContext(
             e,
             format!("failed to set the creation date of {}", dest.path.quote()),
@@ -1023,12 +1026,13 @@ fn copy_creation_date(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> Preserv
 /// Make `dest` read-only if `source` is. A source on a filesystem that keeps
 /// no special attributes is not read-only. A read-only source whose copy
 /// cannot be made read-only is a failure to preserve, reported as such.
-/// Symlinks are skipped.
+/// Only regular files and directories carry the flag, through their
+/// ordinary descriptors, as for [`copy_creation_date`].
 fn copy_read_only(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
-    if source.is_symlink() || dest.is_symlink() {
+    let (Some(source_file), Some(dest_file)) = (&source.file, &dest.file) else {
         return Ok(());
-    }
-    let read_only = match special_attributes::read_fd(source.anchor.as_fd()) {
+    };
+    let read_only = match special_attributes::read_fd(source_file.as_fd()) {
         Ok(attrs) => attrs.read_only,
         Err(e) if special_attributes::is_unsupported(&e) => false,
         Err(e) => {
@@ -1041,7 +1045,7 @@ fn copy_read_only(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveRes
     if !read_only {
         return Ok(());
     }
-    special_attributes::set_read_only_fd(dest.anchor.as_fd(), true).map_err(|e| {
+    special_attributes::set_read_only_fd(dest_file.as_fd(), true).map_err(|e| {
         PreserveError::IoContext(e, format!("failed to make {} read-only", dest.path.quote()))
     })
 }

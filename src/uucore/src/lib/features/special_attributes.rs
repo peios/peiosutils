@@ -79,9 +79,10 @@ pub fn set_created_at(path: &Path, created_at: Option<SystemTime>, follow: bool)
     file::set_created_at(None, path, created_at, at_flags(follow)).map_err(io::Error::from)
 }
 
-// The same, for the file a descriptor refers to. An `O_PATH` descriptor
-// serves, so a caller can work on an object it pinned once, without naming
-// it again.
+// The same, for the file a descriptor refers to, so a caller can work on an
+// object it opened once without naming it again. Not an `O_PATH` descriptor:
+// the kernel takes an empty path here as `f*xattr` does, which refuses one
+// with `EBADF`.
 
 /// The special attributes of the file `fd` refers to.
 pub fn read_fd(fd: BorrowedFd<'_>) -> io::Result<SpecialAttributes> {
