@@ -12,6 +12,7 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{self, Metadata};
 use std::io::{self, IsTerminal, stdin};
 use std::ops::BitOr;
+use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::path::MAIN_SEPARATOR;
 use std::path::Path;
@@ -22,6 +23,7 @@ use uucore::parser::shortcut_value_parser::ShortcutValueParser;
 use uucore::translate;
 use uucore::{format_usage, os_str_as_bytes, prompt_yes, show_error};
 
+mod delete;
 mod platform;
 use platform::{safe_remove_dir_recursive, safe_remove_empty_dir, safe_remove_file};
 
@@ -43,6 +45,8 @@ enum RmError {
     RefusingToRemoveDirectory(OsString),
     #[error("{}", translate!("rm-error-may-not-abbreviate-no-preserve-root"))]
     MayNotAbbreviateNoPreserveRoot,
+    #[error("{}", translate!("rm-error-cannot-remove-read-only", "file" => _0.quote()))]
+    CannotRemoveReadOnly(OsString),
 }
 
 impl UError for RmError {}
@@ -77,6 +81,96 @@ fn show_removal_error(error: io::Error, path: &Path) -> bool {
         show_error!("{e}");
     }
     true
+}
+
+/// What the user said to removing a read-only regular file.
+enum Approval {
+    Remove,
+    Keep,
+    /// rm could not ask, and refused; the error is reported.
+    Refused,
+}
+
+/// Whether to remove the read-only regular file `path`, of `len` bytes.
+///
+/// KACS protects a read-only file from deletion by anyone, so rm sets the
+/// flag aside only when asked to: with `-f`, without a word; otherwise it
+/// asks, on a terminal or under `-i`. Unable to ask, it refuses, and says
+/// how to proceed.
+fn approve_read_only(path: &Path, len: u64, options: &Options) -> Approval {
+    let stdin_ok = options.__presume_input_tty.unwrap_or(false) || stdin().is_terminal();
+    let ask = match options.interactive {
+        InteractiveMode::Never => return Approval::Remove,
+        InteractiveMode::Always => true,
+        InteractiveMode::Once | InteractiveMode::PromptProtected => stdin_ok,
+    };
+    if !ask {
+        show_error!(
+            "{}",
+            RmError::CannotRemoveReadOnly(path.as_os_str().to_os_string())
+        );
+        return Approval::Refused;
+    }
+    let question = if len == 0 {
+        translate!("rm-prompt-remove-read-only-empty", "file" => path.quote())
+    } else {
+        translate!("rm-prompt-remove-read-only", "file" => path.quote())
+    };
+    if prompt_yes!("{question}") {
+        Approval::Remove
+    } else {
+        Approval::Keep
+    }
+}
+
+/// Delete `name`, in `dir` or the current directory, through a handle (see
+/// [`delete`]), and report the outcome against `path`. Returns true on
+/// error.
+fn delete_with_feedback(
+    dir: Option<BorrowedFd<'_>>,
+    name: &Path,
+    path: &Path,
+    is_dir: bool,
+    read_only: bool,
+    options: &Options,
+) -> bool {
+    // A directory whose entries are marked but still open elsewhere is not
+    // empty yet. Marked too, it would not be removed when they go: KACS
+    // removes a directory only at its own last close, and only if empty
+    // then. So it is left in place, and that is said.
+    if is_dir && options.when_closed && !is_dir_empty(path) {
+        show_error!(
+            "{}",
+            translate!("rm-error-cannot-remove", "file" => path.quote())
+                + ": "
+                + &translate!("rm-error-directory-not-emptied")
+        );
+        return true;
+    }
+    match delete::delete(dir, name, is_dir, read_only, options.when_closed) {
+        Ok(delete::Deleted::Now) => {
+            if is_dir {
+                verbose_removed_directory(path, options);
+            } else {
+                verbose_removed_file(path, options);
+            }
+            false
+        }
+        Ok(delete::Deleted::WhenClosed) => {
+            eprintln!(
+                "{}: {}",
+                uucore::util_name(),
+                translate!("rm-pending-removal", "file" => path.quote())
+            );
+            false
+        }
+        Err(e) => {
+            let e =
+                e.map_err_context(|| translate!("rm-error-cannot-remove", "file" => path.quote()));
+            show_error!("{e}");
+            true
+        }
+    }
 }
 
 /// Helper function for permission denied errors
@@ -159,6 +253,10 @@ pub struct Options {
     pub verbose: bool,
     /// `-g`, `--progress`
     pub progress: bool,
+    /// `--when-closed`: mark each regular file and directory for deletion,
+    /// so it is removed when the last program using it closes it, rather
+    /// than at once.
+    pub when_closed: bool,
     #[doc(hidden)]
     /// `---presume-input-tty`
     /// Always use `None`; GNU flag for testing use only
@@ -176,6 +274,7 @@ impl Default for Options {
             dir: false,
             verbose: false,
             progress: false,
+            when_closed: false,
             __presume_input_tty: None,
         }
     }
@@ -192,6 +291,7 @@ static OPT_PROMPT_ONCE: &str = "prompt-once";
 static OPT_RECURSIVE: &str = "recursive";
 static OPT_VERBOSE: &str = "verbose";
 static OPT_PROGRESS: &str = "progress";
+static OPT_WHEN_CLOSED: &str = "when-closed";
 static PRESUME_INPUT_TTY: &str = "-presume-input-tty";
 
 static ARG_FILES: &str = "files";
@@ -249,6 +349,7 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         dir: matches.get_flag(OPT_DIR),
         verbose: matches.get_flag(OPT_VERBOSE),
         progress: matches.get_flag(OPT_PROGRESS),
+        when_closed: matches.get_flag(OPT_WHEN_CLOSED),
         __presume_input_tty: if matches.get_flag(PRESUME_INPUT_TTY) {
             Some(true)
         } else {
@@ -379,6 +480,12 @@ pub fn uu_app() -> Command {
                 .short('g')
                 .long(OPT_PROGRESS)
                 .help(translate!("rm-help-progress"))
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new(OPT_WHEN_CLOSED)
+                .long(OPT_WHEN_CLOSED)
+                .help(translate!("rm-help-when-closed"))
                 .action(ArgAction::SetTrue),
         )
         // From the GNU source code:
@@ -706,10 +813,27 @@ fn remove_dir(path: &Path, options: &Options, progress_bar: Option<&ProgressBar>
 }
 
 fn remove_file(path: &Path, options: &Options, progress_bar: Option<&ProgressBar>) -> bool {
-    if prompt_file(path, options) {
+    let metadata = fs::symlink_metadata(path).ok();
+    let regular = metadata.as_ref().is_some_and(Metadata::is_file);
+    let read_only = regular && delete::is_read_only(None, path);
+    let proceed = if read_only {
+        let len = metadata.as_ref().map_or(0, Metadata::len);
+        match approve_read_only(path, len, options) {
+            Approval::Remove => true,
+            Approval::Keep => false,
+            Approval::Refused => return true,
+        }
+    } else {
+        prompt_file(path, options)
+    };
+    if proceed {
         // Update progress bar before removing the file
         if let Some(pb) = progress_bar {
             pb.inc(1);
+        }
+
+        if read_only || (regular && options.when_closed) {
+            return delete_with_feedback(None, path, path, false, read_only, options);
         }
 
         // Individual file removal goes through secure unlinkat traversal.
@@ -719,7 +843,7 @@ fn remove_file(path: &Path, options: &Options, progress_bar: Option<&ProgressBar
             return result;
         }
 
-        match fs::remove_file(path) {
+        match fs::remove_file(path).map_err(|e| delete::explain_busy(e, false)) {
             Ok(_) => {
                 verbose_removed_file(path, options);
             }

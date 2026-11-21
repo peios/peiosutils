@@ -5,9 +5,11 @@ Ordinary copies attempt to preserve executable status as a best-effort operation
 An explicit preservation list starts with no implicit attributes.
 .PP
 .B --preserve
-without a value requests access and modification times.
+without a value requests access and modification times, and the creation
+date.
 .B -p
-requests those times and executable status, both as required operations.
+requests those, executable status and the read\-only flag, all as required
+operations.
 .B --preserve-all
 and
 .B -a
@@ -27,7 +29,11 @@ The corresponding source list with inherited entries removed.
 Full-list selection takes precedence over the inherited-entry-stripping variant.
 .TP
 .B timestamps
-Access and modification times, not creation or change time.
+Access and modification times, and the creation date: the copy's Created At
+becomes the source's creation date, which is its Created At if set and
+otherwise its birth time. Not change time. A destination on a filesystem that
+keeps no special attributes keeps no creation date, and the copy's is its own
+birth time.
 .TP
 .B links
 Hard-link relationships among source entries selected by this invocation.
@@ -39,7 +45,16 @@ otherwise clear them. Symbolic links are skipped.
 This does not preserve each Unix mode bit independently.
 .TP
 .B security
-Extended attributes in the security.* namespace, except security.peios.sd.
+Extended attributes in the security.* namespace, except security.peios.sd and
+security.peios.sattr, which the descriptor attributes,
+.B timestamps
+and
+.B readonly
+carry.
+.TP
+.B readonly
+The read\-only flag, set on the copy after everything else. A read\-only
+source whose copy cannot be made read\-only fails to preserve.
 .TP
 .B xattrs, xattr
 Extended attributes outside security.*.

@@ -5,6 +5,9 @@ cross\-filesystem move creates a new object whose security inherits from the
 destination; numeric ownership and set\-id state are not carried as an
 identity\-preservation mechanism.
 .PP
+A move keeps the file's creation date and read\-only flag. A rename keeps them
+with the object; a cross\-filesystem move copies them, best effort.
+.PP
 Any explicit preserve\-family selection forces copying followed by source
 removal even on one filesystem. Attribute selection is then applied to the new
 object. Consult cp(1) for the component\-preservation limits. Default

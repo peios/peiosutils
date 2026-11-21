@@ -42,6 +42,7 @@ use peios::file::{self, SecInfo};
 use peios::security::{Control, SdView, SecurityDescriptor, strip_inherited};
 
 use crate::display::Quotable;
+use crate::special_attributes;
 use crate::error::UError;
 
 /// Error type for preservation operations.
@@ -161,6 +162,10 @@ pub struct Attributes {
     /// dest; none → cleared. Not a per-class permission; an intrinsic
     /// "is this a program".
     pub exec: Preserve,
+    /// The KACS read-only flag. Set on the destination last of all, once
+    /// nothing more is written to it. (The creation date travels with
+    /// `timestamps`.)
+    pub readonly: Preserve,
 }
 
 impl Default for Attributes {
@@ -179,6 +184,7 @@ pub static PRESERVABLE_ATTRIBUTES: &[&str] = &[
     "timestamps",
     "links",
     "exec",
+    "readonly",
     "security",
     "xattrs",
     "xattr",
@@ -200,6 +206,7 @@ impl Attributes {
         security: Preserve::No { explicit: false },
         xattrs: Preserve::No { explicit: false },
         exec: Preserve::No { explicit: false },
+        readonly: Preserve::No { explicit: false },
     };
 
     /// Every preservable attribute, with `required: true`.
@@ -215,13 +222,16 @@ impl Attributes {
         security: Preserve::Yes { required: true },
         xattrs: Preserve::Yes { required: true },
         exec: Preserve::Yes { required: true },
+        readonly: Preserve::Yes { required: true },
     };
 
-    /// Default for `-p`: timestamps + exec (both required). exec rides along
-    /// because executable-ness is an intrinsic file property, not a permission.
+    /// Default for `-p`: timestamps, exec and read-only (all required). exec
+    /// and read-only ride along because each is an intrinsic file property,
+    /// not a permission, as GNU's `-p` keeps a file write-protected.
     pub const DEFAULT: Self = Self {
         timestamps: Preserve::Yes { required: true },
         exec: Preserve::Yes { required: true },
+        readonly: Preserve::Yes { required: true },
         ..Self::NONE
     };
 
@@ -273,6 +283,7 @@ impl Attributes {
             security: self.security.max(other.security),
             xattrs: self.xattrs.max(other.xattrs),
             exec: self.exec.max(other.exec),
+            readonly: self.readonly.max(other.readonly),
         }
     }
 
@@ -298,6 +309,7 @@ impl Attributes {
             security: update_preserve_field(self.security, other.security),
             xattrs: update_preserve_field(self.xattrs, other.xattrs),
             exec: update_preserve_field(self.exec, other.exec),
+            readonly: update_preserve_field(self.readonly, other.readonly),
         }
     }
 
@@ -326,6 +338,7 @@ impl Attributes {
             "timestamps" => &mut new.timestamps,
             "link" | "links" => &mut new.links,
             "exec" => &mut new.exec,
+            "readonly" | "read-only" => &mut new.readonly,
             "security" => &mut new.security,
             "xattrs" | "xattr" => &mut new.xattrs,
             _ => {
@@ -741,12 +754,16 @@ fn copy_extended_attrs(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> Preser
 }
 
 /// Copy `security.*` xattrs from `source` to `dest`, excluding
-/// `security.peios.sd` (which is preserved via the SD copy path).
+/// `security.peios.sd` (which is preserved via the SD copy path) and
+/// `security.peios.sattr`, the special attributes, which travel with
+/// `timestamps` (Created At) and `readonly`.
 #[cfg(all(unix, not(target_os = "android")))]
 fn copy_security_xattrs(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
     copy_xattrs_filtered(source, dest, |name| {
         let bytes = name.as_encoded_bytes();
-        bytes.starts_with(b"security.") && bytes != b"security.peios.sd"
+        bytes.starts_with(b"security.")
+            && bytes != b"security.peios.sd"
+            && bytes != b"security.peios.sattr"
     })
 }
 
@@ -947,7 +964,7 @@ pub fn copy_attributes(source: &Path, dest: &Path, attributes: &Attributes) -> P
         let atime = FileTime::from_last_access_time(source_metadata);
         let mtime = FileTime::from_last_modification_time(source_metadata);
         dest.set_times(atime, mtime)?;
-        Ok(())
+        copy_creation_date(&source, &dest)
     })?;
 
     handle_preserve(attributes.xattrs, || -> PreserveResult<()> {
@@ -958,7 +975,79 @@ pub fn copy_attributes(source: &Path, dest: &Path, attributes: &Attributes) -> P
         Ok(())
     })?;
 
+    // Last: a read-only destination takes no more writes, and nothing
+    // above is one, but keeping it last means nothing ever has to be.
+    handle_preserve(attributes.readonly, || copy_read_only(&source, &dest))?;
+
     Ok(())
+}
+
+/// Give `dest` the creation date of `source`, as its Created At, so a copy
+/// keeps its original's date. The source's creation date is its Created At
+/// if set, else its birth time; on a filesystem that keeps no special
+/// attributes, its birth time alone.
+///
+/// Nothing is done if the source has no date at all, or `dest` is on a
+/// filesystem with nowhere to keep one: there, as for a copy made anywhere
+/// else, the copy's creation date is its own birth time. Only regular files
+/// and directories are copied with one: the record is read and written
+/// through their ordinary descriptors, as the kernel refuses an anchor here
+/// (`EBADF`), and a symlink's Created At would be a property of the file it
+/// reaches.
+fn copy_creation_date(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
+    let (Some(source_file), Some(dest_file)) = (&source.file, &dest.file) else {
+        return Ok(());
+    };
+    let created = match special_attributes::creation_time_fd(source_file.as_fd()) {
+        Ok(created) => created,
+        Err(e) if special_attributes::is_unsupported(&e) => source.metadata().created().ok(),
+        Err(e) => {
+            return Err(PreserveError::IoContext(
+                e,
+                format!(
+                    "failed to read the creation date of {}",
+                    source.path.quote()
+                ),
+            ));
+        }
+    };
+    let Some(created) = created else {
+        return Ok(());
+    };
+    match special_attributes::set_created_at_fd(dest_file.as_fd(), Some(created)) {
+        Err(e) if !special_attributes::is_unsupported(&e) => Err(PreserveError::IoContext(
+            e,
+            format!("failed to set the creation date of {}", dest.path.quote()),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Make `dest` read-only if `source` is. A source on a filesystem that keeps
+/// no special attributes is not read-only. A read-only source whose copy
+/// cannot be made read-only is a failure to preserve, reported as such.
+/// Only regular files and directories carry the flag, through their
+/// ordinary descriptors, as for [`copy_creation_date`].
+fn copy_read_only(source: &FileHandle<'_>, dest: &FileHandle<'_>) -> PreserveResult<()> {
+    let (Some(source_file), Some(dest_file)) = (&source.file, &dest.file) else {
+        return Ok(());
+    };
+    let read_only = match special_attributes::read_fd(source_file.as_fd()) {
+        Ok(attrs) => attrs.read_only,
+        Err(e) if special_attributes::is_unsupported(&e) => false,
+        Err(e) => {
+            return Err(PreserveError::IoContext(
+                e,
+                format!("failed to read the attributes of {}", source.path.quote()),
+            ));
+        }
+    };
+    if !read_only {
+        return Ok(());
+    }
+    special_attributes::set_read_only_fd(dest_file.as_fd(), true).map_err(|e| {
+        PreserveError::IoContext(e, format!("failed to make {} read-only", dest.path.quote()))
+    })
 }
 
 /// Returns `true` if `path`'s DACL is *protected* (`SE_DACL_PROTECTED`) —

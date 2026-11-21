@@ -21,10 +21,17 @@ doctest = false
 [dependencies]
 thiserror = { workspace = true }
 clap = { workspace = true }
-uucore = { workspace = true, features = ["fs", "parser", "safe-traversal"] }
+uucore = { workspace = true, features = [
+  "fs",
+  "parser",
+  "safe-traversal",
+  "special-attributes",
+] }
 fluent = { workspace = true }
 indicatif = { workspace = true }
 libc = { workspace = true }
+# Deleting through a handle: read-only files and --when-closed.
+peios = { git = "https://github.com/peios/peios-rs.git", rev = "623520bc0405fdd4526bab45f45882e7f19b1ab1" }
 
 [[bin]]
 name = "rm"

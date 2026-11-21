@@ -31,8 +31,8 @@ cp-help-force = si un fichier de destination existant ne peut pas être ouvert, 
 cp-help-remove-destination = supprimer chaque fichier de destination existant avant de tenter de l'ouvrir (contraste avec --force). Sur Windows, ne fonctionne actuellement que pour les fichiers inscriptibles.
 cp-help-reflink = contrôler les copies clone/CoW. Voir ci-dessous
 cp-help-attributes-only = Ne pas copier les données du fichier, juste les attributs
-cp-help-preserve = Préserver les attributs spécifiés (par défaut : mode, propriété (unix uniquement), horodatages), si possible attributs supplémentaires : contexte, liens, xattr, all
-cp-help-preserve-default = identique à --preserve=mode,ownership(unix uniquement),timestamps
+cp-help-preserve = Préserver les attributs spécifiés. Valides : owner, dacl, sacl, daclni, saclni, timestamps, links, exec, readonly, security, xattrs.
+cp-help-preserve-default = préserver les horodatages, l'état exécutable et l'indicateur lecture seule
 cp-help-no-preserve = ne pas préserver les attributs spécifiés
 cp-help-parents = utiliser le nom complet du fichier source sous RÉPERTOIRE
 cp-help-no-dereference = ne jamais suivre les liens symboliques dans SOURCE

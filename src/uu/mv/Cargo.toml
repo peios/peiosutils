@@ -29,6 +29,7 @@ uucore = { workspace = true, features = [
   "backup-control",
   "fs",
   "preserve",
+  "special-attributes",
   "update-control",
 ] }
 fluent = { workspace = true }

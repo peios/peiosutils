@@ -11,11 +11,14 @@ touch-help-no-create = do not create any files
 touch-help-no-deref = affect each symbolic link instead of any referenced file (only for systems that can change the timestamps of a symlink)
 touch-help-reference = use this file's times instead of the current time
 touch-help-time = change only the specified time: "access", "atime", or "use" are equivalent to -a; "modify" or "mtime" are equivalent to -m
+touch-help-created-at = set the file's Created At, its settable creation date, parsing the argument as -d does; the access and modification times change only if another time option is given
+touch-help-no-created-at = unset the file's Created At, so its creation date reads as its birth time again
 
 # Error messages
 touch-error-missing-file-operand = missing file operand
   Try '{ $help_command } --help' for more information.
 touch-error-setting-times-of = setting times of { $filename }
+touch-error-setting-created-at = setting the Created At of { $filename }
 touch-error-setting-times-no-such-file = setting times of { $filename }: No such file or directory
 touch-error-cannot-touch = cannot touch { $filename }
 touch-error-no-such-file-or-directory = No such file or directory

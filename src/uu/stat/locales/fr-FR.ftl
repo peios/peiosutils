@@ -15,6 +15,10 @@ stat-after-help = Séquences de format valides pour les fichiers (sans `--file-s
   -`%G` : nom de groupe du propriétaire
   -`%h` : nombre de liens physiques
   -`%i` : numéro d'inode
+  -`%j` : attributs spéciaux : lecture seule, ou - si aucun ; ? si illisibles
+  -`%k` : date de création, lisible : Created At si défini, sinon l'heure de
+    naissance du fichier ; avec '#', marquée (naissance) si c'est l'heure de naissance ; - si inconnue
+  -`%K` : date de création, secondes depuis l'Époque ; 0 si inconnue
   -`%m` : point de montage
   -`%n` : nom de fichier
   -`%N` : nom de fichier avec guillemets et déréférencement (suivi) si lien symbolique
@@ -88,6 +92,10 @@ stat-word-gid = Gid
 stat-word-modify = Modif
 stat-word-change = Changt
 stat-word-birth = Créé
+stat-word-created = Création
+stat-word-attributes = Attributs
+stat-attribute-read-only = lecture seule
+stat-created-is-birth = (naissance)
 
 ## Messages d'erreur
 

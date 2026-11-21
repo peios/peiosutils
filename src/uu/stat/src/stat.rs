@@ -25,10 +25,12 @@ use std::fs::{FileType, Metadata};
 use std::io::Write;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::Path;
+use std::time::SystemTime;
 use std::{env, fs};
 
 use thiserror::Error;
 use uucore::time::{FormatSystemTimeFallback, format_system_time, system_time_to_sec};
+use uucore::special_attributes;
 
 #[derive(Debug, Error)]
 enum StatError {
@@ -1039,10 +1041,7 @@ impl Stater {
         file: &OsString,
         file_type: FileType,
         from_user: bool,
-        #[cfg(all(feature = "selinux", any(target_os = "linux", target_os = "android")))]
         follow_symbolic_links: bool,
-        #[cfg(not(all(feature = "selinux", any(target_os = "linux", target_os = "android"))))]
-        _: bool,
     ) -> Result<(), i32> {
         match *t {
             Token::Byte(byte) => print_raw_byte(byte),
@@ -1148,6 +1147,29 @@ impl Stater {
                             entries::uid2usr(meta.uid()).unwrap_or_else(|_| "UNKNOWN".to_owned());
                         OutputType::Str(user_name)
                     }
+
+                    // special attributes; - if none, ? if unreadable
+                    'j' => OutputType::Str(attributes_text(file, follow_symbolic_links)),
+                    // creation date, human-readable: Created At, else the
+                    // time of birth, marked with '#'; - if unknown
+                    'k' => OutputType::Str(
+                        creation_date(file, meta, follow_symbolic_links).map_or_else(
+                            || "-".to_string(),
+                            |(time, is_birth)| {
+                                let text = format_time(time);
+                                if flag.alter && is_birth {
+                                    format!("{text} {}", translate!("stat-created-is-birth"))
+                                } else {
+                                    text
+                                }
+                            },
+                        ),
+                    ),
+                    // creation date, seconds since Epoch; 0 if unknown
+                    'K' => OutputType::Integer(
+                        creation_date(file, meta, follow_symbolic_links)
+                            .map_or(0, |(time, _)| system_time_to_sec(time).0),
+                    ),
 
                     // time of file birth, human-readable; - if unknown
                     'w' => OutputType::Str(pretty_time(meta, MetadataTimeField::Birth)),
@@ -1327,7 +1349,7 @@ impl Stater {
             };
 
             format!(
-                "  {}: %N\n  {}: %-10s\t{}: %-10b {} {}: %-6o %F\n{device_line}{}: (%04a/%10.10A)  {}: (%5u/%8U)   {}: (%5g/%8G)\n{}: %x\n{}: %y\n{}: %z\n {}: %w\n",
+                "  {}: %N\n  {}: %-10s\t{}: %-10b {} {}: %-6o %F\n{device_line}{}: (%04a/%10.10A)  {}: (%5u/%8U)   {}: (%5g/%8G)\n{}: %x\n{}: %y\n{}: %z\n {}: %w\n{}: %#k\n{}: %j\n",
                 translate!("stat-word-file"),
                 translate!("stat-word-size"),
                 translate!("stat-word-blocks"),
@@ -1339,7 +1361,9 @@ impl Stater {
                 translate!("stat-word-access"),
                 translate!("stat-word-modify"),
                 translate!("stat-word-change"),
-                translate!("stat-word-birth")
+                translate!("stat-word-birth"),
+                translate!("stat-word-created"),
+                translate!("stat-word-attributes")
             )
         }
     }
@@ -1411,20 +1435,45 @@ pub fn uu_app() -> Command {
 const PRETTY_DATETIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S.%N %z";
 
 fn pretty_time(meta: &Metadata, md_time_field: MetadataTimeField) -> String {
-    if let Some(time) = metadata_get_time(meta, md_time_field) {
-        let mut tmp = Vec::new();
-        if format_system_time(
-            &mut tmp,
-            time,
-            PRETTY_DATETIME_FORMAT,
-            FormatSystemTimeFallback::Float,
-        )
-        .is_ok()
-        {
-            return String::from_utf8(tmp).unwrap();
-        }
+    metadata_get_time(meta, md_time_field).map_or_else(|| "-".to_string(), format_time)
+}
+
+fn format_time(time: SystemTime) -> String {
+    let mut tmp = Vec::new();
+    if format_system_time(
+        &mut tmp,
+        time,
+        PRETTY_DATETIME_FORMAT,
+        FormatSystemTimeFallback::Float,
+    )
+    .is_ok()
+    {
+        return String::from_utf8(tmp).unwrap();
     }
     "-".to_string()
+}
+
+/// The creation date of `file`, and whether it is only its time of birth
+/// because Created At is unset. Where KACS keeps no special attributes,
+/// the time of birth is all there is. `None` if neither is known, or the
+/// attributes cannot be read.
+fn creation_date(file: &OsStr, meta: &Metadata, follow: bool) -> Option<(SystemTime, bool)> {
+    let birth = || metadata_get_time(meta, MetadataTimeField::Birth).map(|time| (time, true));
+    match special_attributes::read(Path::new(file), follow) {
+        Ok(attrs) => attrs.created_at.map(|time| (time, false)).or_else(birth),
+        Err(e) if special_attributes::is_unsupported(&e) => birth(),
+        Err(_) => None,
+    }
+}
+
+/// The special attributes of `file`, as `%j` shows them.
+fn attributes_text(file: &OsStr, follow: bool) -> String {
+    match special_attributes::read(Path::new(file), follow) {
+        Ok(attrs) if attrs.read_only => translate!("stat-attribute-read-only"),
+        Ok(_) => "-".to_string(),
+        Err(e) if special_attributes::is_unsupported(&e) => "-".to_string(),
+        Err(_) => "?".to_string(),
+    }
 }
 
 #[cfg(test)]

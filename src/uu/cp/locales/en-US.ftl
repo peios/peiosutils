@@ -31,9 +31,9 @@ cp-help-force = if an existing destination file cannot be opened, remove it and 
 cp-help-remove-destination = remove each existing destination file before attempting to open it (contrast with --force). On Windows, currently only works for writeable files.
 cp-help-reflink = control clone/CoW copies. See below
 cp-help-attributes-only = Don't copy the file data, just the attributes
-cp-help-preserve = Preserve the specified attributes. Valid: owner, dacl, sacl, daclni, saclni, timestamps, links, security, xattrs.
-cp-help-preserve-default = preserve timestamps only (Windows xcopy-style default)
-cp-help-preserve-all = preserve every supported attribute (equivalent to --preserve=owner,dacl,sacl,daclni,saclni,timestamps,links,security,xattrs)
+cp-help-preserve = Preserve the specified attributes. Valid: owner, dacl, sacl, daclni, saclni, timestamps, links, exec, readonly, security, xattrs.
+cp-help-preserve-default = preserve timestamps, executable status and the read-only flag
+cp-help-preserve-all = preserve every supported attribute (equivalent to --preserve=owner,dacl,sacl,daclni,saclni,timestamps,links,exec,readonly,security,xattrs)
 cp-help-sd = preserve the full security descriptor (owner + dacl + sacl)
 cp-help-sd-explicit = preserve the security descriptor with no-inherited DACL/SACL (owner + daclni + saclni)
 cp-help-no-preserve = don't preserve the specified attributes

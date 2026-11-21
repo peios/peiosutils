@@ -83,6 +83,8 @@ pub use crate::features::sd_control;
 pub use crate::features::sid_render;
 #[cfg(feature = "sid-resolver")]
 pub use crate::features::sid_resolver;
+#[cfg(feature = "special-attributes")]
+pub use crate::features::special_attributes;
 #[cfg(feature = "sum")]
 pub use crate::features::sum;
 #[cfg(feature = "feat_systemd_logind")]

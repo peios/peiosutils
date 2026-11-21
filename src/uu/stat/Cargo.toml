@@ -26,6 +26,7 @@ uucore = { workspace = true, features = [
   "fs",
   "fsext",
   "time",
+  "special-attributes",
 ] }
 thiserror = { workspace = true }
 fluent = { workspace = true }

@@ -55,6 +55,8 @@ pub mod sd_control;
 pub mod sid_render;
 #[cfg(feature = "sid-resolver")]
 pub mod sid_resolver;
+#[cfg(feature = "special-attributes")]
+pub mod special_attributes;
 #[cfg(feature = "sum")]
 pub mod sum;
 #[cfg(feature = "time")]

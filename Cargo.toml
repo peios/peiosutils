@@ -73,6 +73,7 @@ feat_smack = [
 ## (common/core and Tier1) feature sets
 # "feat_common_core" == baseline core set of utilities which can be built/run on most targets
 feat_common_core = [
+  "attrib",
   "base32",
   "base64",
   "basename",
@@ -578,6 +579,7 @@ zip = { workspace = true, optional = true }
 pu_test = { optional = true, version = "0.8.0", package = "pu_test", path = "src/uu/test" }
 #
 arch = { optional = true, version = "0.8.0", package = "pu_arch", path = "src/uu/arch" }
+attrib = { optional = true, version = "0.8.0", package = "pu_attrib", path = "src/uu/attrib" }
 base32 = { optional = true, version = "0.8.0", package = "pu_base32", path = "src/uu/base32" }
 base64 = { optional = true, version = "0.8.0", package = "pu_base64", path = "src/uu/base64" }
 basename = { optional = true, version = "0.8.0", package = "pu_basename", path = "src/uu/basename" }
