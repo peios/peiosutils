@@ -1,0 +1,30 @@
+[package]
+name = "pu_attrib"
+description = "attrib ~ (peiosutils) show or change the read-only attribute of files"
+repository = "https://github.com/peios/peiosutils/tree/main/src/uu/attrib"
+version.workspace = true
+license.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+readme.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/attrib.rs"
+doctest = false
+
+[dependencies]
+clap = { workspace = true }
+uucore = { workspace = true, features = ["special-attributes"] }
+
+[[bin]]
+name = "attrib"
+path = "src/main.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }

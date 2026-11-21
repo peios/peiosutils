@@ -196,6 +196,9 @@ ringbuffer = []
 safe-copy = []
 safe-traversal = ["libc"]
 sd-control = ["dep:peios", "sid-render"]
+# A file's KACS special attributes, read-only and Created At, read and set
+# one way by every tool. See features/special_attributes.rs.
+special-attributes = ["dep:peios", "libc"]
 # The single SID renderer (labels + the principal-name seam). See
 # features/sid_render.rs for why it is one place and not five.
 sid-render = ["dep:peios"]

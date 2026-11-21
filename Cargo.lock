@@ -2190,6 +2190,7 @@ dependencies = [
  "phf_codegen",
  "pretty_assertions",
  "pu_arch",
+ "pu_attrib",
  "pu_b2sum",
  "pu_base32",
  "pu_base64",
@@ -2510,6 +2511,15 @@ dependencies = [
  "clap",
  "fluent",
  "platform-info",
+ "uucore",
+]
+
+[[package]]
+name = "pu_attrib"
+version = "0.8.18"
+dependencies = [
+ "clap",
+ "tempfile",
  "uucore",
 ]
 
