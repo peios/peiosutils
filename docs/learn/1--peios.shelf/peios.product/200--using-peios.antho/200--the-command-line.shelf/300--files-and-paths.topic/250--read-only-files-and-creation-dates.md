@@ -78,6 +78,21 @@ that the creation date is the birth time:
 touch --no-created-at report.txt
 ```
 
+## Copy and move files
+
+A plain `cp` makes a new file, with today's creation date and no read-only
+flag. `cp -p` and `cp -a` keep the original's creation date and, if it is
+read-only, make the copy read-only too:
+
+```sh
+cp -p report.txt report-copy.txt
+```
+
+To keep the creation date without the flag, use `--preserve` without a value,
+or remove the flag from the selection with `--no-preserve=readonly`. Moving a
+file keeps both. A filesystem that has no special attributes, such as a USB
+drive formatted for another system, can't keep a creation date or the flag.
+
 ## Commands on this page
 
 | Command | Use it to | Manual |
@@ -85,3 +100,4 @@ touch --no-created-at report.txt
 | `attrib` | Show, set, or clear the read-only flag | `attrib(1)` |
 | `touch` | Set or unset a file's Created At | `touch(1)` |
 | `stat` | Show a file's creation date and attributes | `stat(1)` |
+| `cp`, `mv` | Copy or move a file, with its creation date and flag | `cp(1)`, `mv(1)` |

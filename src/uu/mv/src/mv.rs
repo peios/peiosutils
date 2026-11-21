@@ -54,12 +54,14 @@ use crate::error::MvError;
 /// security descriptor — is untouched. A cross-filesystem `mv` must create a
 /// new inode, so the destination re-inherits its SD from the target
 /// directory (a fresh SD is required, and writing a SACL needs privilege).
-/// The file's data, timestamps and ordinary extended attributes still travel
-/// with it. Preservation here is best-effort; the `--preserve` family makes
-/// it mandatory and can additionally carry the SD.
+/// The file's data, timestamps (its creation date among them), ordinary
+/// extended attributes and read-only flag still travel with it, as they do
+/// with a rename. Preservation here is best-effort; the `--preserve` family
+/// makes it mandatory and can additionally carry the SD.
 const MV_DEFAULT: Attributes = Attributes {
     timestamps: Preserve::Yes { required: false },
     xattrs: Preserve::Yes { required: false },
+    readonly: Preserve::Yes { required: false },
     ..Attributes::NONE
 };
 

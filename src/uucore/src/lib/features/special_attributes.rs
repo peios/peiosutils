@@ -28,6 +28,7 @@
 //! followed, as `stat -L` or `chmod` would, or the link itself is meant.
 
 use std::io;
+use std::os::fd::BorrowedFd;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -76,4 +77,38 @@ pub fn set_read_only(path: &Path, read_only: bool, follow: bool) -> io::Result<(
 /// alone.
 pub fn set_created_at(path: &Path, created_at: Option<SystemTime>, follow: bool) -> io::Result<()> {
     file::set_created_at(None, path, created_at, at_flags(follow)).map_err(io::Error::from)
+}
+
+// The same, for the file a descriptor refers to. An `O_PATH` descriptor
+// serves, so a caller can work on an object it pinned once, without naming
+// it again.
+
+/// The special attributes of the file `fd` refers to.
+pub fn read_fd(fd: BorrowedFd<'_>) -> io::Result<SpecialAttributes> {
+    match file::special_attributes(Some(fd), Path::new(""), libc::AT_EMPTY_PATH) {
+        Ok(attrs) => Ok(attrs),
+        Err(e) if e.raw_os_error() == Some(libc::ENODATA) => Ok(SpecialAttributes::default()),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// The creation date of the file `fd` refers to. See [`creation_time`].
+pub fn creation_time_fd(fd: BorrowedFd<'_>) -> io::Result<Option<SystemTime>> {
+    match file::creation_time(Some(fd), Path::new(""), libc::AT_EMPTY_PATH) {
+        Ok(time) => Ok(Some(time)),
+        Err(e) if e.raw_os_error() == Some(libc::ENODATA) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Make the file `fd` refers to read-only, or not.
+pub fn set_read_only_fd(fd: BorrowedFd<'_>, read_only: bool) -> io::Result<()> {
+    file::set_read_only(Some(fd), Path::new(""), read_only, libc::AT_EMPTY_PATH)
+        .map_err(io::Error::from)
+}
+
+/// Set or unset the Created At of the file `fd` refers to.
+pub fn set_created_at_fd(fd: BorrowedFd<'_>, created_at: Option<SystemTime>) -> io::Result<()> {
+    file::set_created_at(Some(fd), Path::new(""), created_at, libc::AT_EMPTY_PATH)
+        .map_err(io::Error::from)
 }
