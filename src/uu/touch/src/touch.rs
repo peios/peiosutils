@@ -29,13 +29,14 @@ use std::io::{Error, ErrorKind};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uucore::display::Quotable;
 use uucore::error::{FromIo, UResult, USimpleError};
 #[cfg(target_os = "linux")]
 use uucore::libc;
 use uucore::parser::shortcut_value_parser::ShortcutValueParser;
 use uucore::sd_control::{self, CreatorSd};
+use uucore::special_attributes;
 use uucore::translate;
 use uucore::{format_usage, show};
 
@@ -65,6 +66,15 @@ pub struct Options {
     /// Whether to change access time only, modification time only, or both
     pub change_times: ChangeTimes,
 
+    /// Whether to change the access and modification times at all. False
+    /// only when `--created-at` or `--no-created-at` is given without `-d`,
+    /// `-t`, `-r`, `-a`, `-m` or `--time`.
+    pub times: bool,
+
+    /// A change to the file's Created At, from `--created-at` or
+    /// `--no-created-at`.
+    pub created_at: Option<CreatedAt>,
+
     /// When true, error when file doesn't exist and either `--no-dereference`
     /// was passed or the file couldn't be created
     pub strict: bool,
@@ -93,6 +103,16 @@ pub enum ChangeTimes {
     Both,
 }
 
+/// A change to a file's Created At, the settable creation date KACS keeps
+/// in its special attributes.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum CreatedAt {
+    /// Set it to this date.
+    Set(SystemTime),
+    /// Unset it, so the file's creation date reads as its birth time again.
+    Unset,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Source {
     /// Use access/modification times of given file
@@ -117,6 +137,8 @@ pub mod options {
     pub static NO_DEREF: &str = "no-dereference";
     pub static TIME: &str = "time";
     pub static FORCE: &str = "force";
+    pub static CREATED_AT: &str = "created-at";
+    pub static NO_CREATED_AT: &str = "no-created-at";
 }
 
 static ARG_FILES: &str = "files";
@@ -142,6 +164,16 @@ mod format {
 
 fn timestamp_to_filetime(ts: Timestamp) -> FileTime {
     FileTime::from_system_time(SystemTime::from(ts))
+}
+
+fn filetime_to_system_time(ft: FileTime) -> SystemTime {
+    let nanos = Duration::from_nanos(u64::from(ft.nanoseconds()));
+    let secs = ft.unix_seconds();
+    if secs >= 0 {
+        UNIX_EPOCH + Duration::from_secs(secs.unsigned_abs()) + nanos
+    } else {
+        UNIX_EPOCH - Duration::from_secs(secs.unsigned_abs()) + nanos
+    }
 }
 
 fn filetime_to_zoned(ft: &FileTime) -> Option<Zoned> {
@@ -234,6 +266,24 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         filenames = filenames[1..].to_vec();
     }
 
+    // Created At alone leaves the access and modification times as they
+    // are; any option that names a time or selects one changes them too.
+    let created_at = if let Some(date) = matches.get_one::<String>(options::CREATED_AT) {
+        let time = parse_date(Zoned::now(), date)?;
+        Some(CreatedAt::Set(filetime_to_system_time(time)))
+    } else if matches.get_flag(options::NO_CREATED_AT) {
+        Some(CreatedAt::Unset)
+    } else {
+        None
+    };
+    let times = created_at.is_none()
+        || reference.is_some()
+        || date.is_some()
+        || timestamp.is_some()
+        || matches.get_flag(options::ACCESS)
+        || matches.get_flag(options::MODIFICATION)
+        || matches.contains_id(options::TIME);
+
     let source = if let Some(reference) = reference {
         Source::Reference(PathBuf::from(reference))
     } else if let Some(ts) = timestamp {
@@ -259,6 +309,8 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
         source,
         date,
         change_times: determine_atime_mtime_change(&matches),
+        times,
+        created_at,
         strict: false,
         creator_sd: sd_control::creator_sd_from_matches(&matches)?,
     };
@@ -348,6 +400,19 @@ pub fn uu_app() -> Command {
                     PossibleValue::new("atime").alias("access").alias("use"),
                     PossibleValue::new("mtime").alias("modify"),
                 ])),
+        )
+        .arg(
+            Arg::new(options::CREATED_AT)
+                .long(options::CREATED_AT)
+                .help(translate!("touch-help-created-at"))
+                .value_name("STRING")
+                .conflicts_with(options::NO_CREATED_AT),
+        )
+        .arg(
+            Arg::new(options::NO_CREATED_AT)
+                .long(options::NO_CREATED_AT)
+                .help(translate!("touch-help-no-created-at"))
+                .action(ArgAction::SetTrue),
         )
         .arg(
             Arg::new(ARG_FILES)
@@ -457,6 +522,42 @@ fn create_without_truncate(path: &Path) -> std::io::Result<fs::File> {
         .open(path)
 }
 
+/// Create or update the timestamp for a single file, then change its
+/// Created At if asked.
+///
+/// Created At is changed only if the file exists afterward: `-c`, and the
+/// failures [`touch_times`] reports without stopping, leave no file to set
+/// it on.
+fn touch_file(
+    path: &Path,
+    is_stdout: bool,
+    opts: &Options,
+    atime: FileTime,
+    mtime: FileTime,
+) -> UResult<()> {
+    touch_times(path, is_stdout, opts, atime, mtime)?;
+
+    let Some(created_at) = opts.created_at else {
+        return Ok(());
+    };
+    let follow = is_stdout || !opts.no_deref;
+    let exists = if follow {
+        path.metadata()
+    } else {
+        path.symlink_metadata()
+    };
+    if exists.is_err() {
+        return Ok(());
+    }
+    let created_at = match created_at {
+        CreatedAt::Set(time) => Some(time),
+        CreatedAt::Unset => None,
+    };
+    special_attributes::set_created_at(path, created_at, follow).map_err_context(
+        || translate!("touch-error-setting-created-at", "filename" => path.quote()),
+    )
+}
+
 /// Create or update the timestamp for a single file.
 ///
 /// # Arguments
@@ -465,7 +566,7 @@ fn create_without_truncate(path: &Path) -> std::io::Result<fs::File> {
 /// - `is_stdout` - Stdout is handled specially, see [`update_times`] for more info
 /// - `atime` - Access time to set for the file
 /// - `mtime` - Modification time to set for the file
-fn touch_file(
+fn touch_times(
     path: &Path,
     is_stdout: bool,
     opts: &Options,
@@ -561,6 +662,10 @@ fn touch_file(
         if opts.source == Source::Now && opts.date.is_none() {
             return Ok(());
         }
+    }
+
+    if !opts.times {
+        return Ok(());
     }
 
     update_times(path, is_stdout, opts, atime, mtime)
@@ -996,6 +1101,8 @@ mod tests {
                 source: Source::Timestamp(invalid_filetime),
                 date: Some("yesterday".to_owned()),
                 change_times: ChangeTimes::Both,
+                times: true,
+                created_at: None,
                 strict: false,
                 creator_sd: None,
             },

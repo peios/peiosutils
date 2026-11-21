@@ -12,11 +12,14 @@ touch-help-no-create = ne créer aucun fichier
 touch-help-no-deref = affecter chaque lien symbolique au lieu de tout fichier référencé (seulement pour les systèmes qui peuvent changer les horodatages d'un lien symbolique)
 touch-help-reference = utiliser les temps de ce fichier au lieu de l'heure actuelle
 touch-help-time = changer seulement le temps spécifié : "access", "atime", ou "use" sont équivalents à -a ; "modify" ou "mtime" sont équivalents à -m
+touch-help-created-at = définir le Created At du fichier, sa date de création modifiable, en analysant l'argument comme -d ; les heures d'accès et de modification ne changent que si une autre option de temps est donnée
+touch-help-no-created-at = annuler le Created At du fichier, pour que sa date de création redevienne son heure de naissance
 
 # Messages d'erreur
 touch-error-missing-file-operand = opérande de fichier manquant
   Essayez '{ $help_command } --help' pour plus d'informations.
 touch-error-setting-times-of = définition des temps de { $filename }
+touch-error-setting-created-at = définition du Created At de { $filename }
 touch-error-setting-times-no-such-file = définition des temps de { $filename } : Aucun fichier ou répertoire de ce type
 touch-error-cannot-touch = impossible de toucher { $filename }
 touch-error-no-such-file-or-directory = Aucun fichier ou répertoire de ce type

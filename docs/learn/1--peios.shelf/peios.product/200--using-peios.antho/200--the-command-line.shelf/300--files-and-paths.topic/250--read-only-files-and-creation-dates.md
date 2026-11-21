@@ -45,8 +45,43 @@ use a file. A program that already had the file open for writing keeps that
 access, and you can still rename the file. A directory keeps the flag but
 isn't protected by it.
 
+## See and set a creation date
+
+A file has two creation dates. Its birth time is when the filesystem created
+it, and nobody can change it. Its Created At is the date people and copy tools
+mean: a copy can carry its original's date, and you can set one. Until a file
+has a Created At, its creation date is its birth time.
+
+`stat` shows both:
+
+```sh
+stat report.txt
+```
+
+`Birth` is the birth time. `Created` is the creation date, marked `(birth)`
+when it is only the birth time. `Attributes` shows `read-only` for a read-only
+file. For one value, use `stat -c %k report.txt`, or `%K` for seconds since
+the Epoch.
+
+Set a file's Created At with `touch`, writing the date in any form `touch -d`
+accepts:
+
+```sh
+touch --created-at='2026-03-14 09:12' report.txt
+```
+
+This changes only the creation date. Add `-d`, `-t`, `-r`, `-a`, or `-m` to
+change the access and modification times as well. Remove the date again, so
+that the creation date is the birth time:
+
+```sh
+touch --no-created-at report.txt
+```
+
 ## Commands on this page
 
 | Command | Use it to | Manual |
 |---|---|---|
 | `attrib` | Show, set, or clear the read-only flag | `attrib(1)` |
+| `touch` | Set or unset a file's Created At | `touch(1)` |
+| `stat` | Show a file's creation date and attributes | `stat(1)` |
