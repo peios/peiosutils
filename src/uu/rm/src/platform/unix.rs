@@ -11,6 +11,7 @@ use indicatif::ProgressBar;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{IsTerminal, stdin};
+use std::os::fd::AsFd;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use uucore::display::Quotable;
@@ -20,10 +21,11 @@ use uucore::safe_traversal::{DirFd, SymlinkBehavior};
 use uucore::show_error;
 use uucore::translate;
 
+use super::super::delete::{self, explain_busy};
 use super::super::{
-    InteractiveMode, Options, is_dir_empty, is_readable, is_writable, prompt_descend, remove_file,
-    show_permission_denied_error, show_removal_error, verbose_removed_directory,
-    verbose_removed_file,
+    Approval, InteractiveMode, Options, approve_read_only, delete_with_feedback, is_dir_empty,
+    is_readable, is_writable, prompt_descend, remove_file, show_permission_denied_error,
+    show_removal_error, verbose_removed_directory, verbose_removed_file,
 };
 
 /// File prompt that reuses existing stat data to avoid extra statx calls
@@ -108,7 +110,10 @@ pub fn safe_remove_file(
 
     let dir_fd = DirFd::open(parent, SymlinkBehavior::Follow).ok()?;
 
-    match dir_fd.unlink_at(file_name, false) {
+    match dir_fd
+        .unlink_at(file_name, false)
+        .map_err(|e| explain_busy(e, false))
+    {
         Ok(_) => {
             // Update progress bar for file removal
             if let Some(pb) = progress_bar {
@@ -138,6 +143,20 @@ pub fn safe_remove_empty_dir(
     let dir_name = path.file_name()?;
 
     let dir_fd = DirFd::open(parent, SymlinkBehavior::Follow).ok()?;
+
+    if options.when_closed {
+        if let Some(pb) = progress_bar {
+            pb.inc(1);
+        }
+        return Some(delete_with_feedback(
+            Some(dir_fd.as_fd()),
+            Path::new(dir_name),
+            path,
+            true,
+            false,
+            options,
+        ));
+    }
 
     match dir_fd.unlink_at(dir_name, true) {
         Ok(_) => {
@@ -205,7 +224,7 @@ fn handle_unlink(
     options: &Options,
 ) -> bool {
     if let Err(e) = dir_fd.unlink_at(entry_name, is_dir) {
-        let e = e
+        let e = explain_busy(e, is_dir)
             .map_err_context(|| translate!("rm-error-cannot-remove", "file" => entry_path.quote()));
         show_error!("{e}");
         true
@@ -332,6 +351,11 @@ pub fn safe_remove_dir_recursive(
             if options.interactive == InteractiveMode::Always {
                 return false;
             }
+            // Entries marked for deletion and still open elsewhere keep it
+            // from being empty; marking it too says so.
+            if options.when_closed {
+                return delete_with_feedback(None, path, path, true, false, options);
+            }
             // Try to remove the directory anyway and let the system tell us why it failed
             // Use false for error_occurred since this is the main error we want to report
             return remove_dir_with_special_cases(path, options, false);
@@ -425,12 +449,51 @@ pub fn safe_remove_dir_recursive_impl(path: &Path, dir_fd: &DirFd, options: &Opt
 
             // Remove the now-empty subdirectory using safe unlinkat
             if !child_error {
-                error |= handle_unlink(dir_fd, entry_name.as_ref(), &entry_path, true, options);
+                error |= if options.when_closed {
+                    delete_with_feedback(
+                        Some(dir_fd.as_fd()),
+                        Path::new(&entry_name),
+                        &entry_path,
+                        true,
+                        false,
+                        options,
+                    )
+                } else {
+                    handle_unlink(dir_fd, entry_name.as_ref(), &entry_path, true, options)
+                };
             }
         } else {
-            // Remove file - check if user wants to remove it first
-            if prompt_file_with_stat(&entry_path, &entry_stat, options) {
-                error |= handle_unlink(dir_fd, entry_name.as_ref(), &entry_path, false, options);
+            // Remove file - check if user wants to remove it first. A
+            // read-only regular file has its own question, and goes through
+            // a handle, as does every regular file under --when-closed.
+            let regular = ((entry_stat.st_mode as libc::mode_t) & libc::S_IFMT) == libc::S_IFREG;
+            let name = Path::new(&entry_name);
+            let read_only = regular && delete::is_read_only(Some(dir_fd.as_fd()), name);
+            let proceed = if read_only {
+                match approve_read_only(&entry_path, entry_stat.st_size as u64, options) {
+                    Approval::Remove => true,
+                    Approval::Keep => false,
+                    Approval::Refused => {
+                        error = true;
+                        false
+                    }
+                }
+            } else {
+                prompt_file_with_stat(&entry_path, &entry_stat, options)
+            };
+            if proceed {
+                error |= if read_only || (regular && options.when_closed) {
+                    delete_with_feedback(
+                        Some(dir_fd.as_fd()),
+                        name,
+                        &entry_path,
+                        false,
+                        read_only,
+                        options,
+                    )
+                } else {
+                    handle_unlink(dir_fd, entry_name.as_ref(), &entry_path, false, options)
+                };
             }
         }
     }

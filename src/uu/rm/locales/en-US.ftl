@@ -29,6 +29,7 @@ rm-help-recursive = remove directories and their contents recursively
 rm-help-dir = remove empty directories
 rm-help-verbose = explain what is being done
 rm-help-progress = display a progress bar. Note: this feature is not supported by GNU coreutils.
+rm-help-when-closed = mark each regular file and directory for deletion, so that it is removed when the last program using it closes it, rather than at once
 
 # Progress messages
 rm-progress-removing = Removing
@@ -39,6 +40,9 @@ rm-error-missing-operand = missing operand
 rm-error-cannot-remove-no-such-file = cannot remove {$file}: No such file or directory
 rm-error-cannot-remove-permission-denied = cannot remove {$file}: Permission denied
 rm-error-cannot-remove-is-directory = cannot remove {$file}: Is a directory
+rm-error-cannot-remove-read-only = cannot remove {$file}: Read-only file (use -f to remove it, or attrib -r to make it writable)
+rm-error-in-use = File is in use by another program
+rm-error-directory-not-emptied = Directory not empty: entries in it are still in use
 rm-error-dangerous-recursive-operation = it is dangerous to operate recursively on '/'
 rm-error-dangerous-recursive-operation-same-as-root = it is dangerous to operate recursively on '{$path}' (same as '/')
 rm-error-use-no-preserve-root = use --no-preserve-root to override this failsafe
@@ -49,4 +53,7 @@ rm-error-may-not-abbreviate-no-preserve-root = you may not abbreviate the --no-p
 
 # Verbose messages
 rm-verbose-removed = removed {$file}
+rm-pending-removal = {$file} will be removed when the last program using it closes it
+rm-prompt-remove-read-only = remove read-only regular file {$file}?
+rm-prompt-remove-read-only-empty = remove read-only regular empty file {$file}?
 rm-verbose-removed-directory = removed directory {$file}

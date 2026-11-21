@@ -45,6 +45,20 @@ use a file. A program that already had the file open for writing keeps that
 access, and you can still rename the file. A directory keeps the flag but
 isn't protected by it.
 
+## Delete a read-only file
+
+`rm` asks before deleting a read-only file:
+
+```sh
+rm report.txt
+```
+
+Answer `y` to delete it. `rm -f` deletes it without asking. In a script,
+where `rm` can't ask, it refuses and leaves the file unless you give `-f`, so
+a read-only file survives a cleanup that didn't mean to remove it. Deleting a
+read-only file needs the right to change its attributes as well as the right
+to delete it.
+
 ## See and set a creation date
 
 A file has two creation dates. Its birth time is when the filesystem created
@@ -101,3 +115,4 @@ drive formatted for another system, can't keep a creation date or the flag.
 | `touch` | Set or unset a file's Created At | `touch(1)` |
 | `stat` | Show a file's creation date and attributes | `stat(1)` |
 | `cp`, `mv` | Copy or move a file, with its creation date and flag | `cp(1)`, `mv(1)` |
+| `rm` | Delete a read-only file | `rm(1)` |

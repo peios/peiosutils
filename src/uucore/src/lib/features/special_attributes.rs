@@ -51,7 +51,17 @@ pub fn is_unsupported(e: &io::Error) -> bool {
 
 /// The special attributes of `path`. A file without the record has none.
 pub fn read(path: &Path, follow: bool) -> io::Result<SpecialAttributes> {
-    match file::special_attributes(None, path, at_flags(follow)) {
+    read_at(None, path, follow)
+}
+
+/// The special attributes of `path` in the directory `dir`, or in the current
+/// directory with `None`. A file without the record has none.
+pub fn read_at(
+    dir: Option<BorrowedFd<'_>>,
+    path: &Path,
+    follow: bool,
+) -> io::Result<SpecialAttributes> {
+    match file::special_attributes(dir, path, at_flags(follow)) {
         Ok(attrs) => Ok(attrs),
         Err(e) if e.raw_os_error() == Some(libc::ENODATA) => Ok(SpecialAttributes::default()),
         Err(e) => Err(e.into()),

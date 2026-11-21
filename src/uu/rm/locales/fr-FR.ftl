@@ -29,6 +29,7 @@ rm-help-recursive = supprimer les répertoires et leur contenu récursivement
 rm-help-dir = supprimer les répertoires vides
 rm-help-verbose = expliquer ce qui est fait
 rm-help-progress = afficher une barre de progression. Note : cette fonctionnalité n'est pas prise en charge par GNU coreutils.
+rm-help-when-closed = marquer chaque fichier ordinaire et répertoire pour suppression, afin qu'il soit supprimé quand le dernier programme qui l'utilise le ferme, plutôt qu'immédiatement
 
 # Messages de progression
 rm-progress-removing = Suppression
@@ -39,6 +40,9 @@ rm-error-missing-operand = opérande manquant
 rm-error-cannot-remove-no-such-file = impossible de supprimer {$file} : Aucun fichier ou répertoire de ce type
 rm-error-cannot-remove-permission-denied = impossible de supprimer {$file} : Permission refusée
 rm-error-cannot-remove-is-directory = impossible de supprimer {$file} : C'est un répertoire
+rm-error-cannot-remove-read-only = impossible de supprimer {$file} : Fichier en lecture seule (utilisez -f pour le supprimer, ou attrib -r pour le rendre modifiable)
+rm-error-in-use = Fichier utilisé par un autre programme
+rm-error-directory-not-emptied = Répertoire non vide : des entrées sont encore utilisées
 rm-error-dangerous-recursive-operation = il est dangereux d'opérer récursivement sur '/'
 rm-error-dangerous-recursive-operation-same-as-root = il est dangereux d'opérer récursivement sur '{$path}' (identique à '/')
 rm-error-use-no-preserve-root = utilisez --no-preserve-root pour outrepasser cette protection
@@ -49,4 +53,7 @@ rm-error-may-not-abbreviate-no-preserve-root = Vous ne pouvez pas abréger l'opt
 
 # Messages verbeux
 rm-verbose-removed = {$file} supprimé
+rm-pending-removal = {$file} sera supprimé quand le dernier programme qui l'utilise le fermera
+rm-prompt-remove-read-only = supprimer le fichier ordinaire en lecture seule {$file} ?
+rm-prompt-remove-read-only-empty = supprimer le fichier ordinaire vide en lecture seule {$file} ?
 rm-verbose-removed-directory = répertoire {$file} supprimé

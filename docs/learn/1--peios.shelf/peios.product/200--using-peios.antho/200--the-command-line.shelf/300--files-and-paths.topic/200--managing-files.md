@@ -3,6 +3,7 @@ title: Managing Files and Directories
 type: how-to
 description: Copy, move, create, link, and remove files and directories with the Peios command-line utilities, choosing the security each result receives.
 related:
+  - peios/files-and-paths/read-only-files-and-creation-dates
   - peios/files-and-paths/files-names-and-security
   - peios/permissions/sd
   - peios/files-and-paths/inspecting-files-and-paths
@@ -107,6 +108,25 @@ Removal has no undo. `rm` removes a directory and its contents only when you
 ask for recursion. A prompt doesn't decide whether you can delete the file:
 the file's security descriptor does. `rmdir` removes only empty directories,
 which protects you from removing contents by mistake.
+
+`rm` asks before deleting a read-only file, and needs `-f` to delete one in a
+script. See [Read-Only Files and Creation
+Dates](~peios/files-and-paths/read-only-files-and-creation-dates).
+
+`rm` normally removes a file's name at once, even if a program still has the
+file open; that program carries on with a file that no longer has a name. To
+leave the name in place until the last program using the file closes it, as
+Windows does, use `--when-closed`:
+
+```sh
+rm --when-closed build.log
+```
+
+If a program has the file open, `rm` says the file will be removed when it is
+closed. Until then the name stays, and opening the file again fails. A
+directory goes when its last user closes it, if it is empty then. If a program
+has opened the file without allowing it to be deleted, `rm` reports it as in
+use either way.
 
 `shred` overwrites a file's data before removing it, but snapshots, backups,
 journals, and the storage device can keep copies that it doesn't reach. When
