@@ -30,6 +30,7 @@
 use std::io;
 use std::os::fd::BorrowedFd;
 use std::path::Path;
+use std::sync::OnceLock;
 use std::time::SystemTime;
 
 use peios::file;
@@ -41,12 +42,28 @@ fn at_flags(follow: bool) -> i32 {
 }
 
 /// Whether `e` means the file has no special attributes to read or set:
-/// its file system is not managed by KACS, or the kernel has no KACS.
+/// its file system is not managed by KACS, or the kernel has no KACS. On a
+/// kernel without KACS nothing handles `security.peios.sattr`: reading it
+/// finds nothing, and writing it fails as for any `security.*` attribute no
+/// security module owns, with `EPERM`. On Peios, `EPERM` is a real failure.
 pub fn is_unsupported(e: &io::Error) -> bool {
-    matches!(
-        e.raw_os_error(),
-        Some(libc::EOPNOTSUPP | libc::ENOSYS | libc::ENOTTY)
-    )
+    match e.raw_os_error() {
+        Some(libc::EOPNOTSUPP | libc::ENOSYS | libc::ENOTTY) => true,
+        Some(libc::EPERM) => !kacs_present(),
+        _ => false,
+    }
+}
+
+/// Whether the running kernel has KACS: a KACS call, for the root
+/// directory's owner, is not refused as an unknown system call. Asked once.
+fn kacs_present() -> bool {
+    static PRESENT: OnceLock<bool> = OnceLock::new();
+    *PRESENT.get_or_init(|| {
+        !matches!(
+            file::get_sd(None, Path::new("/"), file::SecInfo::OWNER, 0),
+            Err(e) if e.raw_os_error() == Some(libc::ENOSYS)
+        )
+    })
 }
 
 /// The special attributes of `path`. A file without the record has none.
