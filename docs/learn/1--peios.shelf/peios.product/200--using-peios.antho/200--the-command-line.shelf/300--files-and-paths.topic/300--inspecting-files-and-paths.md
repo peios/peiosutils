@@ -5,6 +5,7 @@ description: List directories, read file metadata, and resolve, split, or check 
 related:
   - peios/files-and-paths/files-names-and-security
   - peios/files-and-paths/managing-files
+  - peios/files-and-paths/read-only-files-and-creation-dates
   - peios/permissions/sd
 ---
 
@@ -51,6 +52,13 @@ they don't describe access. A symbolic link has metadata of its own, so decide
 whether you want the link or the file it points to. A size can change before
 you read the file, so a program that limits how much it reads checks the file
 it has opened.
+
+Without `-c`, `stat` also prints a file's creation date and its attributes.
+`Birth` is when the filesystem created the file. `Created` is the date a copy
+can carry over from its original, and is the birth time, marked `(birth)`, if
+none has been set. `Attributes` shows `read-only` for a file that no one can
+change or delete until the flag is cleared. See [Read-Only Files and Creation
+Dates](~peios/files-and-paths/read-only-files-and-creation-dates).
 
 ## Resolve a path
 

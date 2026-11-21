@@ -15,6 +15,10 @@ stat-after-help = Valid format sequences for files (without `--file-system`):
   -`%G`: group name of owner
   -`%h`: number of hard links
   -`%i`: inode number
+  -`%j`: special attributes: read-only, or - if none; ? if unreadable
+  -`%k`: creation date, human-readable: Created At if set, else the time of
+    file birth; with '#', marked (birth) when it is the time of birth; - if unknown
+  -`%K`: creation date, seconds since Epoch; 0 if unknown
   -`%m`: mount point
   -`%n`: file name
   -`%N`: quoted file name with dereference (follow) if symbolic link
@@ -108,6 +112,10 @@ stat-word-gid = Gid
 stat-word-modify = Modify
 stat-word-change = Change
 stat-word-birth = Birth
+stat-word-created = Created
+stat-word-attributes = Attributes
+stat-attribute-read-only = read-only
+stat-created-is-birth = (birth)
 
 ## SELinux context messages
 
