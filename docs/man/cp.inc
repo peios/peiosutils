@@ -76,6 +76,19 @@ Setting an integrity label above the caller's level requires the corresponding
 relabel authority; backup or restore authority alone is not a blanket exemption.
 Unsupported source extended-attribute enumeration is accepted without copying
 attributes. Failure to set an attribute read from the source remains an error.
+.SH READ-ONLY FILES
+A read\-only regular file cannot be opened for writing or deleted by anyone
+until its flag is cleared, so cp cannot copy over one as it stands. Without
+.BR \-f ,
+cp refuses such a destination and leaves it. With
+.BR \-f ,
+cp clears its read\-only flag and copies over it, keeping the file and its
+security descriptor; the copy is read\-only again only if
+.B readonly
+is preserved and the source is read\-only. Clearing the flag takes the right
+to change the file's attributes. A copy that then fails leaves the destination
+writable. See
+.BR attrib (1).
 .SH COPY LIMITS
 Copying is not transactional. Failure can leave partial output.
 A required attribute failure on the regular-file path can truncate the

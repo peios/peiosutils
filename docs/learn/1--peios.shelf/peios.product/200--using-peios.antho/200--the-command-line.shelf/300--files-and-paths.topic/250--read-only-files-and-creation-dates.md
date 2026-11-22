@@ -104,7 +104,17 @@ cp -p report.txt report-copy.txt
 
 To keep the creation date without the flag, use `--preserve` without a value,
 or remove the flag from the selection with `--no-preserve=readonly`. Moving a
-file keeps both. A filesystem that has no special attributes, such as a USB
+file keeps both.
+
+`cp` won't copy over a read-only file. `cp -f` clears the destination's
+read-only flag and copies over it, as `xcopy /R` does on Windows:
+
+```sh
+cp -f report.txt report-copy.txt
+```
+
+The copy is read-only afterwards only if you also preserve the flag and the
+original is read-only, as with `cp -pf`. A filesystem that has no special attributes, such as a USB
 drive formatted for another system, can't keep a creation date or the flag.
 
 ## Commands on this page
