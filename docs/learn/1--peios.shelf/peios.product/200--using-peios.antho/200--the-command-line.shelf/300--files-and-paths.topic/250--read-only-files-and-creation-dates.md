@@ -1,7 +1,7 @@
 ---
 title: Read-Only Files and Creation Dates
 type: how-to
-description: Protect a file from changes and deletion with the read-only flag, and see or set the creation date a file keeps apart from its birth time.
+description: Protect a file from changes and deletion with the read-only flag, keep files out of search, and see or set the creation date a file keeps apart from its birth time.
 related:
   - peios/files-and-paths/managing-files
   - peios/files-and-paths/inspecting-files-and-paths
@@ -31,8 +31,9 @@ to change the file again:
 attrib -r report.txt
 ```
 
-Run `attrib` with only file names to see which are read-only. `R` marks a
-read-only file and `-` a writable one:
+Run `attrib` with only file names to see which are read-only. The first
+column shows `R` for a read-only file and `-` for a writable one; the second
+shows the indexing preference described below:
 
 ```sh
 attrib report.txt notes.md
@@ -58,6 +59,33 @@ where `rm` can't ask, it refuses and leaves the file unless you give `-f`, so
 a read-only file survives a cleanup that didn't mean to remove it. Deleting a
 read-only file needs the right to change its attributes as well as the right
 to delete it.
+
+## Keep files out of search
+
+A file or folder can say how far a search index may record it. Keep a
+file's contents out of search, while its name can still be found:
+
+```sh
+attrib +i report.txt
+```
+
+`attrib` then shows `I` in its second column. Keep a folder and everything
+in it out of search entirely, names included:
+
+```sh
+attrib --indexing=none Private
+```
+
+A folder's preference covers everything beneath it, so files created there
+later are covered too. To index one subfolder normally again, give it its
+own preference with `attrib --indexing=all Private/Shared`. `attrib -i`
+removes a file's own preference, so it follows its folder's again.
+
+The preference narrows what a search indexer records. It doesn't hide the
+file from listings or change who can open it. Windows sees it as the file's
+"not content indexed" attribute through a share. A filesystem that keeps no
+extended attributes, such as a USB drive formatted for another system,
+can't keep it, and `attrib` says so.
 
 ## See and set a creation date
 
@@ -104,14 +132,24 @@ cp -p report.txt report-copy.txt
 
 To keep the creation date without the flag, use `--preserve` without a value,
 or remove the flag from the selection with `--no-preserve=readonly`. Moving a
-file keeps both. A filesystem that has no special attributes, such as a USB
+file keeps both.
+
+`cp` won't copy over a read-only file. `cp -f` clears the destination's
+read-only flag and copies over it, as `xcopy /R` does on Windows:
+
+```sh
+cp -f report.txt report-copy.txt
+```
+
+The copy is read-only afterwards only if you also preserve the flag and the
+original is read-only, as with `cp -pf`. A filesystem that has no special attributes, such as a USB
 drive formatted for another system, can't keep a creation date or the flag.
 
 ## Commands on this page
 
 | Command | Use it to | Manual |
 |---|---|---|
-| `attrib` | Show, set, or clear the read-only flag | `attrib(1)` |
+| `attrib` | Show, set, or clear the read-only flag and the indexing preference | `attrib(1)` |
 | `touch` | Set or unset a file's Created At | `touch(1)` |
 | `stat` | Show a file's creation date and attributes | `stat(1)` |
 | `cp`, `mv` | Copy or move a file, with its creation date and flag | `cp(1)`, `mv(1)` |

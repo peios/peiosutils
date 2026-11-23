@@ -42,7 +42,7 @@ pub use uucore::{backup_control::BackupMode, update_control::UpdateMode};
 pub use uucore::preserve::{self, Attributes, Preserve, copy_attributes};
 use uucore::{
     format_usage, parser::shortcut_value_parser::ShortcutValueParser, prompt_yes, show_error,
-    show_warning,
+    special_attributes, show_warning,
 };
 
 use crate::copydir::copy_directory;
@@ -1447,6 +1447,9 @@ fn handle_existing_dest(
         backup_dest(dest, &backup_path, is_dest_removed)?;
     }
     if !is_dest_removed {
+        clear_read_only_dest(dest, options)?;
+    }
+    if !is_dest_removed {
         delete_dest_if_needed_and_allowed(
             source,
             dest,
@@ -1516,6 +1519,42 @@ fn delete_dest_if_needed_and_allowed(
     } else {
         Ok(())
     }
+}
+
+/// A read-only regular file on Peios can be neither opened for writing nor
+/// deleted, by anyone (KACS special attributes). With `-f`, clear the flag
+/// on `dest` so the copy goes over it, as `xcopy /R` does on Windows; the
+/// copy is read-only again only if `--preserve` brings the source's flag.
+/// Without `-f`, refuse and say how to go on (PEI-1745). The flag that
+/// matters is the one on the file the copy writes: the entry itself when
+/// it is to be removed, else the file it leads to.
+fn clear_read_only_dest(dest: &Path, options: &Options) -> CopyResult<()> {
+    let (clobber, removes) = match options.overwrite {
+        OverwriteMode::Clobber(cl) | OverwriteMode::Interactive(cl) => {
+            (cl, cl == ClobberMode::RemoveDestination)
+        }
+        OverwriteMode::NoClobber => return Ok(()),
+    };
+    let follow = !removes;
+    if !special_attributes::read(dest, follow).is_ok_and(|attrs| attrs.read_only) {
+        return Ok(());
+    }
+    if clobber != ClobberMode::Force {
+        return Err(translate!("cp-error-read-only-dest", "dest" => dest.quote()).into());
+    }
+    special_attributes::set_read_only(dest, false, follow).map_err(|e| {
+        CpError::IoErrContext(
+            e,
+            translate!("cp-error-cannot-clear-read-only", "dest" => dest.quote()),
+        )
+    })?;
+    if options.verbose {
+        println!(
+            "{}",
+            translate!("cp-verbose-cleared-read-only", "dest" => dest.quote())
+        );
+    }
+    Ok(())
 }
 
 fn delete_path(path: &Path, options: &Options) -> CopyResult<()> {

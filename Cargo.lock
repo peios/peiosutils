@@ -2519,8 +2519,10 @@ name = "pu_attrib"
 version = "0.8.18"
 dependencies = [
  "clap",
+ "libc",
  "tempfile",
  "uucore",
+ "xattr",
 ]
 
 [[package]]

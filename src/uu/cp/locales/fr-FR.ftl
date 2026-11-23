@@ -77,6 +77,8 @@ cp-error-option-not-implemented = Option '{ $option }' pas encore implémentée.
 cp-error-not-all-files-copied = Tous les fichiers n'ont pas été copiés
 cp-error-reflink-always-sparse-auto = `--reflink=always` ne peut être utilisé qu'avec --sparse=auto
 cp-error-file-exists = { $path } : Le fichier existe
+cp-error-read-only-dest = impossible d'écraser { $dest } : Fichier en lecture seule (utilisez -f pour l'écraser, ou attrib -r pour le rendre modifiable)
+cp-error-cannot-clear-read-only = impossible de rendre { $dest } modifiable
 cp-error-invalid-backup-argument = --backup est mutuellement exclusif avec -n ou --update=none-fail
 cp-error-reflink-not-supported = --reflink n'est pris en charge que sur linux et macOS
 cp-error-sparse-not-supported = --sparse n'est pris en charge que sur linux
@@ -110,6 +112,7 @@ cp-warning-source-specified-more-than-once = { $file_type } source { $source } s
 # Messages verbeux et de débogage
 cp-debug-skipped = { $path } ignoré
 cp-verbose-removed = supprimé { $path }
+cp-verbose-cleared-read-only = { $dest } rendu modifiable
 cp-debug-copy-offload = copy offload : { $offload }, reflink : { $reflink }, sparse detection : { $sparse }
 
 # Invites
