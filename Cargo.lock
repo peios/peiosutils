@@ -121,12 +121,12 @@ checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 [[package]]
 name = "auth-abi"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=327ce68648e1594331c88a457afb261f9000b4c3#327ce68648e1594331c88a457afb261f9000b4c3"
+source = "git+https://github.com/peios/authd.git?rev=af3f0df00b94bf578b27788fc2682d795fe46505#af3f0df00b94bf578b27788fc2682d795fe46505"
 
 [[package]]
 name = "auth-core"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=327ce68648e1594331c88a457afb261f9000b4c3#327ce68648e1594331c88a457afb261f9000b4c3"
+source = "git+https://github.com/peios/authd.git?rev=af3f0df00b94bf578b27788fc2682d795fe46505#af3f0df00b94bf578b27788fc2682d795fe46505"
 dependencies = [
  "libc",
 ]
@@ -2112,20 +2112,26 @@ dependencies = [
 [[package]]
 name = "peios"
 version = "0.5.0"
-source = "git+https://github.com/peios/peios-rs.git?rev=623520bc0405fdd4526bab45f45882e7f19b1ab1#623520bc0405fdd4526bab45f45882e7f19b1ab1"
+source = "git+https://github.com/peios/peios-rs.git?rev=ebb1e39ca99ae8371dd9e8dc45844feb474d056c#ebb1e39ca99ae8371dd9e8dc45844feb474d056c"
 dependencies = [
  "bitflags",
  "libc",
+ "peios-casefold",
  "peios-sys",
 ]
 
 [[package]]
 name = "peios-auth"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=327ce68648e1594331c88a457afb261f9000b4c3#327ce68648e1594331c88a457afb261f9000b4c3"
+source = "git+https://github.com/peios/authd.git?rev=af3f0df00b94bf578b27788fc2682d795fe46505#af3f0df00b94bf578b27788fc2682d795fe46505"
 dependencies = [
  "auth-abi",
 ]
+
+[[package]]
+name = "peios-casefold"
+version = "0.1.0"
+source = "git+https://github.com/peios/peios-rs.git?rev=ebb1e39ca99ae8371dd9e8dc45844feb474d056c#ebb1e39ca99ae8371dd9e8dc45844feb474d056c"
 
 [[package]]
 name = "peios-evman"
@@ -2162,7 +2168,7 @@ dependencies = [
 [[package]]
 name = "peios-sys"
 version = "0.4.0"
-source = "git+https://github.com/peios/peios-rs.git?rev=623520bc0405fdd4526bab45f45882e7f19b1ab1#623520bc0405fdd4526bab45f45882e7f19b1ab1"
+source = "git+https://github.com/peios/peios-rs.git?rev=ebb1e39ca99ae8371dd9e8dc45844feb474d056c#ebb1e39ca99ae8371dd9e8dc45844feb474d056c"
 dependencies = [
  "bindgen 0.70.1",
  "pkg-config",
@@ -4541,7 +4547,7 @@ dependencies = [
 [[package]]
 name = "terminal-input"
 version = "0.0.24"
-source = "git+https://github.com/peios/authd.git?rev=327ce68648e1594331c88a457afb261f9000b4c3#327ce68648e1594331c88a457afb261f9000b4c3"
+source = "git+https://github.com/peios/authd.git?rev=af3f0df00b94bf578b27788fc2682d795fe46505#af3f0df00b94bf578b27788fc2682d795fe46505"
 dependencies = [
  "auth-core",
  "libc",
